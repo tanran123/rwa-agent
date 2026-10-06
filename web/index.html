@@ -1,0 +1,1974 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>市场风险 RWA</title>
+  <link rel="stylesheet" href="/shared.css" />
+</head>
+<body>
+  <div class="workspace">
+    <div class="main-col">
+      <header class="page-head">
+        <h1>字段映射</h1>
+        <p>先选定类型列，再把明细字段对应到表头。右侧是规则库，需要时可以打开规则对话。</p>
+      </header>
+      <main class="page-main">
+        <div class="upload" id="dropZone">
+          <p class="upload-title">上传工作簿</p>
+          <p class="upload-hint">点击选择，或把 .xlsx、.xlsm 拖到这里。上传后先匹配类型，再对应表头。</p>
+        </div>
+        <input type="file" id="fileInput" accept=".xlsx,.xlsm" />
+
+        <div class="banner wait" id="banner"></div>
+        <div class="ai-mask" id="aiLoading" hidden>
+          <div class="ai-dialog" role="status" aria-live="polite">
+            <span class="spin big"></span>
+            <strong>正在使用AI思考匹配对应字段</strong>
+            <p id="aiLoadingText">正在根据公式字段匹配这张表的表头，完成后填入下方。</p>
+          </div>
+        </div>
+        <div id="mapper"></div>
+        <p class="narrative" id="narrative"></p>
+        <div id="packs"></div>
+      </main>
+    </div>
+    <aside class="kb" id="kb">
+      <div class="kb-tools">
+        <button type="button" id="ruleChatOpen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6.5A2.5 2.5 0 0 1 7.5 4h9A2.5 2.5 0 0 1 19 6.5v6A2.5 2.5 0 0 1 16.5 15H12l-3.6 2.7c-.7.5-1.7 0-1.7-.8V15H7.5A2.5 2.5 0 0 1 5 12.5v-6Z"/></svg>规则对话</button>
+      </div>
+      <div id="kbRules"></div>
+    </aside>
+  </div>
+  <div class="rule-modal" id="ruleChat" aria-hidden="true">
+    <div class="rule-modal-mask" data-chat-close></div>
+    <section class="rule-modal-panel" role="dialog" aria-modal="true" aria-labelledby="ruleChatTitle">
+      <div class="rule-chat-top">
+        <div>
+          <strong id="ruleChatTitle">规则对话</strong>
+          <span id="ruleChatFocus">可以问任意一条规则</span>
+        </div>
+        <button type="button" data-chat-close>关闭</button>
+      </div>
+      <div class="rule-chat-log" id="ruleChatLog"></div>
+      <div class="rule-chat-compose">
+        <textarea id="ruleChatInput" rows="2" placeholder="例如：把正回购的资本比例改成 10%"></textarea>
+        <button type="button" id="ruleChatSend">发送</button>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const dropZone = document.getElementById("dropZone");
+    const fileInput = document.getElementById("fileInput");
+    const banner = document.getElementById("banner");
+    const aiLoading = document.getElementById("aiLoading");
+    const aiLoadingText = document.getElementById("aiLoadingText");
+    const mapperEl = document.getElementById("mapper");
+    const kbEl = document.getElementById("kb");
+    const kbRulesEl = document.getElementById("kbRules");
+    const narrative = document.getElementById("narrative");
+    const packsEl = document.getElementById("packs");
+
+    let catalog = [];
+    let workbook = null;
+    let uploadId = "";
+    let blocks = [];
+    let activeIndex = 0;
+    let knowledgePack = null;
+    let busy = false;
+
+    function setBanner(text, type) {
+      banner.className = "banner" + (type ? " " + type : "");
+      if (!text) {
+        banner.textContent = "";
+        return;
+      }
+      if (type === "wait") {
+        banner.innerHTML = "<span class=\"spin\"></span><span>" + esc(text) + "</span>";
+        return;
+      }
+      banner.textContent = text;
+    }
+
+    function esc(value) {
+      return String(value ?? "").replace(/[&<>"]/g, (ch) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;",
+      }[ch]));
+    }
+
+    function money(amount, currency) {
+      if (amount == null || !currency) return "—";
+      const unit = currency === "USD" ? "美元" : "澳门元";
+      return amount.toLocaleString("zh-CN", { maximumFractionDigits: 2 }) + " " + unit;
+    }
+
+    function stepValue(value) {
+      if (typeof value === "number") {
+        return value.toLocaleString("zh-CN", { maximumFractionDigits: 2 });
+      }
+      return esc(value);
+    }
+
+    function colRank(letters) {
+      let n = 0;
+      for (const ch of letters) n = n * 26 + (ch.charCodeAt(0) - 64);
+      return n;
+    }
+
+    function sheetByName(name) {
+      return (workbook.sheets || []).find((sheet) => sheet.name === name);
+    }
+
+    function packById(id) {
+      return catalog.find((pack) => pack.id === id) || catalog[0];
+    }
+
+    function looksLikeHeader(row) {
+      const texts = row.cells.map((cell) => cell.text).filter(Boolean);
+      if (texts.length < 4) return false;
+      let keyed = 0;
+      for (const text of texts) {
+        const compact = text.replace(/,/g, "");
+        if (/^S\d{5,}/.test(compact) || /^-?\d+(\.\d+)?$/.test(compact) || /^(CHN|HKG)-/.test(text)) keyed += 1;
+      }
+      return keyed <= texts.length / 3;
+    }
+
+    function headerChoices(sheetName) {
+      const sheet = sheetByName(sheetName);
+      if (!sheet) return [];
+      const found = sheet.rows.filter(looksLikeHeader).map((row) => ({
+        row: row.row,
+        label: "第 " + row.row + " 行 · " + row.cells.slice(0, 5).map((cell) => cell.text).join(" / "),
+      }));
+      if (sheet.profile_header_row && !found.some((item) => item.row === Number(sheet.profile_header_row))) {
+        const row = sheet.rows.find((item) => item.row === Number(sheet.profile_header_row));
+        if (row) {
+          found.unshift({
+            row: row.row,
+            label: "第 " + row.row + " 行 · " + row.cells.slice(0, 5).map((cell) => cell.text).join(" / "),
+          });
+        }
+      }
+      return found;
+    }
+
+    function columnChoices(sheetName, headerRow) {
+      const sheet = sheetByName(sheetName);
+      if (!sheet) return [];
+      const header = sheet.rows.find((row) => row.row === Number(headerRow));
+      if (!header) return [];
+      return header.cells
+        .filter((cell) => cell.text)
+        .map((cell) => [cell.column, cell.text])
+        .sort((a, b) => colRank(a[0]) - colRank(b[0]));
+    }
+
+    function sampleText(sheetName, headerRow, letter) {
+      if (!letter) return "";
+      const sheet = sheetByName(sheetName);
+      if (!sheet) return "";
+      const found = [];
+      for (const row of sheet.rows) {
+        if (row.row <= Number(headerRow)) continue;
+        const cell = row.cells.find((item) => item.column === letter);
+        if (cell) found.push(cell.text);
+        if (found.length >= 2) break;
+      }
+      return found.join("、");
+    }
+
+    function activeBlock() {
+      return blocks[activeIndex] || null;
+    }
+
+    function typeColumnsFor(block) {
+      const sheet = sheetByName(block.sheet);
+      if (block.typeColumns && Number(block.typeHeader) === Number(block.headerRow)) return block.typeColumns;
+      if (sheet && Number(sheet.profile_header_row) === Number(block.headerRow)) return sheet.type_columns || [];
+      return [];
+    }
+
+    function defaultTypeColumn(sheet) {
+      if (!sheet) return "";
+      const best = (sheet.type_columns || []).find((col) => col.rank < 15);
+      return best ? best.column : "";
+    }
+
+    function headerKey(text) {
+      return String(text || "").toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]/g, "");
+    }
+
+    // Values seen on the exposure breakdown. One column value, one formula.
+    const VALUE_PACK_BY_HEADER = {
+      bisproductcategory: {
+        DERIVATIVE_OTC: "ccr_fx",
+        REPO: "repo_credit",
+      },
+      bstype2: {
+        OTC: "ccr_fx",
+        SFT: "repo_credit",
+        Trading: "mr_repo",
+      },
+    };
+
+    function suggestedAssignments(block) {
+      const cols = typeColumnsFor(block);
+      const chosen = cols.find((col) => col.column === block.typeColumn);
+      if (!chosen) return {};
+      const table = VALUE_PACK_BY_HEADER[headerKey(chosen.header)] || {};
+      const assignments = {};
+      for (const item of chosen.values) {
+        const pack = table[String(item.value).trim().toUpperCase()] || table[String(item.value).trim()];
+        if (pack) assignments[item.value] = pack;
+      }
+      return assignments;
+    }
+
+    function preferredSheet(sheets) {
+      const list = sheets || [];
+      const third = list[2];
+      if (third && (third.type_columns || []).some((col) => col.rank < 15)) return third;
+      const ranked = list.find((sheet) => (sheet.type_columns || []).some((col) => col.rank < 15));
+      if (ranked) return ranked;
+      return list.find((sheet) => (sheet.rows || []).length) || list[0];
+    }
+
+    function freshBlock(sheet, typed) {
+      const headers = sheet ? headerChoices(sheet.name) : [];
+      const headerRow = sheet && sheet.profile_header_row
+        ? sheet.profile_header_row
+        : (headers.length ? headers[0].row : 1);
+      const typeColumn = typed && sheet ? defaultTypeColumn(sheet) : "";
+      const block = {
+        product: (catalog[0] && catalog[0].id) || "mr_repo",
+        sheet: sheet ? sheet.name : "",
+        headerRow: headerRow,
+        columns: {},
+        suggested: {},
+        typeColumn: typeColumn,
+        assignments: {},
+        detailColumns: {},
+        activeProduct: "",
+        typeColumns: null,
+        typeHeader: null,
+      };
+      if (typeColumn) {
+        block.assignments = suggestedAssignments(block);
+        block.activeProduct = Object.values(block.assignments)[0] || "";
+      }
+      return block;
+    }
+
+    function assignedProducts(block) {
+      const ids = new Set(Object.values(block.assignments || {}).filter(Boolean));
+      return catalog.filter((pack) => ids.has(pack.id));
+    }
+
+    function writingColumns(block) {
+      if (block.typeColumn) {
+        if (!block.activeProduct) return null;
+        if (!block.detailColumns[block.activeProduct]) block.detailColumns[block.activeProduct] = {};
+        return block.detailColumns[block.activeProduct];
+      }
+      return block.columns;
+    }
+
+    function currentFormulaId() {
+      const block = activeBlock();
+      if (block && block.typeColumn && block.activeProduct) return block.activeProduct;
+      if (block && !block.typeColumn && block.product) return block.product;
+      return "";
+    }
+
+    function expandedId() {
+      return knowledgePack === null ? currentFormulaId() : knowledgePack;
+    }
+
+    function viewedPack() {
+      const id = expandedId();
+      return catalog.find((pack) => pack.id === id) || null;
+    }
+
+    const FORMULA_VIEW = {
+      repo_credit: {
+        lines: [
+          ["折美元持仓", "×", "风险权重", "=", "RWA"],
+          ["RWA", "×", "8%", "=", "资本"],
+        ],
+        steps: [
+          { title: "持仓换成美元", fields: ["bond_ccy", "position_local"], line: "CNH 除以 7.2，其他币种用原币金额。" },
+          { title: "查风险权重", fields: ["issuer_name", "issuer_type", "rating_sp", "residual_months"], line: "财政部为 0。银行且不超过 3 个月走短期档。" },
+        ],
+      },
+      ccr_fx: {
+        lines: [
+          ["折现轧差", "+", "流入 × 附加因子", "=", "信用暴露"],
+          ["信用暴露", "×", "对手权重", "=", "RWA"],
+        ],
+        steps: [
+          { title: "远端两腿轧差", fields: ["far_ccy_1", "far_amt_1", "far_ccy_2", "far_amt_2", "residual_months"], line: "一正一负。折现后取流入减流出，小于 0 则为 0。" },
+          { title: "加附加因子", fields: ["residual_months"], line: "不超过 12 个月为 1%，不超过 60 个月为 5%，更长为 7.5%。" },
+          { title: "乘对手权重", fields: ["counterparty_type", "rating_fitch", "counterparty_name"], line: "银行按一般档，用 Fitch 评级查权重。" },
+        ],
+      },
+      mr_repo: {
+        lines: [
+          ["市值 × 特定风险", "+", "市值 × 期限档", "=", "资本"],
+          ["资本", "×", "12.5", "=", "RWA"],
+        ],
+        steps: [
+          { title: "特定风险", fields: ["mv_mop", "issuer_category"], line: "政府类 0%，投资级企业 1%。" },
+          { title: "期限档", fields: ["residual_months", "trade_id"], line: "用剩余期限查期限档权重，再乘市值。" },
+        ],
+      },
+      mr_irs: {
+        lines: [
+          ["|浮动腿加权 − 固定腿加权|", "×", "2", "=", "资本"],
+          ["资本", "×", "12.5", "=", "RWA"],
+        ],
+        steps: [
+          { title: "两条腿各自加权", fields: ["floating_pv", "floating_tenor_months", "fixed_pv", "fixed_tenor_months"], line: "现值 × 该腿期限档权重。" },
+          { title: "取差额", fields: ["direction", "trade_id"], line: "两腿加权头寸相减后取绝对值，再乘 2。" },
+        ],
+      },
+      mr_fx: {
+        lines: [
+          ["净敞口", "×", "8%", "=", "单币种资本"],
+          ["多头合计", "与", "空头合计", "取较大", "全行 RWA"],
+        ],
+        steps: [
+          { title: "单币种", fields: ["ccy", "nop_mop"], line: "这一行的 RWA 等于净敞口，资本是净敞口的 8%。" },
+          { title: "全行", fields: ["side", "trade_id"], line: "多头加总、空头加总，取较大的一边。" },
+        ],
+      },
+    };
+
+    function columnsForPack(block, packId) {
+      if (!block) return {};
+      if (block.typeColumn) return block.detailColumns[packId] || {};
+      if (block.product === packId) return block.columns || {};
+      return {};
+    }
+
+    const RULE_FIELDS = {
+      repo_credit: [
+        { id: "usd_cnh", label: "CNH 折美元除数", kind: "number" },
+        { id: "capital_ratio", label: "资本比例", kind: "percent" },
+        { id: "bank_short_months", label: "银行短期上限（月）", kind: "number" },
+        { id: "zero_weight_name", label: "权重为 0 的发行人", kind: "text" },
+      ],
+      ccr_fx: [
+        { id: "cut_short", label: "短期限上限（月）", kind: "number" },
+        { id: "ccf_short", label: "短期限附加因子", kind: "percent" },
+        { id: "cut_mid", label: "中期限上限（月）", kind: "number" },
+        { id: "ccf_mid", label: "中期限附加因子", kind: "percent" },
+        { id: "ccf_long", label: "更长期限附加因子", kind: "percent" },
+        { id: "capital_ratio", label: "资本比例", kind: "percent" },
+      ],
+      mr_repo: [
+        { id: "specific_gov", label: "政府类特定风险", kind: "percent" },
+        { id: "specific_ig", label: "投资级特定风险", kind: "percent" },
+        { id: "rwa_multiplier", label: "RWA 倍数", kind: "number" },
+      ],
+      mr_irs: [
+        { id: "gap_factor", label: "两腿差额倍数", kind: "number" },
+        { id: "rwa_multiplier", label: "RWA 倍数", kind: "number" },
+      ],
+      mr_fx: [
+        { id: "capital_ratio", label: "资本比例", kind: "percent" },
+      ],
+    };
+    const DEFAULT_PARAMS = {
+      repo_credit: { usd_cnh: 7.2, capital_ratio: 0.08, bank_short_months: 3, zero_weight_name: "中华人民共和国财政部" },
+      ccr_fx: { cut_short: 12, ccf_short: 0.01, cut_mid: 60, ccf_mid: 0.05, ccf_long: 0.075, capital_ratio: 0.08 },
+      mr_repo: { specific_gov: 0, specific_ig: 0.01, rwa_multiplier: 12.5 },
+      mr_irs: { gap_factor: 2, rwa_multiplier: 12.5 },
+      mr_fx: { capital_ratio: 0.08 },
+    };
+    let ruleEdits = {};
+    let editingId = "";
+    let ruleDraft = null;
+
+    async function loadStoredRules() {
+      const response = await fetch("/api/rules");
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "读取规则失败");
+      ruleEdits = data.rules || {};
+    }
+
+    async function persistRule(id) {
+      const response = await fetch("/api/rules", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: id, rule: ruleEdits[id] }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "写入规则失败");
+      ruleEdits[id] = data.rule;
+    }
+
+    async function resetStoredRule(id) {
+      const response = await fetch("/api/rules", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: id, reset: true }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "恢复规则失败");
+      ruleEdits[id] = data.rule;
+    }
+
+    function trimNum(value) {
+      const num = Number(value);
+      if (!Number.isFinite(num)) return "";
+      return String(Math.round(num * 1e6) / 1e6);
+    }
+
+    function formatParam(field, value) {
+      if (field.kind === "percent") return trimNum(Number(value) * 100) + "%";
+      if (field.kind === "number") return trimNum(value);
+      return String(value ?? "");
+    }
+
+    function paramInputValue(field, value) {
+      if (field.kind === "percent") return trimNum(Number(value) * 100);
+      if (value == null) return "";
+      return String(value);
+    }
+
+    function parseParam(field, raw) {
+      const text = String(raw ?? "").trim();
+      if (field.kind === "text") {
+        if (text.length > 80) return { error: field.label + "过长" };
+        return { value: text };
+      }
+      if (!text) return { error: field.label + "不能为空" };
+      const num = Number(text);
+      if (!Number.isFinite(num)) return { error: field.label + "需要填写数字" };
+      if (field.kind === "percent") {
+        if (num < 0 || num > 100) return { error: field.label + "请填 0 到 100" };
+        return { value: num / 100 };
+      }
+      if (num < 0 || num > 1000) return { error: field.label + "超出可保存范围" };
+      return { value: num };
+    }
+
+    function lineText(line) {
+      return Array.isArray(line) ? line.join(" ") : String(line || "");
+    }
+
+    function ruleView(packId) {
+      const base = FORMULA_VIEW[packId] || { lines: [], steps: [] };
+      const saved = ruleEdits[packId] || {};
+      const params = Object.assign({}, DEFAULT_PARAMS[packId] || {}, saved.params || {});
+      const lines = Array.isArray(saved.lines) && saved.lines.length ? saved.lines : base.lines;
+      const source = Array.isArray(saved.steps) && saved.steps.length ? saved.steps : base.steps;
+      const steps = source.map((step, index) => {
+        const fallback = base.steps[index] || { title: "", line: "", fields: [] };
+        return {
+          title: step.title || fallback.title,
+          line: step.line || fallback.line,
+          fields: step.fields && step.fields.length ? step.fields : (fallback.fields || []),
+        };
+      });
+      return { title: saved.title || "", lines, steps, params };
+    }
+
+    function rulesPayload() {
+      const out = {};
+      for (const pack of catalog) {
+        const view = ruleView(pack.id);
+        const params = {};
+        for (const field of RULE_FIELDS[pack.id] || []) {
+          const shown = field.kind === "percent" ? Number(view.params[field.id]) * 100 : view.params[field.id];
+          const parsed = parseParam(field, shown);
+          params[field.id] = parsed.error ? DEFAULT_PARAMS[pack.id][field.id] : parsed.value;
+        }
+        out[pack.id] = params;
+      }
+      return out;
+    }
+
+    function equationsHtml(lines) {
+      return lines.map((line) => {
+        const parts = Array.isArray(line) ? line : [String(line)];
+        return "<div class=\"eq\">" + parts.map((part, index) => {
+          const op = parts.length > 1 && index % 2 === 1;
+          return "<span class=\"" + (op ? "eq-op" : (index === parts.length - 1 ? "eq-result" : "eq-term")) + "\">" + esc(part) + "</span>";
+        }).join("") + "</div>";
+      }).join("");
+    }
+
+    function paramPanel(packId, params) {
+      const fields = RULE_FIELDS[packId] || [];
+      return "<div class=\"rule-params\">" + fields.map((field) =>
+        "<div><span>" + esc(field.label) + "</span><b>" + esc(formatParam(field, params[field.id])) + "</b></div>"
+      ).join("") + "</div>";
+    }
+
+    function editorHtml(pack, view) {
+      const draft = ruleDraft && ruleDraft.id === pack.id ? ruleDraft : null;
+      const title = draft ? draft.title : (view.title || pack.title);
+      const lines = draft ? draft.lines : view.lines.map(lineText);
+      const steps = draft ? draft.steps : view.steps;
+      const fields = RULE_FIELDS[pack.id] || [];
+      const lineInputs = lines.map((line, index) =>
+        "<label>公式 " + (index + 1) + "</label><input id=\"rule-line-" + index + "\" data-line=\"" + index + "\" value=\"" + esc(lineText(line)) + "\">"
+      ).join("");
+      const stepInputs = steps.map((step, index) =>
+        "<label>步骤 " + (index + 1) + "</label>"
+        + "<input id=\"rule-step-title-" + index + "\" data-step-title=\"" + index + "\" value=\"" + esc(step.title) + "\">"
+        + "<textarea id=\"rule-step-line-" + index + "\" data-step-line=\"" + index + "\" rows=\"2\">" + esc(step.line) + "</textarea>"
+      ).join("");
+      const paramInputs = fields.map((field) => {
+        const shown = draft ? draft.params[field.id] : paramInputValue(field, view.params[field.id]);
+        const suffix = field.kind === "percent" ? "<span>%</span>" : "";
+        return "<div class=\"rule-param\"><label>" + esc(field.label) + "</label>"
+          + "<div class=\"rule-param-input\"><input id=\"rule-param-" + esc(field.id) + "\" data-param=\"" + esc(field.id) + "\" value=\"" + esc(shown) + "\">"
+          + suffix + "</div></div>";
+      }).join("");
+      return "<div class=\"rule-form\" data-rule-form=\"" + esc(pack.id) + "\">"
+        + "<label>规则名称</label><input id=\"rule-title\" data-rule-title value=\"" + esc(title) + "\">"
+        + lineInputs + stepInputs
+        + "<p class=\"rule-form-title\">计算参数</p><div class=\"rule-grid\">" + paramInputs + "</div>"
+        + "</div>";
+    }
+
+    function captureDraft(packId) {
+      const form = kbEl.querySelector("[data-rule-form=\"" + packId + "\"]");
+      if (!form) return;
+      const view = ruleView(packId);
+      ruleDraft = {
+        id: packId,
+        title: (form.querySelector("[data-rule-title]") || {}).value || "",
+        lines: Array.from(form.querySelectorAll("[data-line]")).map((input) => input.value),
+        steps: view.steps.map((step, index) => ({
+          title: (form.querySelector("[data-step-title=\"" + index + "\"]") || {}).value || "",
+          line: (form.querySelector("[data-step-line=\"" + index + "\"]") || {}).value || "",
+          fields: step.fields,
+        })),
+        params: Object.fromEntries((RULE_FIELDS[packId] || []).map((field) => {
+          const input = form.querySelector("[data-param=\"" + field.id + "\"]");
+          return [field.id, input ? input.value : ""];
+        })),
+      };
+    }
+
+    function renderKnowledge() {
+      if (editingId) captureDraft(editingId);
+      if (!catalog.length) {
+        kbRulesEl.innerHTML = "";
+        return;
+      }
+      const focusId = document.activeElement && document.activeElement.id;
+      const block = activeBlock();
+      const choices = block ? columnChoices(block.sheet, block.headerRow) : [];
+      const choiceText = Object.fromEntries(choices);
+      const openId = expandedId();
+      let anySuggest = false;
+      const cards = catalog.map((pack) => {
+        const view = ruleView(pack.id);
+        const open = pack.id === openId;
+        const editing = editingId === pack.id;
+        const summary = lineText(view.lines[0] || []);
+        const bag = columnsForPack(block, pack.id);
+        const mapped = pack.fields.filter((field) => bag[field.id]).length;
+        const tone = pack.id.indexOf("mr_") === 0 ? "high" : "mid";
+        const badge = tone === "high" ? "市场风险" : "信用风险";
+        const title = view.title || pack.title;
+        const fields = Object.fromEntries(pack.fields.map((field) => [field.id, field]));
+        const steps = view.steps.map((step, index) => {
+          const chips = step.fields.map((id) => {
+            const field = fields[id];
+            if (!field) return "";
+            const chosen = bag[id] || "";
+            const header = chosen ? (choiceText[chosen] || chosen) : "";
+            if (block && block.suggested && block.suggested[id]) anySuggest = true;
+            return "<button type=\"button\" class=\"kb-field" + (chosen ? " on" : " miss") + "\" data-jump=\"" + esc(id) + "\">"
+              + "<span class=\"kb-field-name\">" + esc(field.label) + "</span>"
+              + "<span class=\"kb-field-head\">" + esc(header || "还没选表头") + "</span></button>";
+          }).join("");
+          return "<article class=\"kb-card\">"
+            + "<div class=\"kb-card-top\"><span class=\"kb-no\">" + (index + 1) + "</span><h3>" + esc(step.title) + "</h3></div>"
+            + "<p>" + esc(step.line) + "</p>"
+            + "<div class=\"kb-fields\">" + chips + "</div></article>";
+        }).join("");
+        const detail = editing
+          ? editorHtml(pack, view)
+          : "<article class=\"kb-card kb-card-result\"><div class=\"kb-card-top\"><span class=\"kb-no\">=</span><h3>计算结果</h3></div>"
+            + equationsHtml(view.lines) + "</article>" + steps + paramPanel(pack.id, view.params);
+        const actions = editing
+          ? "<button type=\"button\" data-act=\"save\" data-rule=\"" + esc(pack.id) + "\">保存规则</button>"
+            + "<button type=\"button\" data-act=\"cancel\">取消</button>"
+            + "<button type=\"button\" data-act=\"reset\" data-rule=\"" + esc(pack.id) + "\">恢复默认</button>"
+          : "<button type=\"button\" data-pack=\"" + esc(pack.id) + "\">" + (open ? "收起详情" : "展开详情") + "</button>"
+            + "<button type=\"button\" data-act=\"edit\" data-rule=\"" + esc(pack.id) + "\">编辑</button>";
+        return "<article class=\"scene" + (open ? " open" : "") + "\">"
+          + "<button type=\"button\" class=\"scene-hit\" data-pack=\"" + esc(pack.id) + "\">"
+          + "<div class=\"scene-top\"><strong>" + esc(title) + "</strong><span class=\"scene-pill " + tone + "\">" + badge + "</span></div>"
+          + "<p>" + esc(summary) + "</p>"
+          + "<div class=\"scene-panel\">"
+          + "<div><span>步骤</span><b>" + view.steps.length + " 步</b></div>"
+          + "<div><span>字段</span><b>" + pack.fields.length + " 个</b></div>"
+          + "<div><span>已对应</span><b>" + mapped + " 个</b></div>"
+          + "</div></button>"
+          + (open ? "<div class=\"scene-more\">" + detail + "</div>" : "")
+          + "<div class=\"scene-actions\">" + actions + "</div>"
+          + "</article>";
+      }).join("");
+      kbRulesEl.innerHTML = "<div class=\"kb-head\"><strong>规则库</strong><span>点开一条规则查看，或打开规则对话来修改</span></div>"
+        + "<div class=\"kb-body\">" + cards
+        + (anySuggest && openId ? "<button type=\"button\" class=\"apply apply-all\" id=\"applyAll\">全部应用识别到的列</button>" : "")
+        + "</div>";
+      const focusLabel = document.getElementById("ruleChatFocus");
+      if (focusLabel) {
+        const current = viewedPack();
+        const currentView = current ? ruleView(current.id) : null;
+        focusLabel.textContent = current ? "当前：" + (currentView.title || current.title) : "可以问任意一条规则";
+      }
+      if (focusId) {
+        const el = document.getElementById(focusId);
+        if (el) {
+          el.focus();
+          if (typeof el.setSelectionRange === "function" && typeof el.value === "string") {
+            const end = el.value.length;
+            el.setSelectionRange(end, end);
+          }
+        }
+      }
+    }
+
+    function renderMapper() {
+      if (!workbook) {
+        mapperEl.innerHTML = "";
+        return;
+      }
+      const cards = blocks.map((block, index) => blockCard(block, index)).join("");
+      mapperEl.innerHTML = "<h2 class=\"map-title\">选择映射</h2>"
+        + "<p class=\"card-desc\">计算类型对应类型列里的一个取值。明细字段从这一行表头里选。</p>"
+        + cards
+        + "<div class=\"map-actions\"><button type=\"button\" class=\"text-btn\" id=\"addBlock\">添加一张计算表</button></div>"
+        + "<button type=\"button\" class=\"btn show\" id=\"calcBtn\">按当前映射计算</button>";
+    }
+
+    function fieldRowsHtml(block, pack, columnMap, productId) {
+      const columns = columnChoices(block.sheet, block.headerRow);
+      return pack.fields.map((field) => {
+        const selected = (columnMap && columnMap[field.id]) || "";
+        const options = ["<option value=\"\">选择表头</option>"].concat(columns.map(([letter, text]) =>
+          "<option value=\"" + esc(letter) + "\"" + (letter === selected ? " selected" : "") + ">"
+          + esc(text) + "</option>"
+        )).join("");
+        const productAttr = productId ? " data-product=\"" + esc(productId) + "\"" : "";
+        return "<tr data-row-field=\"" + esc(field.id) + "\"" + productAttr + "><td>" + esc(field.label)
+          + (field.required ? " <span class=\"req\">必填</span>" : " <span class=\"opt\">选填</span>")
+          + "</td><td><select data-field=\"" + esc(field.id) + "\"" + productAttr + ">" + options + "</select></td>"
+          + "<td class=\"sample\">" + esc(sampleText(block.sheet, block.headerRow, selected)) + "</td></tr>";
+      }).join("");
+    }
+
+    function blockCard(block, index) {
+      const sheetOptions = (workbook.sheets || []).map((sheet) =>
+        "<option value=\"" + esc(sheet.name) + "\"" + (sheet.name === block.sheet ? " selected" : "") + ">" + esc(sheet.name) + "</option>"
+      ).join("");
+      let headers = headerChoices(block.sheet);
+      if (headers.length && !headers.some((item) => item.row === Number(block.headerRow))) {
+        const sheet = sheetByName(block.sheet);
+        const profile = sheet && headers.find((item) => item.row === Number(sheet.profile_header_row));
+        block.headerRow = profile ? profile.row : headers[0].row;
+      }
+      const headerOptions = headers.map((item) =>
+        "<option value=\"" + item.row + "\"" + (item.row === Number(block.headerRow) ? " selected" : "") + ">" + esc(item.label) + "</option>"
+      ).join("");
+      const typeCols = typeColumnsFor(block);
+      const typeOptions = ["<option value=\"\">整表使用同一种计算方式</option>"].concat(typeCols.map((col) =>
+        "<option value=\"" + esc(col.column) + "\"" + (col.column === block.typeColumn ? " selected" : "") + ">"
+        + esc(col.column + " · " + col.header + " · " + col.values.length + " 种") + "</option>"
+      )).join("");
+      let body = "";
+      if (block.typeColumn) {
+        const chosen = typeCols.find((col) => col.column === block.typeColumn);
+        const values = chosen ? chosen.values : [];
+        const methodOptions = (current) => ["<option value=\"\">暂不计算</option>"].concat(catalog.map((item) =>
+          "<option value=\"" + esc(item.id) + "\"" + (item.id === current ? " selected" : "") + ">" + esc(item.title) + "</option>"
+        )).join("");
+        const typeRows = values.map((item, valueIndex) =>
+          "<tr><td>" + esc(item.value) + "</td><td class=\"num\">" + Number(item.count).toLocaleString("zh-CN") + "</td>"
+          + "<td><select data-type-index=\"" + valueIndex + "\">" + methodOptions(block.assignments[item.value] || "") + "</select></td></tr>"
+        ).join("");
+        body += "<h3 class=\"section-label\">类型</h3>"
+          + "<div class=\"table-wrap show\"><table class=\"data\"><thead><tr><th>类型取值</th><th>笔数</th><th>计算方式</th></tr></thead><tbody>"
+          + (typeRows || "<tr><td colspan=\"3\">这一列没有读到可区分的取值。</td></tr>")
+          + "</tbody></table></div>";
+        const details = assignedProducts(block).map((pack) => {
+          const map = block.detailColumns[pack.id] || {};
+          const active = pack.id === block.activeProduct ? " active-detail" : "";
+          return "<section class=\"detail-block" + active + "\" data-detail=\"" + esc(pack.id) + "\">"
+            + "<div class=\"map-head\"><h3 class=\"section-label\">明细 · " + esc(pack.title) + "</h3>"
+            + "<button type=\"button\" class=\"text-btn\" data-remap=\"" + esc(pack.id) + "\">重新生成默认映射</button></div>"
+            + "<div class=\"table-wrap show\"><table class=\"data\"><thead><tr><th>需要的字段</th><th>表头</th><th>列中的示例</th></tr></thead><tbody>"
+            + fieldRowsHtml(block, pack, map, pack.id) + "</tbody></table></div></section>";
+        }).join("");
+        const noted = chosen && headerKey(chosen.header) === "bisproductcategory";
+        if (block.mapping) {
+          body += "<div class=\"ai-wait\"><span class=\"spin\"></span><div><strong>正在使用AI思考匹配对应字段</strong>"
+            + "<p>正在匹配这一段的表头，完成后显示在这里。</p></div></div>";
+        }
+        body += details || "<p class=\"card-desc\">选定计算方式之后，这里列出该方式要的明细字段，下拉项是表头。</p>";
+        if (block.aiNote && details) {
+          body += "<p class=\"card-desc\">上面这版是把公式字段和表头交给模型后生成的，可以直接改。</p>";
+        }
+        if (noted) {
+          body += "<p class=\"card-desc\">按这张明细：DERIVATIVE_OTC 是场外衍生，对应外汇互换对手信用风险；REPO 全部在银行账簿，对应正回购信用风险。BOND 同时有银行账簿 789 笔和交易账簿 96 笔，留在暂不计算。</p>";
+        }
+      } else {
+        const pack = packById(block.product);
+        const packOptions = catalog.map((item) =>
+          "<option value=\"" + esc(item.id) + "\"" + (item.id === block.product ? " selected" : "") + ">" + esc(item.title) + "</option>"
+        ).join("");
+        body = "<div class=\"map-grid single\"><label>计算方式<select data-role=\"product\">" + packOptions + "</select></label></div>"
+          + "<h3 class=\"section-label\">明细</h3>"
+          + "<div class=\"table-wrap show\"><table class=\"data\"><thead><tr><th>需要的字段</th><th>表头</th><th>列中的示例</th></tr></thead><tbody>"
+          + fieldRowsHtml(block, pack, block.columns, "") + "</tbody></table></div>";
+      }
+      return "<section class=\"map-block" + (index === activeIndex ? " active" : "") + "\" data-block=\"" + index + "\">"
+        + "<div class=\"map-head\"><span>计算表 " + (index + 1) + "</span>"
+        + "<button type=\"button\" class=\"text-btn\" data-remove=\"" + index + "\">移去</button></div>"
+        + "<div class=\"map-grid\">"
+        + "<label>工作表<select data-role=\"sheet\">" + sheetOptions + "</select></label>"
+        + "<label>表头所在行<select data-role=\"header\">" + headerOptions + "</select></label>"
+        + "<label>类型列<select data-role=\"typeColumn\">" + typeOptions + "</select></label>"
+        + "</div>"
+        + body + "</section>";
+    }
+
+    function renderResults(data) {
+      narrative.textContent = data.narrative || "";
+      packsEl.innerHTML = (data.packs || []).map((pack) => {
+        const rows = (pack.rows || []).map((row) => {
+          const tag = row.status === "ok"
+            ? "<span class=\"tag ok\">已计算</span>"
+            : "<span class=\"tag bad\">缺字段</span>";
+          const steps = (row.steps || []).map((step) =>
+            "<li><span>" + esc(step.name) + "</span> " + esc(step.expr) + " = " + stepValue(step.value) + "</li>"
+          ).join("");
+          return "<tr><td>" + esc(row.id) + "<div class=\"row-no\">第 " + row.excel_row + " 行</div></td>"
+            + "<td>" + tag + "</td>"
+            + "<td class=\"num\">" + money(row.capital, row.currency) + "</td>"
+            + "<td class=\"num\">" + money(row.rwa, row.currency) + "</td>"
+            + "<td>" + esc(row.summary) + (steps ? "<ul class=\"steps\">" + steps + "</ul>" : "") + "</td></tr>";
+        }).join("");
+        const notes = (pack.notes || []).map((note) => "<li>" + esc(note) + "</li>").join("");
+        let portfolio = "";
+        if (pack.portfolio) {
+          const book = pack.portfolio;
+          portfolio = "<p class=\"card-desc\">按行相加 RWA " + money(book.line_rwa, "MOP")
+            + "。多头合计 " + money(book.long, "MOP")
+            + "，空头合计 " + money(book.short, "MOP")
+            + "，取较大者后的全行 RWA " + money(book.rwa, "MOP") + "。</p>";
+        }
+        const hidden = pack.rows_hidden
+          ? "<p class=\"card-desc\">共 " + Number(pack.row_count).toLocaleString("zh-CN")
+            + " 笔，下面列出前 " + (pack.rows || []).length + " 笔。</p>"
+          : "";
+        return "<section class=\"pack\"><h2>" + esc(pack.title) + " 结果</h2>"
+          + "<p class=\"card-desc\">" + esc(pack.sheet) + "。合计 RWA "
+          + money(pack.total_rwa, pack.currency) + "，资本 " + money(pack.total_capital, pack.currency) + "。</p>"
+          + "<p class=\"formula\">" + esc(pack.formula) + "</p>"
+          + (notes ? "<ul class=\"notes\">" + notes + "</ul>" : "")
+          + portfolio
+          + hidden
+          + "<div class=\"table-wrap show\"><table class=\"data\"><thead><tr>"
+          + "<th>交易</th><th>状态</th><th>资本</th><th>RWA</th><th>依据</th>"
+          + "</tr></thead><tbody>" + rows + "</tbody></table></div></section>";
+      }).join("");
+    }
+
+    async function loadCatalog() {
+      const response = await fetch("/api/fields");
+      const data = await response.json();
+      catalog = data.packs || [];
+      if (knowledgePack === undefined) knowledgePack = null;
+    }
+
+    dropZone.addEventListener("click", () => fileInput.click());
+    fileInput.addEventListener("change", () => {
+      if (fileInput.files[0]) inspect(fileInput.files[0]);
+    });
+    dropZone.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      dropZone.classList.add("dragover");
+    });
+    dropZone.addEventListener("dragleave", () => dropZone.classList.remove("dragover"));
+    dropZone.addEventListener("drop", (event) => {
+      event.preventDefault();
+      dropZone.classList.remove("dragover");
+      const file = event.dataTransfer.files && event.dataTransfer.files[0];
+      if (file) inspect(file);
+    });
+
+    async function inspect(file) {
+      if (busy) return;
+      busy = true;
+      narrative.textContent = "";
+      packsEl.innerHTML = "";
+      setBanner("正在读取表头…", "wait");
+      const body = new FormData();
+      body.append("file", file);
+      try {
+        const response = await fetch("/api/inspect", { method: "POST", body });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "读取失败");
+        workbook = data;
+        uploadId = data.upload_id;
+        if (data.catalog) catalog = data.catalog;
+        blocks = (data.suggestions || []).map((item) => Object.assign(freshBlock(sheetByName(item.sheet), false), {
+          product: item.product,
+          sheet: item.sheet,
+          headerRow: item.header_row,
+          suggested: Object.assign({}, item.columns),
+          typeColumn: "",
+        }));
+        activeIndex = 0;
+        if (!blocks.length && (data.sheets || []).length) {
+          blocks = [freshBlock(preferredSheet(data.sheets), true)];
+        }
+        renderMapper();
+        renderKnowledge();
+        const calling = await ensureDefaults(blocks[activeIndex]);
+        if (!calling) {
+          const typed = blocks.some((block) => block.typeColumn);
+          const preset = (data.suggestions || []).length;
+          setBanner(
+            "已读取 " + (data.filename || "文件") + "。"
+            + (typed
+              ? "先把每个类型对应到计算方式，再映射这种计算方式要的明细列。"
+              : (preset ? "右侧规则库标出了识别到的列，点「应用」写到左侧，也可以自己改。" : "请在左侧为每个字段选择列。")),
+            "ok"
+          );
+        }
+        mapperEl.scrollIntoView({ behavior: "smooth", block: "start" });
+      } catch (error) {
+        setBanner(error.message || "读取失败", "err");
+      } finally {
+        busy = false;
+        fileInput.value = "";
+      }
+    }
+
+    mapperEl.addEventListener("change", (event) => {
+      const blockEl = event.target.closest("[data-block]");
+      if (!blockEl) return;
+      const index = Number(blockEl.dataset.block);
+      const block = blocks[index];
+      const role = event.target.dataset.role;
+      if (role === "product") {
+        block.product = event.target.value;
+        const keep = {};
+        const pack = packById(block.product);
+        for (const field of pack.fields) {
+          if (block.columns[field.id]) keep[field.id] = block.columns[field.id];
+        }
+        block.columns = keep;
+        activeIndex = index;
+        renderMapper();
+        renderKnowledge();
+        return;
+      }
+      if (role === "typeColumn") {
+        block.typeColumn = event.target.value;
+        block.assignments = block.typeColumn ? suggestedAssignments(block) : {};
+        block.activeProduct = Object.values(block.assignments)[0] || "";
+        activeIndex = index;
+        renderMapper();
+        renderKnowledge();
+        ensureDefaults(block);
+        return;
+      }
+      if (role === "sheet") {
+        const sheet = sheetByName(event.target.value);
+        block.sheet = event.target.value;
+        block.headerRow = sheet && sheet.profile_header_row
+          ? sheet.profile_header_row
+          : (headerChoices(block.sheet)[0] ? headerChoices(block.sheet)[0].row : 1);
+        block.columns = {};
+        block.suggested = {};
+        block.assignments = {};
+        block.detailColumns = {};
+        block.activeProduct = "";
+        block.typeColumns = null;
+        block.typeHeader = null;
+        block.typeColumn = defaultTypeColumn(sheet);
+        block.assignments = block.typeColumn ? suggestedAssignments(block) : {};
+        block.activeProduct = Object.values(block.assignments)[0] || "";
+        activeIndex = index;
+        renderMapper();
+        renderKnowledge();
+        ensureDefaults(block);
+        return;
+      }
+      if (role === "header") {
+        block.headerRow = Number(event.target.value);
+        block.columns = {};
+        block.suggested = {};
+        block.assignments = {};
+        block.activeProduct = "";
+        activeIndex = index;
+        const sheet = sheetByName(block.sheet);
+        if (sheet && Number(sheet.profile_header_row) === block.headerRow) {
+          block.typeColumns = null;
+          block.typeHeader = null;
+          block.detailColumns = {};
+          block.typeColumn = defaultTypeColumn(sheet);
+          block.assignments = block.typeColumn ? suggestedAssignments(block) : {};
+          block.activeProduct = Object.values(block.assignments)[0] || "";
+          renderMapper();
+          renderKnowledge();
+          ensureDefaults(block);
+        } else {
+          refreshTypes(block);
+        }
+        return;
+      }
+      if (event.target.dataset.typeIndex != null) {
+        const cols = typeColumnsFor(block);
+        const chosen = cols.find((col) => col.column === block.typeColumn);
+        const item = chosen && chosen.values[Number(event.target.dataset.typeIndex)];
+        if (item) {
+          if (event.target.value) {
+            block.assignments[item.value] = event.target.value;
+            block.activeProduct = event.target.value;
+            if (!block.detailColumns[block.activeProduct]) block.detailColumns[block.activeProduct] = {};
+          } else {
+            delete block.assignments[item.value];
+          }
+        }
+        activeIndex = index;
+        renderMapper();
+        renderKnowledge();
+        ensureDefaults(block);
+        return;
+      }
+      if (event.target.dataset.field) {
+        const productId = event.target.dataset.product;
+        const bag = productId
+          ? (block.detailColumns[productId] || (block.detailColumns[productId] = {}))
+          : block.columns;
+        bag[event.target.dataset.field] = event.target.value;
+        if (productId) block.activeProduct = productId;
+        const sample = event.target.closest("tr").querySelector(".sample");
+        if (sample) sample.textContent = sampleText(block.sheet, block.headerRow, event.target.value);
+        renderKnowledge();
+      }
+    });
+
+    function hasMapping(block, product) {
+      const bag = block.typeColumn ? (block.detailColumns[product] || {}) : block.columns;
+      return Object.values(bag).some(Boolean);
+    }
+
+    let mapToken = 0;
+
+    async function ensureDefaults(block, forceProduct) {
+      if (!block || !uploadId) return;
+      const ids = forceProduct
+        ? [forceProduct]
+        : (block.typeColumn ? assignedProducts(block).map((pack) => pack.id) : [block.product]);
+      const pending = ids.filter((id) => id && (forceProduct || !hasMapping(block, id)));
+      if (!pending.length) return false;
+      const token = ++mapToken;
+      const titles = pending.map((id) => {
+        const pack = packById(id);
+        return pack ? pack.title : id;
+      });
+      block.mapping = true;
+      aiLoading.hidden = false;
+      aiLoadingText.textContent = "正在为「" + titles.join("、") + "」匹配表头，完成后填入下方。";
+      renderMapper();
+      renderKnowledge();
+      setBanner("正在使用AI思考匹配对应字段。", "wait");
+      try {
+        const response = await fetch("/api/suggest", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            upload_id: uploadId,
+            sheet: block.sheet,
+            header_row: block.headerRow,
+            products: pending,
+          }),
+        });
+        const data = await response.json();
+        if (token !== mapToken) return false;
+        if (!response.ok) throw new Error(data.error || "默认映射失败");
+        for (const id of pending) {
+          const columns = (data.mappings && data.mappings[id]) || {};
+          if (block.typeColumn) block.detailColumns[id] = columns;
+          else if (id === block.product) block.columns = columns;
+        }
+        block.mapping = false;
+        block.aiNote = true;
+        aiLoading.hidden = true;
+        renderMapper();
+        renderKnowledge();
+        setBanner("表头已匹配完成，可以在下拉框里调整。", "ok");
+        return true;
+      } catch (error) {
+        if (token !== mapToken) return false;
+        block.mapping = false;
+        aiLoading.hidden = true;
+        renderMapper();
+        setBanner(error.message || "默认映射失败", "err");
+        return false;
+      }
+    }
+
+    mapperEl.addEventListener("click", (event) => {
+      if (event.target.dataset.remap) {
+        const host = event.target.closest("[data-block]");
+        if (!host) return;
+        ensureDefaults(blocks[Number(host.dataset.block)], event.target.dataset.remap);
+        return;
+      }
+      if (event.target.id === "addBlock") {
+        const current = activeBlock();
+        const sheet = current ? sheetByName(current.sheet) : preferredSheet(workbook.sheets);
+        blocks.push(freshBlock(sheet || preferredSheet(workbook.sheets), true));
+        activeIndex = blocks.length - 1;
+        renderMapper();
+        renderKnowledge();
+        return;
+      }
+      if (event.target.dataset.remove != null) {
+        blocks.splice(Number(event.target.dataset.remove), 1);
+        if (activeIndex >= blocks.length) activeIndex = Math.max(0, blocks.length - 1);
+        renderMapper();
+        renderKnowledge();
+        return;
+      }
+      const detail = event.target.closest("[data-detail]");
+      const blockEl = event.target.closest("[data-block]");
+      if (blockEl) {
+        activeIndex = Number(blockEl.dataset.block);
+        if (detail && blocks[activeIndex]) {
+          blocks[activeIndex].activeProduct = detail.dataset.detail;
+        }
+        document.querySelectorAll(".map-block").forEach((el) => {
+          el.classList.toggle("active", Number(el.dataset.block) === activeIndex);
+        });
+        renderKnowledge();
+      }
+      if (event.target.id === "calcBtn") calculate();
+    });
+
+    function missingRequired() {
+      const gaps = [];
+      blocks.forEach((block, index) => {
+        const title = "计算表 " + (index + 1);
+        if (block.typeColumn) {
+          const packs = assignedProducts(block);
+          if (!packs.length) {
+            gaps.push(title + " 还没有把类型对应到计算方式");
+            return;
+          }
+          for (const pack of packs) {
+            const cols = block.detailColumns[pack.id] || {};
+            for (const field of pack.fields) {
+              if (field.required && !cols[field.id]) {
+                gaps.push(title + " · " + pack.title + " 的「" + field.label + "」");
+              }
+            }
+          }
+          return;
+        }
+        const pack = packById(block.product);
+        if (!pack) return;
+        for (const field of pack.fields) {
+          if (field.required && !block.columns[field.id]) {
+            gaps.push(title + " 的「" + field.label + "」");
+          }
+        }
+      });
+      return gaps;
+    }
+
+    function tablesPayload() {
+      const tables = [];
+      for (const block of blocks) {
+        if (block.typeColumn) {
+          const grouped = {};
+          for (const [value, product] of Object.entries(block.assignments || {})) {
+            if (!product) continue;
+            if (!grouped[product]) grouped[product] = [];
+            grouped[product].push(value);
+          }
+          for (const [product, values] of Object.entries(grouped)) {
+            tables.push({
+              sheet: block.sheet,
+              header_row: block.headerRow,
+              product: product,
+              columns: block.detailColumns[product] || {},
+              type_column: block.typeColumn,
+              type_values: values,
+            });
+          }
+          continue;
+        }
+        tables.push({
+          sheet: block.sheet,
+          header_row: block.headerRow,
+          product: block.product,
+          columns: block.columns,
+        });
+      }
+      return tables;
+    }
+
+    async function refreshTypes(block) {
+      setBanner("正在读取这一表头下的类型…", "wait");
+      try {
+        const response = await fetch("/api/types", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            upload_id: uploadId,
+            sheet: block.sheet,
+            header_row: block.headerRow,
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "读取类型失败");
+        block.typeColumns = data.type_columns || [];
+        block.typeHeader = block.headerRow;
+        const best = block.typeColumns.find((col) => col.rank < 15);
+        block.typeColumn = best ? best.column : "";
+        block.assignments = block.typeColumn ? suggestedAssignments(block) : {};
+        block.activeProduct = Object.values(block.assignments)[0] || "";
+        renderMapper();
+        renderKnowledge();
+        setBanner("已按第 " + block.headerRow + " 行表头列出类型。", "ok");
+        ensureDefaults(block);
+      } catch (error) {
+        setBanner(error.message || "读取类型失败", "err");
+      }
+    }
+
+    async function calculate() {
+      if (busy || !uploadId) return;
+      try {
+        await loadStoredRules();
+        renderKnowledge();
+      } catch (error) {
+        setBanner(error.message || "读取规则失败", "err");
+        return;
+      }
+      if (!blocks.length) {
+        setBanner("请先添加一张计算表", "err");
+        return;
+      }
+      const gaps = missingRequired();
+      if (gaps.length) {
+        setBanner("还有必填字段没有选列：" + gaps.slice(0, 4).join("、"), "err");
+        return;
+      }
+      busy = true;
+      setBanner("正在按你的映射计算…", "wait");
+      try {
+        const response = await fetch("/api/calculate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            upload_id: uploadId,
+            tables: tablesPayload(),
+            rules: rulesPayload(),
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "计算失败");
+        renderResults(data);
+        setBanner("已按当前映射算出 " + data.row_count + " 笔。", "ok");
+        narrative.scrollIntoView({ behavior: "smooth", block: "start" });
+      } catch (error) {
+        setBanner(error.message || "计算失败", "err");
+      } finally {
+        busy = false;
+      }
+    }
+
+    kbEl.addEventListener("change", (event) => {
+      if (event.target.id !== "kbPack") return;
+      knowledgePack = event.target.value;
+      const block = activeBlock();
+      if (block && block.typeColumn) {
+        block.activeProduct = event.target.value;
+        if (!block.detailColumns[block.activeProduct]) block.detailColumns[block.activeProduct] = {};
+        renderMapper();
+      } else if (block) {
+        block.product = event.target.value;
+        const keep = {};
+        const pack = packById(block.product);
+        for (const field of pack.fields) {
+          if (block.columns[field.id]) keep[field.id] = block.columns[field.id];
+        }
+        block.columns = keep;
+        renderMapper();
+      }
+      renderKnowledge();
+    });
+
+    function beginEdit(id) {
+      if (editingId && editingId !== id) {
+        setBanner("先保存或取消正在编辑的规则。", "err");
+        return;
+      }
+      editingId = id;
+      ruleDraft = null;
+      knowledgePack = id;
+      renderKnowledge();
+    }
+
+    function cancelEdit() {
+      editingId = "";
+      ruleDraft = null;
+      renderKnowledge();
+    }
+
+    async function saveRule(id) {
+      const form = kbEl.querySelector("[data-rule-form=\"" + id + "\"]");
+      if (!form) return;
+      const view = ruleView(id);
+      const params = {};
+      for (const field of RULE_FIELDS[id] || []) {
+        const input = form.querySelector("[data-param=\"" + field.id + "\"]");
+        const parsed = parseParam(field, input ? input.value : "");
+        if (parsed.error) {
+          setBanner(parsed.error, "err");
+          return;
+        }
+        params[field.id] = parsed.value;
+      }
+      if (id === "ccr_fx" && params.cut_mid < params.cut_short) {
+        setBanner("中期限上限要大于短期限上限。", "err");
+        return;
+      }
+      const lines = Array.from(form.querySelectorAll("[data-line]")).map((input) => input.value.trim()).filter(Boolean);
+      if (!lines.length) {
+        setBanner("至少保留一行公式。", "err");
+        return;
+      }
+      const steps = view.steps.map((step, index) => ({
+        title: (form.querySelector("[data-step-title=\"" + index + "\"]").value || "").trim() || step.title,
+        line: (form.querySelector("[data-step-line=\"" + index + "\"]").value || "").trim() || step.line,
+        fields: step.fields,
+      }));
+      ruleEdits[id] = {
+        title: (form.querySelector("[data-rule-title]").value || "").trim(),
+        lines: lines,
+        steps: steps,
+        params: params,
+      };
+      try {
+        await persistRule(id);
+      } catch (error) {
+        setBanner(error.message || "写入规则失败", "err");
+        return;
+      }
+      editingId = "";
+      ruleDraft = null;
+      renderKnowledge();
+      setBanner("规则已写入 knowledge/" + id + ".md。下次计算会先读这份文件。", "ok");
+    }
+
+    async function resetRule(id) {
+      try {
+        await resetStoredRule(id);
+      } catch (error) {
+        setBanner(error.message || "恢复规则失败", "err");
+        return;
+      }
+      editingId = "";
+      ruleDraft = null;
+      renderKnowledge();
+      setBanner("已按默认内容重写这条规则的 Markdown。", "ok");
+    }
+
+    kbEl.addEventListener("input", (event) => {
+      if (editingId && event.target.closest("[data-rule-form]")) captureDraft(editingId);
+    });
+
+    kbEl.addEventListener("click", (event) => {
+      const act = event.target.closest("[data-act]");
+      if (act) {
+        const id = act.dataset.rule || "";
+        if (act.dataset.act === "edit") beginEdit(id);
+        else if (act.dataset.act === "save") saveRule(id);
+        else if (act.dataset.act === "cancel") cancelEdit();
+        else if (act.dataset.act === "reset") resetRule(id);
+        return;
+      }
+      const head = event.target.closest("[data-pack]");
+      if (head) {
+        if (editingId) {
+          setBanner("先保存或取消正在编辑的规则。", "err");
+          return;
+        }
+        const id = head.dataset.pack;
+        knowledgePack = expandedId() === id ? "" : id;
+        renderKnowledge();
+        return;
+      }
+      const jump = event.target.closest("[data-jump]");
+      if (jump) {
+        const row = document.querySelector("[data-block=\"" + activeIndex + "\"] [data-row-field=\"" + jump.dataset.jump + "\"]");
+        if (row) {
+          row.classList.add("row-focus");
+          row.scrollIntoView({ behavior: "smooth", block: "center" });
+          setTimeout(() => row.classList.remove("row-focus"), 1200);
+        }
+        return;
+      }
+      if (event.target.id === "applyAll") applySuggested(null);
+    });
+
+    function applySuggested(fieldId) {
+      const block = activeBlock();
+      if (!block || !block.suggested) return;
+      const bag = writingColumns(block);
+      const pack = viewedPack();
+      if (!bag || !pack) return;
+      const ids = fieldId ? [fieldId] : pack.fields.map((field) => field.id);
+      let wrote = false;
+      for (const id of ids) {
+        if (block.suggested[id]) {
+          bag[id] = block.suggested[id];
+          wrote = true;
+        }
+      }
+      if (!wrote) return;
+      renderMapper();
+      renderKnowledge();
+      const targetId = fieldId || ids.find((id) => block.suggested[id]);
+      const row = document.querySelector("[data-block=\"" + activeIndex + "\"] [data-row-field=\"" + targetId + "\"]");
+      if (row) row.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+
+    let ruleMessages = [{
+      role: "assistant",
+      content: "可以问某条规则怎么计算，也可以直接说要改的参数。例如：把正回购的资本比例改成 10%。",
+    }];
+    let ruleChatBusy = false;
+
+    function rulesSnapshot() {
+      const ids = catalog.length ? catalog.map((pack) => pack.id) : Object.keys(DEFAULT_PARAMS);
+      return ids.map((id) => {
+        const pack = catalog.find((item) => item.id === id);
+        const view = ruleView(id);
+        return {
+          id: id,
+          title: view.title || (pack && pack.title) || id,
+          lines: view.lines.map(lineText),
+          steps: view.steps.map((step) => ({ title: step.title, line: step.line })),
+          params: (RULE_FIELDS[id] || []).map((field) => ({
+            id: field.id,
+            label: field.label,
+            kind: field.kind,
+            value: view.params[field.id],
+            display: formatParam(field, view.params[field.id]),
+          })),
+        };
+      });
+    }
+
+    function renderChat() {
+      const log = document.getElementById("ruleChatLog");
+      if (!log) return;
+      log.innerHTML = ruleMessages.map((message, index) => {
+        const role = message.role === "user" ? "user" : "assistant";
+        let extra = "";
+        if (message.updates && !message.applied) {
+          extra = "<button type=\"button\" class=\"chat-apply\" data-chat-apply=\"" + index + "\">写入规则库</button>";
+        } else if (message.applied) {
+          extra = "<p class=\"chat-done\">已写入规则库</p>";
+        }
+        return "<div class=\"chat-bubble " + role + (message.pending ? " wait" : "") + "\"><p>"
+          + esc(message.content) + "</p>" + extra + "</div>";
+      }).join("");
+      log.scrollTop = log.scrollHeight;
+    }
+
+    async function applyChatUpdate(index) {
+      const message = ruleMessages[index];
+      if (!message || !message.updates || message.applied) return;
+      for (const [id, patch] of Object.entries(message.updates)) {
+        if (!DEFAULT_PARAMS[id]) continue;
+        const view = ruleView(id);
+        const saved = ruleEdits[id] || {};
+        const steps = view.steps.map((step, stepIndex) => {
+          const over = Array.isArray(patch.steps) ? patch.steps[stepIndex] : null;
+          return {
+            title: over && over.title ? over.title : step.title,
+            line: over && over.line ? over.line : step.line,
+            fields: step.fields,
+          };
+        });
+        ruleEdits[id] = {
+          title: patch.title || saved.title || view.title || "",
+          lines: Array.isArray(patch.lines) && patch.lines.length ? patch.lines : (saved.lines || view.lines.map(lineText)),
+          steps: steps,
+          params: Object.assign({}, view.params, patch.params || {}),
+        };
+        await persistRule(id);
+      }
+      message.applied = true;
+      renderKnowledge();
+      renderChat();
+      setBanner("已按对话写入规则 Markdown。下次计算会先读这些文件。", "ok");
+    }
+
+    async function sendRuleChat() {
+      if (ruleChatBusy) return;
+      const input = document.getElementById("ruleChatInput");
+      const text = (input.value || "").trim();
+      if (!text) return;
+      try {
+        await loadStoredRules();
+      } catch (error) {
+        setBanner(error.message || "读取规则失败", "err");
+        return;
+      }
+      input.value = "";
+      ruleMessages.push({ role: "user", content: text });
+      ruleMessages.push({ role: "assistant", content: "正在思考....", pending: true });
+      renderChat();
+      ruleChatBusy = true;
+      const sendBtn = document.getElementById("ruleChatSend");
+      if (sendBtn) sendBtn.disabled = true;
+      try {
+        const history = ruleMessages
+          .filter((item) => !item.pending && (item.role === "user" || item.role === "assistant"))
+          .slice(-8)
+          .map((item) => ({ role: item.role, content: item.content }));
+        const response = await fetch("/api/rules/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            messages: history,
+            rules: rulesSnapshot(),
+            focus: expandedId() || "",
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "对话失败");
+        ruleMessages = ruleMessages.filter((item) => !item.pending);
+        ruleMessages.push({
+          role: "assistant",
+          content: data.reply || "",
+          updates: data.updates || null,
+        });
+      } catch (error) {
+        ruleMessages = ruleMessages.filter((item) => !item.pending);
+        ruleMessages.push({ role: "assistant", content: error.message || "对话失败" });
+      } finally {
+        ruleChatBusy = false;
+        if (sendBtn) sendBtn.disabled = false;
+        renderChat();
+        input.focus();
+      }
+    }
+
+    const ruleModal = document.getElementById("ruleChat");
+
+    function openRuleChat() {
+      ruleModal.classList.add("open");
+      ruleModal.setAttribute("aria-hidden", "false");
+      document.getElementById("ruleChatInput").focus();
+    }
+
+    function closeRuleChat() {
+      ruleModal.classList.remove("open");
+      ruleModal.setAttribute("aria-hidden", "true");
+    }
+
+    document.getElementById("ruleChatOpen").addEventListener("click", openRuleChat);
+    document.getElementById("ruleChatSend").addEventListener("click", sendRuleChat);
+    document.getElementById("ruleChatInput").addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        sendRuleChat();
+      }
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && ruleModal.classList.contains("open")) closeRuleChat();
+    });
+    ruleModal.addEventListener("click", (event) => {
+      if (event.target.closest("[data-chat-close]")) {
+        closeRuleChat();
+        return;
+      }
+      const apply = event.target.closest("[data-chat-apply]");
+      if (!apply) return;
+      applyChatUpdate(Number(apply.dataset.chatApply)).catch((error) => {
+        setBanner(error.message || "写入规则失败", "err");
+      });
+    });
+    renderChat();
+
+    Promise.all([loadCatalog(), loadStoredRules()]).then(renderKnowledge).catch(() => setBanner("规则库加载失败", "err"));
+  </script>
+  <style>
+    body { background: #f3f5f8; color: #1c2434; }
+    .workspace {
+      --text: #1c2434;
+      --muted: #667085;
+      --border: #e3e8f0;
+      --accent: #2f5fbf;
+      --success: #1d7a4a;
+      display: flex;
+      align-items: stretch;
+      min-height: 100vh;
+      background: #f3f5f8;
+      color: var(--text);
+    }
+    .main-col { flex: 1; min-width: 0; padding: 20px 24px 48px; }
+    .page-head { margin-bottom: 16px; }
+    .page-head h1 { margin: 0; font-size: 20px; font-weight: 650; }
+    .page-head p { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+    .page-main { background: transparent; border: none; box-shadow: none; padding: 0; }
+    .upload {
+      border: 1.5px dashed #d5deea;
+      border-radius: 12px;
+      padding: 36px 20px;
+      text-align: center;
+      background: #f6f8fb;
+    }
+    .upload:hover, .upload.dragover { border-color: #2f5fbf; background: #fff; }
+    .kb {
+      width: 420px;
+      flex: none;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      background: #f3f5f8;
+      border-left: 1px solid #e3e8f0;
+      display: flex;
+      flex-direction: column;
+    }
+    .kb-head {
+      padding: 16px 16px 12px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .kb-head strong { font-size: 16px; }
+    .kb-head span { color: var(--muted); font-size: 12px; font-weight: 400; }
+    #kbRules { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+    .kb-body { flex: 1; overflow: auto; padding: 12px 12px 24px; background: transparent; }
+    .kb-tools { padding: 12px 12px 0; }
+    .kb-tools button, .rule-chat-top > button {
+      background: #fff;
+      border: 1px solid #e3e8f0;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font: inherit;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .kb-tools button {
+      width: 100%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      background: #2f5fbf;
+      color: #fff;
+      border-color: #2f5fbf;
+    }
+    .kb-tools button:hover { background: #274f9e; }
+    .kb-tools button svg { width: 16px; height: 16px; fill: currentColor; flex: none; }
+    .rule-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 90;
+      pointer-events: none;
+    }
+    .rule-modal.open { pointer-events: auto; }
+    .rule-modal-mask {
+      position: absolute;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.35);
+      opacity: 0;
+      transition: opacity 0.22s ease;
+    }
+    .rule-modal.open .rule-modal-mask { opacity: 1; }
+    .rule-modal-panel {
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: min(420px, 100vw);
+      height: 100%;
+      background: #f6f8fb;
+      border-left: 1px solid #e3e8f0;
+      box-shadow: -8px 0 24px rgba(15, 23, 42, 0.08);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 16px;
+      transform: translateX(100%);
+      transition: transform 0.22s ease;
+    }
+    .rule-modal.open .rule-modal-panel { transform: translateX(0); }
+    .rule-chat-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+    .rule-chat-top strong { display: block; font-size: 16px; }
+    .rule-chat-top span { display: block; margin-top: 2px; font-size: 12px; color: var(--muted); }
+    .rule-chat-log {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .chat-bubble {
+      max-width: 92%;
+      background: #fff;
+      border: 1px solid #e3e8f0;
+      border-radius: 12px;
+      padding: 8px 10px;
+    }
+    .chat-bubble p { margin: 0; font-size: 13px; line-height: 1.5; white-space: pre-wrap; }
+    .chat-bubble.user { align-self: flex-end; background: #eaf0fa; border-color: #d3e0f4; }
+    .chat-bubble.assistant { align-self: flex-start; }
+    .chat-bubble.wait { color: #2f5fbf; background: #f4f7fc; }
+    .chat-apply, .rule-chat-compose button {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font: inherit;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .chat-apply { margin-top: 8px; color: #2f5fbf; border-color: #c5d4ef; }
+    .rule-chat-compose button { background: #2f5fbf; color: #fff; border-color: #2f5fbf; }
+    .rule-chat-compose button:hover { background: #274f9e; }
+    .rule-chat-compose button:disabled { background: #e5e7eb; color: #9ca3af; cursor: default; }
+    .chat-done { margin: 8px 0 0; font-size: 12px; color: #1d7a4a; }
+    .rule-chat-compose { display: flex; gap: 8px; align-items: flex-end; }
+    .rule-chat-compose textarea {
+      flex: 1;
+      min-width: 0;
+      resize: none;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font: inherit;
+      font-size: 13px;
+      background: #fff;
+    }
+    .rule-chat-compose button { flex: none; }
+    .kb-head { background: transparent; border-bottom-color: #e3e8f0; }
+    .kb-switch { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+    .scene {
+      background: #f6f8fb;
+      border: 1px solid #e3e8f0;
+      border-radius: 12px;
+      padding: 14px;
+      margin: 0 0 12px;
+    }
+    .scene-hit {
+      display: block;
+      width: 100%;
+      text-align: left;
+      background: transparent;
+      border: none;
+      padding: 0;
+      font: inherit;
+      cursor: pointer;
+    }
+    .scene-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+    .scene-top strong { font-size: 15px; }
+    .scene-pill {
+      flex: none;
+      font-size: 12px;
+      line-height: 1;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: #fff;
+    }
+    .scene-pill.mid { color: #9a5b10; background: #fbf3e7; }
+    .scene-pill.high { color: #b4334a; background: #fdecef; }
+    .scene-hit > p { margin: 4px 0 10px; font-size: 12px; color: var(--muted); }
+    .scene-panel {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      background: #fff;
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+    .scene-panel span { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+    .scene-panel b { font-size: 13px; font-weight: 600; }
+    .scene-actions { display: flex; gap: 8px; margin-top: 10px; }
+    .scene-actions button {
+      flex: 1;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font: inherit;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .rule-form label, .rule-param label, .rule-form-title {
+      display: block;
+      margin: 10px 0 4px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .rule-form input, .rule-form textarea {
+      width: 100%;
+      box-sizing: border-box;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font: inherit;
+      font-size: 13px;
+      background: #fff;
+    }
+    .rule-form textarea { resize: vertical; }
+    .rule-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .rule-param-input { display: flex; align-items: center; gap: 6px; }
+    .rule-param-input input { flex: 1; min-width: 0; }
+    .rule-param-input span { font-size: 12px; color: var(--muted); }
+    .rule-params {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 10px;
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+    }
+    .rule-params span { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+    .rule-params b { font-size: 13px; font-weight: 600; }
+    .scene-more { margin-top: 10px; }
+    .kb-card {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      margin: 10px 0 0;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    }
+    .kb-card-result { background: #f4f7fc; border-color: #d5e0f2; }
+    .kb-card-top { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .kb-no {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: #2f5fbf;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: none;
+    }
+    .kb-card h3 { margin: 0; font-size: 14px; }
+    .kb-card p { margin: 0 0 10px; font-size: 12px; color: var(--muted); line-height: 1.5; }
+    .kb-fields { display: flex; flex-direction: column; gap: 8px; }
+    .kb-field {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: center;
+      width: 100%;
+      text-align: left;
+      background: #f9fafb;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font: inherit;
+      cursor: pointer;
+    }
+    .kb-field-name { font-size: 13px; font-weight: 600; }
+    .kb-field-head { font-size: 12px; color: var(--muted); }
+    .kb-field.on { background: #fff; border-color: #b7d7c4; }
+    .kb-field.on .kb-field-head { color: #1d7a4a; }
+    .kb-field.miss .kb-field-head { color: var(--danger); }
+    .eq {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+      margin: 0 0 8px;
+    }
+    .eq:last-child { margin-bottom: 0; }
+    .eq-term, .eq-result {
+      background: #fff;
+      border: 1px solid #d5deea;
+      border-radius: 6px;
+      padding: 4px 8px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .eq-result { background: #2f5fbf; color: #fff; border-color: #2f5fbf; }
+    .eq-op { color: var(--muted); font-size: 13px; }
+    .row-focus { outline: 2px solid #2f5fbf; }
+    .banner.wait { color: #2f5fbf; background: #eaf0fa; gap: 8px; }
+    .spin {
+      width: 14px;
+      height: 14px;
+      border: 2px solid #d3e0f4;
+      border-top-color: #2f5fbf;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      flex: none;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .ai-mask {
+      position: fixed;
+      inset: 0;
+      z-index: 80;
+      background: rgba(15, 23, 42, 0.55);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .ai-mask[hidden] { display: none; }
+    .ai-dialog {
+      width: min(440px, 100%);
+      background: #fff;
+      border-radius: 16px;
+      padding: 36px 28px 32px;
+      text-align: center;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+    }
+    .spin.big {
+      width: 42px;
+      height: 42px;
+      border-width: 4px;
+      display: block;
+      margin: 0 auto 18px;
+    }
+    .ai-dialog strong { display: block; font-size: 22px; letter-spacing: 0.02em; }
+    .ai-dialog p { margin: 10px 0 0; font-size: 15px; color: var(--muted); line-height: 1.6; }
+    .ai-wait {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      margin: 12px 0;
+      padding: 12px 14px;
+      border: 1px solid #d3e0f4;
+      background: #eaf0fa;
+      border-radius: 8px;
+    }
+    .ai-wait strong { display: block; font-size: 14px; }
+    .ai-wait p { margin: 4px 0 0; font-size: 12px; color: var(--muted); line-height: 1.5; }
+    .apply {
+      background: #2f5fbf;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      padding: 4px 12px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .apply:disabled { background: #e5e7eb; color: #9ca3af; cursor: default; }
+    .apply-all { display: block; width: 100%; margin-top: 4px; padding: 8px 12px; }
+    .map-title { margin: 16px 0 8px; font-size: 15px; }
+    .map-block, .pack, .ai-wait, .banner {
+      background: #f6f8fb;
+      border: 1px solid #e3e8f0;
+      border-radius: 12px;
+      padding: 14px;
+      margin-top: 12px;
+    }
+    .map-block.active { border-color: #c5d4ef; }
+    .map-head span, .pack h2, .section-label { font-size: 15px; font-weight: 650; }
+    .pack h2 { margin: 0 0 4px; }
+    .table-wrap {
+      background: #fff;
+      border-radius: 8px;
+      padding: 4px 8px;
+      margin-top: 8px;
+    }
+    table.data { background: transparent; }
+    table.data th { background: transparent; color: var(--muted); font-weight: 500; }
+    .btn.show {
+      background: #2f5fbf;
+      color: #fff;
+      border: 1px solid #2f5fbf;
+      border-radius: 8px;
+      font-weight: 500;
+    }
+    .btn.show:hover { background: #274f9e; }
+    .text-btn { color: var(--text); }
+    select, .map-grid label { font-size: 13px; }
+    .map-grid label { color: var(--muted); }
+    .formula { margin: 0 0 8px; font-size: 13px; }
+    .map-head, .map-actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 8px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .section-label { margin: 14px 0 6px; font-size: 14px; }
+    .detail-block { margin-top: 10px; background: #fff; border-radius: 8px; padding: 8px 10px 4px; }
+    .detail-block.active-detail { outline: 1px solid #c5d4ef; }
+    .map-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+    .map-grid.single { grid-template-columns: minmax(0, 320px); }
+    .map-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+    select {
+      font: inherit;
+      font-size: 13px;
+      color: var(--text);
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 8px;
+      width: 100%;
+    }
+    .req { color: var(--danger); font-size: 11px; font-weight: 600; }
+    .opt { color: var(--muted); font-size: 11px; }
+    .sample { color: var(--muted); font-size: 12px; }
+    .text-btn {
+      border: none;
+      background: transparent;
+      color: var(--accent);
+      font: inherit;
+      font-size: 13px;
+      cursor: pointer;
+      padding: 0;
+    }
+    .notes, .steps { margin: 6px 0; padding-left: 18px; font-size: 12px; color: var(--muted); }
+    .narrative { margin: 16px 0 0; font-size: 14px; }
+    .narrative:empty { display: none; }
+    .pack { margin-top: 28px; }
+    .pack h2 { margin: 0 0 6px; font-size: 16px; }
+    .row-no { color: var(--muted); font-size: 11px; }
+    code { font-family: var(--mono); font-size: 11px; }
+    @media (max-width: 960px) {
+      .workspace { flex-direction: column; }
+      .kb { width: auto; height: auto; position: static; border-left: none; border-top: 1px solid var(--border); }
+      #kbRules { min-height: 280px; }
+      .rule-modal-panel { width: min(420px, 100vw); }
+      .map-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</body>
+</html>
