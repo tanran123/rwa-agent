@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -31,12 +32,14 @@ def _load_local_env() -> None:
 
 _load_local_env()
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_file, send_from_directory
 
-from rwa_agent.agent import field_catalog, inspect_workbook, list_type_columns, run_with_mappings
+from rwa_agent.agent import field_catalog, inspect_workbook, list_type_columns, run_with_mappings, write_rwa_workbook
 from rwa_agent.library import calculation_rules, ensure_library, load_library, reset_rule, save_rule
 from rwa_agent.mapper import suggest_mappings
 from rwa_agent.rule_chat import discuss_rules
+from rwa_agent.rule_learn import learn_from_excel
+from rwa_agent.weight_tables import ingest_weight_workbook, weight_catalog
 
 ensure_library()
 
@@ -46,8 +49,29 @@ MAX_UPLOAD_MB = 120
 app = Flask(__name__, static_folder=str(WEB_DIR), static_url_path="")
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_MB * 1024 * 1024
 
-# upload_id -> (workbook path, work dir)
-UPLOADS: dict[str, tuple[Path, Path]] = {}
+# upload_id -> (workbook path, work dir, original filename)
+UPLOADS: dict[str, tuple[Path, Path, str]] = {}
+
+
+def _ingest_weights(path: Path, filename: str) -> dict:
+    try:
+        return ingest_weight_workbook(path, filename)
+    except Exception:
+        return {"added": False, "duplicate": False, "filename": filename}
+
+
+def _result_suffix(filename: str) -> str:
+    return ".xlsm" if filename.lower().endswith(".xlsm") else ".xlsx"
+
+
+def _result_name(filename: str) -> str:
+    stem = Path(filename).stem or "结果"
+    stem = re.sub(r"[\\/:*?\"<>|]+", "_", stem).strip()[:80] or "结果"
+    return f"{stem}_计算RWA{_result_suffix(filename)}"
+
+
+def _result_path(work_dir: Path, filename: str) -> Path:
+    return work_dir / ("calculated" + _result_suffix(filename))
 
 
 @app.get("/")
@@ -79,9 +103,10 @@ def inspect():
     input_path = work_dir / "input.xlsx"
     upload.save(input_path)
     upload_id = uuid.uuid4().hex
-    UPLOADS[upload_id] = (input_path, work_dir)
+    UPLOADS[upload_id] = (input_path, work_dir, name)
     try:
         preview = inspect_workbook(input_path)
+        preview["weights"] = _ingest_weights(input_path, name)
     except Exception as e:
         shutil.rmtree(work_dir, ignore_errors=True)
         UPLOADS.pop(upload_id, None)
@@ -136,6 +161,11 @@ def suggest():
     return jsonify({"mappings": mappings})
 
 
+@app.get("/api/weights")
+def weights():
+    return jsonify(weight_catalog())
+
+
 @app.get("/api/rules")
 def rules_library():
     try:
@@ -159,6 +189,35 @@ def rules_save():
     except Exception as e:
         return jsonify({"error": f"写入规则失败: {e}"}), 500
     return jsonify({"rule": rule})
+
+
+@app.post("/api/rules/learn")
+def rules_learn():
+    upload = request.files.get("file")
+    if upload is None or upload.filename == "":
+        return jsonify({"error": "请先选择规则 Excel"}), 400
+    name = upload.filename or ""
+    if not name.lower().endswith((".xlsx", ".xlsm")):
+        return jsonify({"error": "规则 Excel 仅支持 .xlsx 或 .xlsm"}), 400
+    upload.seek(0, os.SEEK_END)
+    size = upload.tell()
+    upload.seek(0)
+    if size > 15 * 1024 * 1024:
+        return jsonify({"error": "规则 Excel 请小于 15MB"}), 400
+    work_dir = Path(tempfile.mkdtemp(prefix="rwa_rule_"))
+    input_path = work_dir / "rules.xlsx"
+    try:
+        upload.save(input_path)
+        weights = _ingest_weights(input_path, name)
+        result = learn_from_excel(input_path, name)
+        result["weights"] = weights
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        shutil.rmtree(work_dir, ignore_errors=True)
+    return jsonify(result)
 
 
 @app.post("/api/rules/chat")
@@ -189,7 +248,31 @@ def calculate():
         return jsonify({"error": str(e)}), 400
     except Exception as e:
         return jsonify({"error": f"处理失败: {e}"}), 500
+    rows = result.pop("rwa_rows", [])
+    original = stored[2] if len(stored) > 2 else "结果.xlsx"
+    out_path = _result_path(stored[1], original)
+    try:
+        write_rwa_workbook(stored[0], out_path, rows)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": f"写出 Excel 失败: {e}"}), 500
+    result["download_url"] = f"/api/result/{upload_id}"
+    result["download_name"] = _result_name(original)
     return jsonify(result)
+
+
+@app.get("/api/result/<upload_id>")
+def result_file(upload_id: str):
+    stored = UPLOADS.get(upload_id)
+    if stored is None:
+        return jsonify({"error": "请重新上传文件"}), 400
+    original = stored[2] if len(stored) > 2 else "结果.xlsx"
+    path = _result_path(stored[1], original)
+    if not path.is_file():
+        return jsonify({"error": "还没有可下载的计算结果"}), 404
+    name = _result_name(original)
+    return send_file(path, as_attachment=True, download_name=name)
 
 
 if __name__ == "__main__":

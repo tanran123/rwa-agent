@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from rwa_agent.rules import DEFAULT_PACK_RULES, resolve_rules
+from rwa_agent.weight_tables import write_weight_markdown
 
 ROOT = Path(__file__).resolve().parents[1] / "knowledge"
 
@@ -49,37 +50,37 @@ DEFAULT_TEXT = {
     "repo_credit": {
         "lines": ["折美元持仓 × 风险权重 = RWA", "RWA × 8% = 资本"],
         "steps": [
-            {"title": "持仓换成美元", "fields": ["bond_ccy", "position_local"], "line": "CNH 除以 7.2，其他币种用原币金额。"},
-            {"title": "查风险权重", "fields": ["issuer_name", "issuer_type", "rating_sp", "residual_months"], "line": "财政部为 0。银行且不超过 3 个月走短期档。"},
+            {"title": "把持仓折成美元", "fields": ["bond_ccy", "position_local"], "line": "人民币（CNH）金额除以 7.2 得到美元。其他币种按原来的金额计算。"},
+            {"title": "按发行人查找风险权重", "fields": ["issuer_name", "issuer_type", "rating_sp", "residual_months"], "line": "发行人是财政部时，权重为 0。银行且剩余期限不超过 3 个月时，用短期档。"},
         ],
     },
     "ccr_fx": {
-        "lines": ["折现轧差 + 流入 × 附加因子 = 信用暴露", "信用暴露 × 对手权重 = RWA"],
+        "lines": ["折现后的净流入 + 流入金额 × 附加因子 = 信用暴露", "信用暴露 × 对手风险权重 = RWA"],
         "steps": [
-            {"title": "远端两腿轧差", "fields": ["far_ccy_1", "far_amt_1", "far_ccy_2", "far_amt_2", "residual_months"], "line": "一正一负。折现后取流入减流出，小于 0 则为 0。"},
-            {"title": "加附加因子", "fields": ["residual_months"], "line": "不超过 12 个月为 1%，不超过 60 个月为 5%，更长为 7.5%。"},
-            {"title": "乘对手权重", "fields": ["counterparty_type", "rating_fitch", "counterparty_name"], "line": "银行按一般档，用 Fitch 评级查权重。"},
+            {"title": "轧差远端两腿的折现金额", "fields": ["far_ccy_1", "far_amt_1", "far_ccy_2", "far_amt_2", "residual_months"], "line": "远端两腿一正一负，一边是将来流入，一边是将来流出。先折成澳门元，再按剩余期限折现，用流入减去流出。小于 0 时记为 0。"},
+            {"title": "按剩余期限加上附加因子", "fields": ["residual_months"], "line": "不超过 12 个月按 1%，不超过 60 个月按 5%，更长按 7.5%。这个比例只乘在流入那一腿上。"},
+            {"title": "乘上对手方的风险权重", "fields": ["counterparty_type", "rating_fitch", "counterparty_name"], "line": "银行对手按一般期限档，用 Fitch 评级查出风险权重。"},
         ],
     },
     "mr_repo": {
         "lines": ["市值 × 特定风险 + 市值 × 期限档 = 资本", "资本 × 12.5 = RWA"],
         "steps": [
-            {"title": "特定风险", "fields": ["mv_mop", "issuer_category"], "line": "政府类 0%，投资级企业 1%。"},
-            {"title": "期限档", "fields": ["residual_months", "trade_id"], "line": "用剩余期限查期限档权重，再乘市值。"},
+            {"title": "计算特定风险", "fields": ["mv_mop", "issuer_category"], "line": "政府类发行人按 0%，投资级企业按 1%，再乘以市值。"},
+            {"title": "按剩余期限套用期限档", "fields": ["residual_months", "trade_id"], "line": "用剩余期限查出对应的期限档权重，再乘以市值。"},
         ],
     },
     "mr_irs": {
         "lines": ["|浮动腿加权 − 固定腿加权| × 2 = 资本", "资本 × 12.5 = RWA"],
         "steps": [
-            {"title": "两条腿各自加权", "fields": ["floating_pv", "floating_tenor_months", "fixed_pv", "fixed_tenor_months"], "line": "现值 × 该腿期限档权重。"},
-            {"title": "取差额", "fields": ["direction", "trade_id"], "line": "两腿加权头寸相减后取绝对值，再乘 2。"},
+            {"title": "浮动腿和固定腿分别加权", "fields": ["floating_pv", "floating_tenor_months", "fixed_pv", "fixed_tenor_months"], "line": "每条腿用现值乘上该腿剩余期限对应的期限档权重。"},
+            {"title": "取两腿差额", "fields": ["direction", "trade_id"], "line": "两条腿的加权头寸相减，取绝对值，再乘以 2。"},
         ],
     },
     "mr_fx": {
         "lines": ["净敞口 × 8% = 单币种资本", "多头合计与空头合计取较大一边，作为全行 RWA"],
         "steps": [
-            {"title": "单币种", "fields": ["ccy", "nop_mop"], "line": "这一行的 RWA 等于净敞口，资本是净敞口的 8%。"},
-            {"title": "全行", "fields": ["side", "trade_id"], "line": "多头加总、空头加总，取较大的一边。"},
+            {"title": "计算单个币种", "fields": ["ccy", "nop_mop"], "line": "这一行的 RWA 等于净敞口，资本等于净敞口的 8%。"},
+            {"title": "汇总全行敞口", "fields": ["side", "trade_id"], "line": "多头和空头分别加总，取金额较大的一边作为全行 RWA。"},
         ],
     },
 }
@@ -93,6 +94,7 @@ def ensure_library() -> dict[str, dict]:
         if not path.is_file():
             path.write_text(render_rule(default_rule(pack)), encoding="utf-8")
     library = load_library()
+    write_weight_markdown(ROOT / "权重表.md")
     _write_index(library)
     return library
 
@@ -330,6 +332,7 @@ def _write_index(library: dict[str, dict]) -> None:
     for pack in PACK_ORDER:
         doc = library[pack]
         parts.append(f"- [{doc['title']}]({pack}.md)")
+    parts.append("- [权重表](权重表.md)")
     parts.append("")
     (ROOT / "规则库.md").write_text("\n".join(parts), encoding="utf-8")
 

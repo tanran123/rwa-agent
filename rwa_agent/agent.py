@@ -7,6 +7,7 @@ from collections import Counter
 from pathlib import Path
 
 import openpyxl
+from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
 
 from rwa_agent.fields import (
@@ -57,7 +58,7 @@ CALCULATORS = {
 
 PACK_FORMULA = {
     "repo_credit": "RWA = 折美元持仓 × 发行人风险权重；资本 = RWA × 8%。发行人是中华人民共和国财政部时权重为 0。",
-    "ccr_fx": "信用暴露 = max(0, 远端两腿折现轧差) + 流入腿澳门元 × 外汇附加因子；RWA = 信用暴露 × 对手权重。",
+    "ccr_fx": "信用暴露 = 远端两腿折现后的净流入（小于 0 则记 0）+ 流入金额 × 外汇附加因子；RWA = 信用暴露 × 对手风险权重。",
     "mr_repo": "资本 = 市值 × 特定风险因子 + 市值 × 期限档权重；RWA = 资本 × 12.5。",
     "mr_irs": "资本 = |浮动腿现值 × 期限档权重 − 固定腿现值 × 期限档权重| × 2；RWA = 资本 × 12.5。",
     "mr_fx": "单币种资本 = 净敞口 × 8%；单币种 RWA = 净敞口。全行另取多头合计与空头合计的较大者。",
@@ -126,12 +127,16 @@ def run_with_mappings(path: str | Path, specs: list[dict], rules: dict | None = 
     loaded = {sheet["name"]: sheet for sheet in _load_sheets(path, names, max_row=None)}
     tables = [_table_from_spec(loaded, spec) for spec in specs]
     packs = [_run_table(table, resolved) for table in tables]
+    rwa_rows = []
+    for pack in packs:
+        rwa_rows.extend(pack.pop("_rwa_rows", []))
     return {
         "mapping_source": "用户映射",
         "narrative": _narrative(packs),
         "packs": packs,
         "pack_count": len(packs),
         "row_count": sum(pack.get("row_count", len(pack["rows"])) for pack in packs),
+        "rwa_rows": rwa_rows,
     }
 
 
@@ -390,6 +395,8 @@ def run_agent(path: str | Path) -> dict:
     tables = _find_tables(sheets)
     mapping_source = "字段别名"
     packs = [_run_table(table, resolve_rules(None)) for table in tables]
+    for pack in packs:
+        pack.pop("_rwa_rows", None)
     return {
         "mapping_source": mapping_source,
         "narrative": _narrative(packs),
@@ -522,6 +529,16 @@ def _run_table(table: dict, rules: dict) -> dict:
         "total_rwa": sum(row["rwa"] for row in ok_rows),
         "total_capital": sum(row["capital"] for row in ok_rows),
         "notes": notes,
+        "_rwa_rows": [
+            {
+                "sheet": table["sheet"],
+                "header_row": table["header_row"],
+                "excel_row": row["excel_row"],
+                "rwa": row["rwa"],
+            }
+            for row in ok_rows
+            if isinstance(row.get("rwa"), (int, float))
+        ],
     }
     if product == "mr_fx" and ok_rows:
         pack["portfolio"] = fx_portfolio(ok_rows, rules["mr_fx"]["capital_ratio"])
@@ -638,6 +655,52 @@ def _narrative(packs: list[dict]) -> str:
             lines.append(f"其中 {bad} 笔缺字段，没有出数。")
     lines.append("信用风险的美元结果和市场风险的澳门元结果分列，不加总。")
     return "".join(lines)
+
+
+def write_rwa_workbook(source: str | Path, dest: str | Path, rows: list[dict]) -> int:
+    """Copy the uploaded workbook and append calculated RWA after each row."""
+    src = Path(source)
+    book = openpyxl.load_workbook(src, keep_vba=src.suffix.lower() == ".xlsm")
+    written = 0
+    try:
+        columns: dict[str, int] = {}
+        for item in rows:
+            sheet_name = str(item.get("sheet") or "")
+            if sheet_name not in book.sheetnames:
+                continue
+            ws = book[sheet_name]
+            column = columns.get(sheet_name)
+            if column is None:
+                column = _next_value_column(ws)
+                columns[sheet_name] = column
+            header_row = int(item["header_row"])
+            header = ws.cell(header_row, column)
+            if header.value in (None, ""):
+                header.value = "计算RWA"
+                header.font = Font(bold=True)
+            value = item.get("rwa")
+            if not isinstance(value, (int, float)):
+                continue
+            cell = ws.cell(int(item["excel_row"]), column, float(value))
+            cell.number_format = "#,##0.00"
+            written += 1
+        book.save(dest)
+    finally:
+        book.close()
+    return written
+
+
+def _next_value_column(ws) -> int:
+    last = 0
+    limit = min(ws.max_column or 1, 512)
+    for row in ws.iter_rows(max_col=limit):
+        for cell in reversed(row):
+            if cell.value not in (None, ""):
+                last = max(last, cell.column)
+                break
+    if last >= 512:
+        raise ValueError("这张表没有空列可以写入计算 RWA")
+    return last + 1
 
 
 def _money(amount: float | None, currency: str | None) -> str:

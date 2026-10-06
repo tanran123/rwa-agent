@@ -1,0 +1,852 @@
+{
+  "files": [
+    "034655699ae83025d64d6eb6fcb660961d9c77ea63a103cf230d562d4cce9b95",
+    "38d47477bc518d649a7c90c09adb41263fd75216409894271589d477509b1a26",
+    "d022b9c9b408676c776eb6847b79fede4d588befc00458c7097e634e1d6c43e1",
+    "4f3220a1d90447bae80105d1bb640ffb7036a5fcb3772f0bf0abcc97e587d938",
+    "6af11e708046119f8e58126f9f40fb4e91f420bf4fa13ce17a2e4add916834d2"
+  ],
+  "sources": [
+    "A-3.4-1 Analysis - Bank Exposure 2025(27-08-2026 11.31.42 PM).xlsx",
+    "A-3.4-2 Analysis - Corporate Exposure 2025(27-08-2026 11.31.42 PM).xlsx",
+    "A-3.4-3 Analysis - Off-Balance Exposure 2025(27-08-2026 11.31.43 PM).xlsx",
+    "A-3.4-4 Analysis - Retail Exposure 2025(27-08-2026 11.31.43 PM).xlsx",
+    "A-3.4-6 Analysis - Derivatives 2025(27-08-2026 11.31.44 PM).xlsx"
+  ],
+  "assets": {
+    "CLAIM_SOV": {
+      "label": "主权",
+      "counts": {
+        "0": 168,
+        "0.2": 19
+      }
+    },
+    "CLAIM_SME_RESIDENTIAL_MORTGAGE": {
+      "label": "中小企业住房按揭",
+      "counts": {
+        "0.85": 8,
+        "0.2": 15
+      }
+    },
+    "CLAIM_RETAIL_RESIDENTIAL_MORTGAGE": {
+      "label": "零售住房按揭",
+      "counts": {
+        "0.2": 1702,
+        "0.75": 111,
+        "0.25": 273,
+        "0.3": 346,
+        "0.4": 99,
+        "0.5": 17
+      }
+    },
+    "CLAIM_RESIDENTIAL_MORTGAGE": {
+      "label": "住房按揭",
+      "counts": {
+        "0.2": 24,
+        "1": 1
+      }
+    },
+    "CLAIM_PSE": {
+      "label": "公共部门",
+      "counts": {
+        "0.2": 242,
+        "0.5": 19
+      }
+    },
+    "CLAIM_RESIDENTIAL_MORTGAGE_IPRE": {
+      "label": "住房按揭（收益型地产）",
+      "counts": {
+        "1.5": 2,
+        "0.3": 5,
+        "0.45": 9
+      }
+    },
+    "CLAIM_SEC_CRE": {
+      "label": "证券化",
+      "counts": {
+        "0.6": 15,
+        "1.5": 1
+      }
+    },
+    "CLAIM_SME_SEC_CRE": {
+      "label": "中小企业证券化",
+      "counts": {
+        "0.85": 8,
+        "0.6": 3
+      }
+    },
+    "CLAIM_RETAIL_COMMERCIAL_MORTGAGE": {
+      "label": "CLAIM_RETAIL_COMMERCIAL_MORTGAGE",
+      "counts": {
+        "0.6": 3
+      }
+    },
+    "CLAIM_COMMERCIAL_MORTGAGE_IPRE": {
+      "label": "商业按揭（收益型地产）",
+      "counts": {
+        "1.5": 28,
+        "0.7": 12
+      }
+    },
+    "CLAIM_RETAIL_COMMERCIAL_MORTGAGE_OTH": {
+      "label": "零售商业按揭（其他）",
+      "counts": {
+        "0.75": 6,
+        "0": 2
+      }
+    },
+    "CLAIM_RETAIL_RESIDENTIAL_MORTGAGE_OTH": {
+      "label": "零售住房按揭（其他）",
+      "counts": {
+        "0.75": 52
+      }
+    },
+    "CLAIM_SME_RESIDENTIAL_MORTGAGE_OTH": {
+      "label": "中小企业住房按揭（其他）",
+      "counts": {
+        "0": 2,
+        "0.85": 4
+      }
+    },
+    "CLAIM_SME_COMMERCIAL_MORTGAGE_OTH": {
+      "label": "CLAIM_SME_COMMERCIAL_MORTGAGE_OTH",
+      "counts": {
+        "0.85": 2
+      }
+    },
+    "CLAIM_COMMERCIAL_MORTGAGE_OTH": {
+      "label": "商业按揭（其他）",
+      "counts": {
+        "1": 8
+      }
+    },
+    "CLAIM_RESIDENTIAL_MORTGAGE_OTH": {
+      "label": "住房按揭（其他）",
+      "counts": {
+        "1": 29
+      }
+    },
+    "CLAIM_RESIDENTIAL_MORTGAGE_IPRE_OTH": {
+      "label": "住房按揭（收益型地产，其他）",
+      "counts": {
+        "1.5": 5
+      }
+    },
+    "CLAIM_COMMERCIAL_MORTGAGE_IPRE_OTH": {
+      "label": "CLAIM_COMMERCIAL_MORTGAGE_IPRE_OTH",
+      "counts": {
+        "1.5": 2
+      }
+    },
+    "CLAIM_SME_RESIDENTIAL_MORTGAGE_ADC": {
+      "label": "中小企业住房按揭（发展）",
+      "counts": {
+        "1": 28,
+        "0": 1
+      }
+    },
+    "CLAIM_RESIDENTIAL_MORTGAGE_ADC": {
+      "label": "CLAIM_RESIDENTIAL_MORTGAGE_ADC",
+      "counts": {
+        "1": 1
+      }
+    },
+    "CLAIM_ADC": {
+      "label": "土地收购及发展",
+      "counts": {
+        "1.5": 39
+      }
+    },
+    "CLAIM_SME_ADC": {
+      "label": "中小企业土地发展",
+      "counts": {
+        "1.5": 7
+      }
+    },
+    "CLAIM_CORP": {
+      "label": "企业",
+      "counts": {
+        "0.5": 159,
+        "1": 2648,
+        "0": 162,
+        "0.2": 16,
+        "0.75": 110,
+        "1.5": 1282
+      }
+    },
+    "CLAIM_OTHER_EQT": {
+      "label": "其他股权",
+      "counts": {
+        "2.5": 14
+      }
+    },
+    "CLAIM_LT_REC_NMAIN_EQT": {
+      "label": "CLAIM_LT_REC_NMAIN_EQT",
+      "counts": {
+        "2.5": 1
+      }
+    },
+    "CLAIM_REGULATORY_CAPITAL_INSTR": {
+      "label": "监管资本工具",
+      "counts": {
+        "1.5": 5
+      }
+    },
+    "CLAIM_SUBORDINATED_DEBT": {
+      "label": "CLAIM_SUBORDINATED_DEBT",
+      "counts": {
+        "1.5": 1
+      }
+    },
+    "CASH": {
+      "label": "CASH",
+      "counts": {
+        "0": 2
+      }
+    },
+    "GOLD": {
+      "label": "GOLD",
+      "counts": {
+        "0": 2
+      }
+    },
+    "CLAIM_OTH_0": {
+      "label": "其他（0%）",
+      "counts": {
+        "0": 35
+      }
+    },
+    "CLAIM_OTH_100": {
+      "label": "其他（100%）",
+      "counts": {
+        "1": 50,
+        "0": 1,
+        "1.5": 3
+      }
+    },
+    "CLAIM_MDB_PREF_0": {
+      "label": "多边开发银行（0%）",
+      "counts": {
+        "0": 25
+      }
+    },
+    "CLAIM_MDB": {
+      "label": "多边开发银行",
+      "counts": {
+        "0.2": 5
+      }
+    },
+    "CLAIM_BANK": {
+      "label": "银行",
+      "counts": {
+        "1.5": 364,
+        "0.2": 687,
+        "0.5": 568,
+        "0.3": 1288,
+        "0": 38,
+        "1": 100,
+        "0.75": 28
+      }
+    },
+    "CLAIM_SME": {
+      "label": "中小企业",
+      "counts": {
+        "0.75": 9,
+        "0.85": 487,
+        "0": 20,
+        "1.5": 29
+      }
+    },
+    "CLAIM_CORP_PF": {
+      "label": "企业项目融资",
+      "counts": {
+        "1": 5
+      }
+    },
+    "CLAIM_CORP_PF_PO": {
+      "label": "企业项目融资（经营前）",
+      "counts": {
+        "1.3": 6
+      }
+    },
+    "CLAIM_RETAIL_OTHER_T": {
+      "label": "其他零售（过渡）",
+      "counts": {
+        "0.45": 68
+      }
+    },
+    "CLAIM_RETAIL_OTHER": {
+      "label": "其他零售",
+      "counts": {
+        "0.75": 20867,
+        "0": 14,
+        "1.125": 28,
+        "1.5": 148
+      }
+    },
+    "CLAIM_RETAIL_OTHER_100": {
+      "label": "其他零售（100%）",
+      "counts": {
+        "1": 840,
+        "0": 9,
+        "1.5": 10
+      }
+    },
+    "CASH_COL": {
+      "label": "CASH_COL",
+      "counts": {
+        "0.2": 2,
+        "0": 1
+      }
+    },
+    "CLAIM_CORP_OF": {
+      "label": "CLAIM_CORP_OF",
+      "counts": {
+        "1.5": 3
+      }
+    }
+  },
+  "ratings": {
+    "CLAIM_SOV||A1": {
+      "asset": "CLAIM_SOV",
+      "label": "主权",
+      "rating": "A1",
+      "counts": {
+        "0": 50,
+        "0.2": 10
+      }
+    },
+    "CLAIM_SOV||Aa1": {
+      "asset": "CLAIM_SOV",
+      "label": "主权",
+      "rating": "Aa1",
+      "counts": {
+        "0": 32
+      }
+    },
+    "CLAIM_SOV||A+": {
+      "asset": "CLAIM_SOV",
+      "label": "主权",
+      "rating": "A+",
+      "counts": {
+        "0": 1,
+        "0.2": 3
+      }
+    },
+    "CLAIM_SOV||F1+": {
+      "asset": "CLAIM_SOV",
+      "label": "主权",
+      "rating": "F1+",
+      "counts": {
+        "0": 4
+      }
+    },
+    "CLAIM_SOV||Aa3": {
+      "asset": "CLAIM_SOV",
+      "label": "主权",
+      "rating": "Aa3",
+      "counts": {
+        "0": 59
+      }
+    },
+    "CLAIM_SOV||AA+": {
+      "asset": "CLAIM_SOV",
+      "label": "主权",
+      "rating": "AA+",
+      "counts": {
+        "0": 6
+      }
+    },
+    "CLAIM_SOV||Aaa": {
+      "asset": "CLAIM_SOV",
+      "label": "主权",
+      "rating": "Aaa",
+      "counts": {
+        "0": 16
+      }
+    },
+    "CLAIM_PSE||Aa3": {
+      "asset": "CLAIM_PSE",
+      "label": "公共部门",
+      "rating": "Aa3",
+      "counts": {
+        "0.2": 219
+      }
+    },
+    "CLAIM_CORP||A1": {
+      "asset": "CLAIM_CORP",
+      "label": "企业",
+      "rating": "A1",
+      "counts": {
+        "0.5": 51,
+        "1": 11,
+        "0.75": 2
+      }
+    },
+    "CLAIM_LT_REC_NMAIN_EQT||A-": {
+      "asset": "CLAIM_LT_REC_NMAIN_EQT",
+      "label": "CLAIM_LT_REC_NMAIN_EQT",
+      "rating": "A-",
+      "counts": {
+        "2.5": 1
+      }
+    },
+    "CLAIM_REGULATORY_CAPITAL_INSTR||BBB+": {
+      "asset": "CLAIM_REGULATORY_CAPITAL_INSTR",
+      "label": "监管资本工具",
+      "rating": "BBB+",
+      "counts": {
+        "1.5": 1
+      }
+    },
+    "CLAIM_REGULATORY_CAPITAL_INSTR||A3": {
+      "asset": "CLAIM_REGULATORY_CAPITAL_INSTR",
+      "label": "监管资本工具",
+      "rating": "A3",
+      "counts": {
+        "1.5": 2
+      }
+    },
+    "CLAIM_REGULATORY_CAPITAL_INSTR||A1": {
+      "asset": "CLAIM_REGULATORY_CAPITAL_INSTR",
+      "label": "监管资本工具",
+      "rating": "A1",
+      "counts": {
+        "1.5": 2
+      }
+    },
+    "CLAIM_PSE||A1": {
+      "asset": "CLAIM_PSE",
+      "label": "公共部门",
+      "rating": "A1",
+      "counts": {
+        "0.5": 19
+      }
+    },
+    "CLAIM_PSE||AA+": {
+      "asset": "CLAIM_PSE",
+      "label": "公共部门",
+      "rating": "AA+",
+      "counts": {
+        "0.2": 23
+      }
+    },
+    "CLAIM_MDB_PREF_0||Aaa": {
+      "asset": "CLAIM_MDB_PREF_0",
+      "label": "多边开发银行（0%）",
+      "rating": "Aaa",
+      "counts": {
+        "0": 25
+      }
+    },
+    "CLAIM_MDB||AA+": {
+      "asset": "CLAIM_MDB",
+      "label": "多边开发银行",
+      "rating": "AA+",
+      "counts": {
+        "0.2": 5
+      }
+    },
+    "CLAIM_BANK||A1": {
+      "asset": "CLAIM_BANK",
+      "label": "银行",
+      "rating": "A1",
+      "counts": {
+        "0.2": 101,
+        "0.3": 549,
+        "0": 5,
+        "0.5": 14
+      }
+    },
+    "CLAIM_BANK||A+": {
+      "asset": "CLAIM_BANK",
+      "label": "银行",
+      "rating": "A+",
+      "counts": {
+        "0.2": 33,
+        "0.3": 268,
+        "0": 2
+      }
+    },
+    "CLAIM_BANK||Baa2": {
+      "asset": "CLAIM_BANK",
+      "label": "银行",
+      "rating": "Baa2",
+      "counts": {
+        "0.2": 26,
+        "0.5": 165
+      }
+    },
+    "CLAIM_BANK||A2": {
+      "asset": "CLAIM_BANK",
+      "label": "银行",
+      "rating": "A2",
+      "counts": {
+        "0.2": 21,
+        "0.5": 38,
+        "0.3": 20
+      }
+    },
+    "CLAIM_BANK||Aa2": {
+      "asset": "CLAIM_BANK",
+      "label": "银行",
+      "rating": "Aa2",
+      "counts": {
+        "0.2": 250,
+        "0.3": 87,
+        "0.5": 12
+      }
+    },
+    "CLAIM_BANK||A-": {
+      "asset": "CLAIM_BANK",
+      "label": "银行",
+      "rating": "A-",
+      "counts": {
+        "0.2": 15,
+        "0.5": 141,
+        "0.3": 75,
+        "1": 10
+      }
+    },
+    "CLAIM_BANK||BBB-": {
+      "asset": "CLAIM_BANK",
+      "label": "银行",
+      "rating": "BBB-",
+      "counts": {
+        "0.2": 3,
+        "0.5": 87,
+        "1": 18
+      }
+    },
+    "CLAIM_BANK||BB+": {
+      "asset": "CLAIM_BANK",
+      "label": "银行",
+      "rating": "BB+",
+      "counts": {
+        "0.2": 6,
+        "0.5": 3,
+        "1": 72
+      }
+    },
+    "CLAIM_BANK||AA": {
+      "asset": "CLAIM_BANK",
+      "label": "银行",
+      "rating": "AA",
+      "counts": {
+        "0.2": 26,
+        "0.3": 12
+      }
+    },
+    "CLAIM_BANK||A": {
+      "asset": "CLAIM_BANK",
+      "label": "银行",
+      "rating": "A",
+      "counts": {
+        "0.3": 171,
+        "0.2": 6
+      }
+    },
+    "CLAIM_BANK||AA-": {
+      "asset": "CLAIM_BANK",
+      "label": "银行",
+      "rating": "AA-",
+      "counts": {
+        "0.3": 54,
+        "0.2": 62
+      }
+    },
+    "CLAIM_BANK||Aa3": {
+      "asset": "CLAIM_BANK",
+      "label": "银行",
+      "rating": "Aa3",
+      "counts": {
+        "0.3": 8,
+        "0.2": 39
+      }
+    },
+    "CLAIM_BANK||BBB+": {
+      "asset": "CLAIM_BANK",
+      "label": "银行",
+      "rating": "BBB+",
+      "counts": {
+        "0.5": 83,
+        "0.2": 3
+      }
+    },
+    "CLAIM_BANK||A-1": {
+      "asset": "CLAIM_BANK",
+      "label": "银行",
+      "rating": "A-1",
+      "counts": {
+        "0.2": 1
+      }
+    },
+    "CLAIM_BANK||Aa1": {
+      "asset": "CLAIM_BANK",
+      "label": "银行",
+      "rating": "Aa1",
+      "counts": {
+        "0.2": 90,
+        "0.3": 18
+      }
+    },
+    "CLAIM_BANK||Baa3": {
+      "asset": "CLAIM_BANK",
+      "label": "银行",
+      "rating": "Baa3",
+      "counts": {
+        "0.5": 2
+      }
+    },
+    "CLAIM_BANK||A3": {
+      "asset": "CLAIM_BANK",
+      "label": "银行",
+      "rating": "A3",
+      "counts": {
+        "0.5": 4,
+        "0.3": 24
+      }
+    },
+    "CLAIM_BANK||BBB": {
+      "asset": "CLAIM_BANK",
+      "label": "银行",
+      "rating": "BBB",
+      "counts": {
+        "0.5": 6
+      }
+    },
+    "CLAIM_BANK||Baa1": {
+      "asset": "CLAIM_BANK",
+      "label": "银行",
+      "rating": "Baa1",
+      "counts": {
+        "0.5": 13,
+        "0.2": 1
+      }
+    },
+    "CLAIM_CORP||BBB-": {
+      "asset": "CLAIM_CORP",
+      "label": "企业",
+      "rating": "BBB-",
+      "counts": {
+        "1": 11,
+        "0.75": 3
+      }
+    },
+    "CLAIM_SME||BBB+": {
+      "asset": "CLAIM_SME",
+      "label": "中小企业",
+      "rating": "BBB+",
+      "counts": {
+        "0.75": 9
+      }
+    },
+    "CLAIM_CORP||A": {
+      "asset": "CLAIM_CORP",
+      "label": "企业",
+      "rating": "A",
+      "counts": {
+        "0.5": 18,
+        "0.75": 4
+      }
+    },
+    "CLAIM_CORP||A3": {
+      "asset": "CLAIM_CORP",
+      "label": "企业",
+      "rating": "A3",
+      "counts": {
+        "0.5": 20,
+        "1": 11,
+        "0.75": 6
+      }
+    },
+    "CLAIM_CORP||Baa1": {
+      "asset": "CLAIM_CORP",
+      "label": "企业",
+      "rating": "Baa1",
+      "counts": {
+        "1": 11,
+        "0.75": 10
+      }
+    },
+    "CLAIM_CORP||A2": {
+      "asset": "CLAIM_CORP",
+      "label": "企业",
+      "rating": "A2",
+      "counts": {
+        "0.5": 34,
+        "1": 6,
+        "0.75": 6
+      }
+    },
+    "CLAIM_CORP||Aa2": {
+      "asset": "CLAIM_CORP",
+      "label": "企业",
+      "rating": "Aa2",
+      "counts": {
+        "0.2": 6
+      }
+    },
+    "CLAIM_CORP||BBB+": {
+      "asset": "CLAIM_CORP",
+      "label": "企业",
+      "rating": "BBB+",
+      "counts": {
+        "0.75": 25,
+        "1": 9
+      }
+    },
+    "CLAIM_CORP||A-": {
+      "asset": "CLAIM_CORP",
+      "label": "企业",
+      "rating": "A-",
+      "counts": {
+        "0.5": 19,
+        "0.75": 16,
+        "1": 8
+      }
+    },
+    "CLAIM_CORP||BB+": {
+      "asset": "CLAIM_CORP",
+      "label": "企业",
+      "rating": "BB+",
+      "counts": {
+        "1": 3
+      }
+    },
+    "CLAIM_CORP||A+": {
+      "asset": "CLAIM_CORP",
+      "label": "企业",
+      "rating": "A+",
+      "counts": {
+        "0.5": 15
+      }
+    },
+    "CLAIM_CORP||BB": {
+      "asset": "CLAIM_CORP",
+      "label": "企业",
+      "rating": "BB",
+      "counts": {
+        "1": 3
+      }
+    },
+    "CLAIM_CORP||Baa2": {
+      "asset": "CLAIM_CORP",
+      "label": "企业",
+      "rating": "Baa2",
+      "counts": {
+        "0.75": 15,
+        "1": 4
+      }
+    },
+    "CLAIM_CORP||BBB": {
+      "asset": "CLAIM_CORP",
+      "label": "企业",
+      "rating": "BBB",
+      "counts": {
+        "0.75": 21,
+        "1": 5
+      }
+    },
+    "CLAIM_CORP||BB-": {
+      "asset": "CLAIM_CORP",
+      "label": "企业",
+      "rating": "BB-",
+      "counts": {
+        "1": 3
+      }
+    },
+    "CLAIM_CORP||AA+": {
+      "asset": "CLAIM_CORP",
+      "label": "企业",
+      "rating": "AA+",
+      "counts": {
+        "0.2": 1
+      }
+    },
+    "CLAIM_CORP||Aa3": {
+      "asset": "CLAIM_CORP",
+      "label": "企业",
+      "rating": "Aa3",
+      "counts": {
+        "0.2": 5
+      }
+    },
+    "CLAIM_CORP||AA-": {
+      "asset": "CLAIM_CORP",
+      "label": "企业",
+      "rating": "AA-",
+      "counts": {
+        "0.2": 4
+      }
+    },
+    "CLAIM_RETAIL_OTHER||A2": {
+      "asset": "CLAIM_RETAIL_OTHER",
+      "label": "其他零售",
+      "rating": "A2",
+      "counts": {
+        "0.75": 4
+      }
+    },
+    "CLAIM_RETAIL_OTHER||A": {
+      "asset": "CLAIM_RETAIL_OTHER",
+      "label": "其他零售",
+      "rating": "A",
+      "counts": {
+        "0.75": 2
+      }
+    },
+    "CLAIM_CORP||C": {
+      "asset": "CLAIM_CORP",
+      "label": "企业",
+      "rating": "C",
+      "counts": {
+        "1.5": 18
+      }
+    }
+  },
+  "ccf": {
+    "1directcreditsubstitutes": {
+      "label": "直接信用替代",
+      "item": "1.Direct credit substitutes",
+      "counts": {
+        "1": 142
+      }
+    },
+    "10aexemptedcommitment": {
+      "label": "可豁免承诺",
+      "item": "10a. Exempted commitment",
+      "counts": {
+        "0": 18
+      }
+    },
+    "10bothercommitmentsccfat10": {
+      "label": "其他承诺（10%档）",
+      "item": "10b. Other commitments (CCF at 10%)",
+      "counts": {
+        "0.1": 4504
+      }
+    },
+    "10cothercommitmentsccfat40": {
+      "label": "其他承诺（40%档）",
+      "item": "10c. Other commitments (CCF at 40%)",
+      "counts": {
+        "0.4": 40
+      }
+    },
+    "2transactionrelatedcontingencies": {
+      "label": "与交易相关的或有项目",
+      "item": "2.Transaction-related contingencies",
+      "counts": {
+        "0.5": 4
+      }
+    },
+    "3traderelatedcontingencies": {
+      "label": "与贸易相关的或有项目",
+      "item": "3.Trade-related contingencies",
+      "counts": {
+        "0.2": 22
+      }
+    }
+  }
+}

@@ -10,8 +10,11 @@
   <div class="workspace">
     <div class="main-col">
       <header class="page-head">
-        <h1>字段映射</h1>
-        <p>先选定类型列，再把明细字段对应到表头。右侧是规则库，需要时可以打开规则对话。</p>
+        <div>
+          <h1>字段映射</h1>
+          <p>先选定类型列，再把明细字段对应到表头。规则对话里可以上传 Excel，解析出的规则会直接写入规则库。</p>
+        </div>
+        <button type="button" id="weightOpen">权重表</button>
       </header>
       <main class="page-main">
         <div class="upload" id="dropZone">
@@ -24,7 +27,7 @@
         <div class="ai-mask" id="aiLoading" hidden>
           <div class="ai-dialog" role="status" aria-live="polite">
             <span class="spin big"></span>
-            <strong>正在使用AI思考匹配对应字段</strong>
+            <strong id="aiLoadingTitle">正在使用AI思考匹配对应字段</strong>
             <p id="aiLoadingText">正在根据公式字段匹配这张表的表头，完成后填入下方。</p>
           </div>
         </div>
@@ -43,18 +46,36 @@
   <div class="rule-modal" id="ruleChat" aria-hidden="true">
     <div class="rule-modal-mask" data-chat-close></div>
     <section class="rule-modal-panel" role="dialog" aria-modal="true" aria-labelledby="ruleChatTitle">
+      <div class="rule-drop-hint">松开即可解析这份 Excel</div>
       <div class="rule-chat-top">
         <div>
           <strong id="ruleChatTitle">规则对话</strong>
           <span id="ruleChatFocus">可以问任意一条规则</span>
         </div>
-        <button type="button" data-chat-close>关闭</button>
+        <div class="rule-chat-actions">
+          <button type="button" id="ruleChatFile">上传 Excel</button>
+          <button type="button" data-chat-close>关闭</button>
+          <input type="file" id="ruleExcelInput" accept=".xlsx,.xlsm" hidden />
+        </div>
       </div>
       <div class="rule-chat-log" id="ruleChatLog"></div>
       <div class="rule-chat-compose">
         <textarea id="ruleChatInput" rows="2" placeholder="例如：把正回购的资本比例改成 10%"></textarea>
         <button type="button" id="ruleChatSend">发送</button>
       </div>
+    </section>
+  </div>
+  <div class="rule-modal" id="weightDrawer" aria-hidden="true">
+    <div class="rule-modal-mask" data-weight-close></div>
+    <section class="rule-modal-panel weight-panel" role="dialog" aria-modal="true" aria-labelledby="weightTitle">
+      <div class="rule-chat-top">
+        <div>
+          <strong id="weightTitle">权重表</strong>
+          <span>2025 分析表里的风险权重和表外转换系数</span>
+        </div>
+        <button type="button" data-weight-close>关闭</button>
+      </div>
+      <div class="weight-body" id="weightBody"></div>
     </section>
   </div>
 
@@ -64,6 +85,8 @@
     const banner = document.getElementById("banner");
     const aiLoading = document.getElementById("aiLoading");
     const aiLoadingText = document.getElementById("aiLoadingText");
+    const aiLoadingTitle = document.getElementById("aiLoadingTitle");
+    const AI_TITLE_DEFAULT = "正在使用AI思考匹配对应字段";
     const mapperEl = document.getElementById("mapper");
     const kbEl = document.getElementById("kb");
     const kbRulesEl = document.getElementById("kbRules");
@@ -298,19 +321,19 @@
           ["RWA", "×", "8%", "=", "资本"],
         ],
         steps: [
-          { title: "持仓换成美元", fields: ["bond_ccy", "position_local"], line: "CNH 除以 7.2，其他币种用原币金额。" },
-          { title: "查风险权重", fields: ["issuer_name", "issuer_type", "rating_sp", "residual_months"], line: "财政部为 0。银行且不超过 3 个月走短期档。" },
+          { title: "把持仓折成美元", fields: ["bond_ccy", "position_local"], line: "人民币（CNH）金额除以 7.2 得到美元。其他币种按原来的金额计算。" },
+          { title: "按发行人查找风险权重", fields: ["issuer_name", "issuer_type", "rating_sp", "residual_months"], line: "发行人是财政部时，权重为 0。银行且剩余期限不超过 3 个月时，用短期档。" },
         ],
       },
       ccr_fx: {
         lines: [
-          ["折现轧差", "+", "流入 × 附加因子", "=", "信用暴露"],
-          ["信用暴露", "×", "对手权重", "=", "RWA"],
+          ["折现后的净流入", "+", "流入金额 × 附加因子", "=", "信用暴露"],
+          ["信用暴露", "×", "对手风险权重", "=", "RWA"],
         ],
         steps: [
-          { title: "远端两腿轧差", fields: ["far_ccy_1", "far_amt_1", "far_ccy_2", "far_amt_2", "residual_months"], line: "一正一负。折现后取流入减流出，小于 0 则为 0。" },
-          { title: "加附加因子", fields: ["residual_months"], line: "不超过 12 个月为 1%，不超过 60 个月为 5%，更长为 7.5%。" },
-          { title: "乘对手权重", fields: ["counterparty_type", "rating_fitch", "counterparty_name"], line: "银行按一般档，用 Fitch 评级查权重。" },
+          { title: "轧差远端两腿的折现金额", fields: ["far_ccy_1", "far_amt_1", "far_ccy_2", "far_amt_2", "residual_months"], line: "远端两腿一正一负，一边是将来流入，一边是将来流出。先折成澳门元，再按剩余期限折现，用流入减去流出。小于 0 时记为 0。" },
+          { title: "按剩余期限加上附加因子", fields: ["residual_months"], line: "不超过 12 个月按 1%，不超过 60 个月按 5%，更长按 7.5%。这个比例只乘在流入那一腿上。" },
+          { title: "乘上对手方的风险权重", fields: ["counterparty_type", "rating_fitch", "counterparty_name"], line: "银行对手按一般期限档，用 Fitch 评级查出风险权重。" },
         ],
       },
       mr_repo: {
@@ -319,8 +342,8 @@
           ["资本", "×", "12.5", "=", "RWA"],
         ],
         steps: [
-          { title: "特定风险", fields: ["mv_mop", "issuer_category"], line: "政府类 0%，投资级企业 1%。" },
-          { title: "期限档", fields: ["residual_months", "trade_id"], line: "用剩余期限查期限档权重，再乘市值。" },
+          { title: "计算特定风险", fields: ["mv_mop", "issuer_category"], line: "政府类发行人按 0%，投资级企业按 1%，再乘以市值。" },
+          { title: "按剩余期限套用期限档", fields: ["residual_months", "trade_id"], line: "用剩余期限查出对应的期限档权重，再乘以市值。" },
         ],
       },
       mr_irs: {
@@ -329,8 +352,8 @@
           ["资本", "×", "12.5", "=", "RWA"],
         ],
         steps: [
-          { title: "两条腿各自加权", fields: ["floating_pv", "floating_tenor_months", "fixed_pv", "fixed_tenor_months"], line: "现值 × 该腿期限档权重。" },
-          { title: "取差额", fields: ["direction", "trade_id"], line: "两腿加权头寸相减后取绝对值，再乘 2。" },
+          { title: "浮动腿和固定腿分别加权", fields: ["floating_pv", "floating_tenor_months", "fixed_pv", "fixed_tenor_months"], line: "每条腿用现值乘上该腿剩余期限对应的期限档权重。" },
+          { title: "取两腿差额", fields: ["direction", "trade_id"], line: "两条腿的加权头寸相减，取绝对值，再乘以 2。" },
         ],
       },
       mr_fx: {
@@ -339,8 +362,8 @@
           ["多头合计", "与", "空头合计", "取较大", "全行 RWA"],
         ],
         steps: [
-          { title: "单币种", fields: ["ccy", "nop_mop"], line: "这一行的 RWA 等于净敞口，资本是净敞口的 8%。" },
-          { title: "全行", fields: ["side", "trade_id"], line: "多头加总、空头加总，取较大的一边。" },
+          { title: "计算单个币种", fields: ["ccy", "nop_mop"], line: "这一行的 RWA 等于净敞口，资本等于净敞口的 8%。" },
+          { title: "汇总全行敞口", fields: ["side", "trade_id"], line: "多头和空头分别加总，取金额较大的一边作为全行 RWA。" },
         ],
       },
     };
@@ -390,6 +413,7 @@
     let ruleEdits = {};
     let editingId = "";
     let ruleDraft = null;
+    let weightCatalog = null;
 
     async function loadStoredRules() {
       const response = await fetch("/api/rules");
@@ -618,7 +642,7 @@
           + "<div class=\"scene-actions\">" + actions + "</div>"
           + "</article>";
       }).join("");
-      kbRulesEl.innerHTML = "<div class=\"kb-head\"><strong>规则库</strong><span>点开一条规则查看，或打开规则对话来修改</span></div>"
+      kbRulesEl.innerHTML = "<div class=\"kb-head\"><strong>规则库</strong><span>点开一条规则查看，或在规则对话里上传 Excel</span></div>"
         + "<div class=\"kb-body\">" + cards
         + (anySuggest && openId ? "<button type=\"button\" class=\"apply apply-all\" id=\"applyAll\">全部应用识别到的列</button>" : "")
         + "</div>";
@@ -746,7 +770,10 @@
 
     function renderResults(data) {
       narrative.textContent = data.narrative || "";
-      packsEl.innerHTML = (data.packs || []).map((pack) => {
+      const download = data.download_url
+        ? "<a class=\"btn show\" id=\"downloadRwa\" href=\"" + esc(data.download_url) + "\" download=\"" + esc(data.download_name || "计算RWA.xlsx") + "\">下载 Excel，计算 RWA 在每行后面</a>"
+        : "";
+      packsEl.innerHTML = download + (data.packs || []).map((pack) => {
         const rows = (pack.rows || []).map((row) => {
           const tag = row.status === "ok"
             ? "<span class=\"tag ok\">已计算</span>"
@@ -849,6 +876,8 @@
             "ok"
           );
         }
+        const weightNote = await noteWeightIngest(data.weights);
+        if (weightNote) setBanner(((banner.textContent || "") + " " + weightNote).trim(), "ok");
         mapperEl.scrollIntoView({ behavior: "smooth", block: "start" });
       } catch (error) {
         setBanner(error.message || "读取失败", "err");
@@ -985,6 +1014,7 @@
       });
       block.mapping = true;
       aiLoading.hidden = false;
+      aiLoadingTitle.textContent = AI_TITLE_DEFAULT;
       aiLoadingText.textContent = "正在为「" + titles.join("、") + "」匹配表头，完成后填入下方。";
       renderMapper();
       renderKnowledge();
@@ -1188,7 +1218,9 @@
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "计算失败");
         renderResults(data);
-        setBanner("已按当前映射算出 " + data.row_count + " 笔。", "ok");
+        const fileLink = document.getElementById("downloadRwa");
+        if (fileLink) fileLink.click();
+        setBanner("已按当前映射算出 " + data.row_count + " 笔。计算 RWA 已写在每行后面。", "ok");
         narrative.scrollIntoView({ behavior: "smooth", block: "start" });
       } catch (error) {
         setBanner(error.message || "计算失败", "err");
@@ -1298,6 +1330,48 @@
       if (editingId && event.target.closest("[data-rule-form]")) captureDraft(editingId);
     });
 
+    function learnChanges(updates) {
+      const lines = [];
+      for (const [id, patch] of Object.entries(updates || {})) {
+        const pack = catalog.find((item) => item.id === id);
+        const title = (patch && patch.title) || (pack && pack.title) || id;
+        for (const field of RULE_FIELDS[id] || []) {
+          if (!patch.params || patch.params[field.id] == null) continue;
+          lines.push(title + " · " + field.label + " → " + formatParam(field, patch.params[field.id]));
+        }
+        if (Array.isArray(patch.lines) && patch.lines.length) lines.push(title + " · 公式文字已更新");
+        if (Array.isArray(patch.steps) && patch.steps.length) lines.push(title + " · 步骤说明已更新");
+      }
+      return lines;
+    }
+
+    function weightTable(headers, rows) {
+      return "<div class=\"table-wrap show\"><table class=\"weight-table\"><thead><tr>"
+        + headers.map((header) => "<th>" + esc(header) + "</th>").join("")
+        + "</tr></thead><tbody>"
+        + rows.map((row) => "<tr>" + row.map((cell) => "<td>" + esc(cell) + "</td>").join("") + "</tr>").join("")
+        + "</tbody></table></div>";
+    }
+
+    function renderWeightBody() {
+      const host = document.getElementById("weightBody");
+      if (!host) return;
+      const catalog = weightCatalog;
+      if (!catalog) {
+        host.innerHTML = "<p class=\"weight-note\">权重表还没有载入。</p>";
+        return;
+      }
+      host.innerHTML = "<p class=\"weight-note\">" + esc(catalog.note) + "</p>"
+        + "<h3>资产类别</h3>"
+        + weightTable(["类别", "常用权重", "其他", "已分析笔数"], catalog.assets.map((item) => [item.label, item.display, item.others_display, String(item.count)]))
+        + "<h3>外部评级</h3>"
+        + "<p class=\"weight-note\">这里只列标准法参考权重，不按明细里出现次数归纳。企业档与企业分析表核对结果一致：A 为 50%，BBB 为 100%，C 为 150%。</p>"
+        + weightTable(["类别", "评级", "参考权重", "已分析笔数"], catalog.ratings.map((item) => [item.label, item.rating, item.reference_display || "—", String(item.count)]))
+        + "<h3>表外转换系数</h3>"
+        + "<p class=\"weight-note\">表外项目不直接按全额计算。先乘这个系数，换成相当于表内的金额，再去乘风险权重。</p>"
+        + weightTable(["项目", "转换系数"], catalog.ccf.map((item) => [item.label, item.display]));
+    }
+
     kbEl.addEventListener("click", (event) => {
       const act = event.target.closest("[data-act]");
       if (act) {
@@ -1356,7 +1430,7 @@
 
     let ruleMessages = [{
       role: "assistant",
-      content: "可以问某条规则怎么计算，也可以直接说要改的参数。例如：把正回购的资本比例改成 10%。",
+      content: "可以问某条规则怎么计算，也可以上传 Excel。解析出的规则会直接写入规则库。",
     }];
     let ruleChatBusy = false;
 
@@ -1398,10 +1472,8 @@
       log.scrollTop = log.scrollHeight;
     }
 
-    async function applyChatUpdate(index) {
-      const message = ruleMessages[index];
-      if (!message || !message.updates || message.applied) return;
-      for (const [id, patch] of Object.entries(message.updates)) {
+    async function writeUpdates(updates) {
+      for (const [id, patch] of Object.entries(updates)) {
         if (!DEFAULT_PARAMS[id]) continue;
         const view = ruleView(id);
         const saved = ruleEdits[id] || {};
@@ -1421,6 +1493,12 @@
         };
         await persistRule(id);
       }
+    }
+
+    async function applyChatUpdate(index) {
+      const message = ruleMessages[index];
+      if (!message || !message.updates || message.applied) return;
+      await writeUpdates(message.updates);
       message.applied = true;
       renderKnowledge();
       renderChat();
@@ -1442,9 +1520,7 @@
       ruleMessages.push({ role: "user", content: text });
       ruleMessages.push({ role: "assistant", content: "正在思考....", pending: true });
       renderChat();
-      ruleChatBusy = true;
-      const sendBtn = document.getElementById("ruleChatSend");
-      if (sendBtn) sendBtn.disabled = true;
+      setChatBusy(true);
       try {
         const history = ruleMessages
           .filter((item) => !item.pending && (item.role === "user" || item.role === "assistant"))
@@ -1471,8 +1547,7 @@
         ruleMessages = ruleMessages.filter((item) => !item.pending);
         ruleMessages.push({ role: "assistant", content: error.message || "对话失败" });
       } finally {
-        ruleChatBusy = false;
-        if (sendBtn) sendBtn.disabled = false;
+        setChatBusy(false);
         renderChat();
         input.focus();
       }
@@ -1481,16 +1556,114 @@
     const ruleModal = document.getElementById("ruleChat");
 
     function openRuleChat() {
+      closeWeightDrawer();
       ruleModal.classList.add("open");
       ruleModal.setAttribute("aria-hidden", "false");
       document.getElementById("ruleChatInput").focus();
     }
 
     function closeRuleChat() {
-      ruleModal.classList.remove("open");
+      ruleModal.classList.remove("open", "file-drag");
       ruleModal.setAttribute("aria-hidden", "true");
     }
 
+    function isFileDrag(event) {
+      const types = event.dataTransfer && event.dataTransfer.types;
+      return !!(types && Array.from(types).includes("Files"));
+    }
+
+    function setChatBusy(busy) {
+      ruleChatBusy = busy;
+      const sendBtn = document.getElementById("ruleChatSend");
+      const fileBtn = document.getElementById("ruleChatFile");
+      if (sendBtn) sendBtn.disabled = busy;
+      if (fileBtn) fileBtn.disabled = busy;
+    }
+
+    async function sendRuleExcel(file) {
+      if (ruleChatBusy) return;
+      const name = (file && file.name) || "";
+      if (!/\.(xlsx|xlsm)$/i.test(name)) {
+        ruleMessages.push({ role: "assistant", content: "请上传 .xlsx 或 .xlsm。" });
+        renderChat();
+        return;
+      }
+      try {
+        await loadStoredRules();
+      } catch (error) {
+        ruleMessages.push({ role: "assistant", content: error.message || "读取规则失败" });
+        renderChat();
+        return;
+      }
+      ruleMessages.push({ role: "user", content: "上传了规则 Excel：" + name });
+      ruleMessages.push({ role: "assistant", content: "正在解析这份 Excel....", pending: true });
+      renderChat();
+      setChatBusy(true);
+      const body = new FormData();
+      body.append("file", file);
+      try {
+        const response = await fetch("/api/rules/learn", { method: "POST", body });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "解析规则失败");
+        let wrote = false;
+        if (data.updates) {
+          editingId = "";
+          ruleDraft = null;
+          await writeUpdates(data.updates);
+          wrote = true;
+          renderKnowledge();
+        }
+        const changes = learnChanges(data.updates);
+        const weightNote = await noteWeightIngest(data.weights);
+        const content = [data.reply || "", changes.join("\n"), weightNote].filter(Boolean).join("\n");
+        ruleMessages = ruleMessages.filter((item) => !item.pending);
+        ruleMessages.push({
+          role: "assistant",
+          content: content || "没有从这份 Excel 里解析出规则。",
+          applied: wrote,
+        });
+        if (wrote) setBanner("已把 Excel 里解析出的规则写入规则库。", "ok");
+      } catch (error) {
+        ruleMessages = ruleMessages.filter((item) => !item.pending);
+        ruleMessages.push({ role: "assistant", content: error.message || "解析规则失败" });
+      } finally {
+        setChatBusy(false);
+        renderChat();
+      }
+    }
+
+    document.getElementById("ruleChatFile").addEventListener("click", () => {
+      if (ruleChatBusy) return;
+      document.getElementById("ruleExcelInput").click();
+    });
+    document.getElementById("ruleExcelInput").addEventListener("change", () => {
+      const input = document.getElementById("ruleExcelInput");
+      const file = input.files[0];
+      input.value = "";
+      if (file) sendRuleExcel(file);
+    });
+    ruleModal.addEventListener("dragenter", (event) => {
+      if (!isFileDrag(event)) return;
+      event.preventDefault();
+      ruleModal.classList.add("file-drag");
+    });
+    ruleModal.addEventListener("dragover", (event) => {
+      if (!isFileDrag(event)) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+      ruleModal.classList.add("file-drag");
+    });
+    ruleModal.addEventListener("dragleave", (event) => {
+      if (event.relatedTarget && ruleModal.contains(event.relatedTarget)) return;
+      ruleModal.classList.remove("file-drag");
+    });
+    ruleModal.addEventListener("drop", (event) => {
+      ruleModal.classList.remove("file-drag");
+      const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
+      if (!file) return;
+      event.preventDefault();
+      sendRuleExcel(file);
+    });
     document.getElementById("ruleChatOpen").addEventListener("click", openRuleChat);
     document.getElementById("ruleChatSend").addEventListener("click", sendRuleChat);
     document.getElementById("ruleChatInput").addEventListener("keydown", (event) => {
@@ -1499,8 +1672,28 @@
         sendRuleChat();
       }
     });
+    const weightDrawer = document.getElementById("weightDrawer");
+
+    function openWeightDrawer() {
+      closeRuleChat();
+      renderWeightBody();
+      weightDrawer.classList.add("open");
+      weightDrawer.setAttribute("aria-hidden", "false");
+    }
+
+    function closeWeightDrawer() {
+      weightDrawer.classList.remove("open");
+      weightDrawer.setAttribute("aria-hidden", "true");
+    }
+
+    document.getElementById("weightOpen").addEventListener("click", openWeightDrawer);
+    weightDrawer.addEventListener("click", (event) => {
+      if (event.target.closest("[data-weight-close]")) closeWeightDrawer();
+    });
     document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape" && ruleModal.classList.contains("open")) closeRuleChat();
+      if (event.key !== "Escape") return;
+      if (weightDrawer.classList.contains("open")) closeWeightDrawer();
+      else if (ruleModal.classList.contains("open")) closeRuleChat();
     });
     ruleModal.addEventListener("click", (event) => {
       if (event.target.closest("[data-chat-close]")) {
@@ -1515,7 +1708,26 @@
     });
     renderChat();
 
-    Promise.all([loadCatalog(), loadStoredRules()]).then(renderKnowledge).catch(() => setBanner("规则库加载失败", "err"));
+    async function noteWeightIngest(info) {
+      if (!info || (!info.added && !info.duplicate)) return "";
+      if (info.duplicate) return "这份 Excel 的权重已经在权重表里，没有重复计入。";
+      await loadWeights();
+      const parts = [];
+      if (info.asset_rows) parts.push("资产类别 " + info.asset_rows + " 笔");
+      if (info.rating_rows) parts.push("评级 " + info.rating_rows + " 笔");
+      if (info.ccf_rows) parts.push("表外 " + info.ccf_rows + " 笔");
+      return "已并入权重表" + (parts.length ? "：" + parts.join("，") : "") + "。";
+    }
+
+    async function loadWeights() {
+      const response = await fetch("/api/weights");
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "读取权重表失败");
+      weightCatalog = data;
+      renderWeightBody();
+    }
+
+    Promise.all([loadCatalog(), loadStoredRules(), loadWeights()]).then(renderKnowledge).catch(() => setBanner("规则库加载失败", "err"));
   </script>
   <style>
     body { background: #f3f5f8; color: #1c2434; }
@@ -1532,9 +1744,22 @@
       color: var(--text);
     }
     .main-col { flex: 1; min-width: 0; padding: 20px 24px 48px; }
-    .page-head { margin-bottom: 16px; }
+    .page-head { margin-bottom: 16px; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
     .page-head h1 { margin: 0; font-size: 20px; font-weight: 650; }
     .page-head p { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+    #weightOpen {
+      flex: none;
+      background: #2f5fbf;
+      color: #fff;
+      border: 1px solid #2f5fbf;
+      border-radius: 8px;
+      padding: 8px 14px;
+      font: inherit;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    #weightOpen:hover { background: #274f9e; }
     .page-main { background: transparent; border: none; box-shadow: none; padding: 0; }
     .upload {
       border: 1.5px dashed #d5deea;
@@ -1567,7 +1792,7 @@
     #kbRules { flex: 1; min-height: 0; display: flex; flex-direction: column; }
     .kb-body { flex: 1; overflow: auto; padding: 12px 12px 24px; background: transparent; }
     .kb-tools { padding: 12px 12px 0; }
-    .kb-tools button, .rule-chat-top > button {
+    .kb-tools button, .rule-chat-top button {
       background: #fff;
       border: 1px solid #e3e8f0;
       border-radius: 8px;
@@ -1620,6 +1845,31 @@
       transition: transform 0.22s ease;
     }
     .rule-modal.open .rule-modal-panel { transform: translateX(0); }
+    .rule-drop-hint {
+      display: none;
+      position: absolute;
+      inset: 10px;
+      z-index: 3;
+      border: 2px dashed #2f5fbf;
+      border-radius: 12px;
+      background: rgba(234, 240, 250, 0.94);
+      color: #2f5fbf;
+      font-size: 15px;
+      font-weight: 650;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+    }
+    .rule-modal.file-drag .rule-drop-hint { display: flex; }
+    .rule-modal.file-drag .rule-modal-panel { border-color: #2f5fbf; }
+    .rule-chat-actions { display: flex; align-items: center; gap: 8px; flex: none; }
+    #ruleChatFile {
+      background: #2f5fbf;
+      color: #fff;
+      border-color: #2f5fbf;
+    }
+    #ruleChatFile:hover { background: #274f9e; }
+    #ruleChatFile:disabled { background: #e5e7eb; color: #9ca3af; cursor: default; }
     .rule-chat-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
     .rule-chat-top strong { display: block; font-size: 16px; }
     .rule-chat-top span { display: block; margin-top: 2px; font-size: 12px; color: var(--muted); }
@@ -1756,6 +2006,13 @@
     .rule-params span { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
     .rule-params b { font-size: 13px; font-weight: 600; }
     .scene-more { margin-top: 10px; }
+    .weight-panel { width: min(860px, 100vw); }
+    .weight-body { flex: 1; min-height: 0; overflow: auto; }
+    .weight-body h3 { margin: 16px 0 8px; font-size: 14px; }
+    .weight-note { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.5; }
+    .weight-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .weight-table th, .weight-table td { padding: 6px 4px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+    .weight-table th { color: var(--muted); font-weight: 500; }
     .kb-card {
       background: #fff;
       border: 1px solid var(--border);
@@ -1967,6 +2224,7 @@
       .kb { width: auto; height: auto; position: static; border-left: none; border-top: 1px solid var(--border); }
       #kbRules { min-height: 280px; }
       .rule-modal-panel { width: min(420px, 100vw); }
+      .weight-panel { width: min(860px, 100vw); }
       .map-grid { grid-template-columns: 1fr; }
     }
   </style>
