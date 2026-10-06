@@ -23,8 +23,9 @@ python app.py
 
 浏览器打开 http://127.0.0.1:8766 。
 
-`.env` 放在本目录即可。需要填写 `DASHSCOPE_API_KEY` 后，字段映射和规则对话才会调用模型。
+密钥写在 `.env` 的 `DASHSCOPE_API_KEY`。启动时按这个顺序读取，已经有值的变量不会被后面的文件覆盖：
 
-## 上传到 GitHub
+1. 上一级目录的 `.env`（本仓库的父目录）
+2. 本目录的 `.env`（与 `app.py` 同级，由 `.env.example` 复制）
 
-只上传这个 `rwa_service` 文件夹。不要上传上一级目录：那里有本机的 `.env` 和其他项目文件。客户明细工作簿也不要放进仓库，`.gitignore` 已忽略 `.env`、`.xlsx` 和 `.xlsm`。
+本目录还没有 `.env` 时，先执行上面的 `cp .env.example .env`，再把密钥写进去。填好之后，字段映射和规则对话才会调用模型。`QWEN_API_KEY` 也可以，会在 `DASHSCOPE_API_KEY` 为空时使用。
