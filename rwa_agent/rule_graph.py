@@ -188,6 +188,69 @@ def _line_list(raw: object) -> list[str]:
     return lines
 
 
+def _field_tables(raw: object) -> dict:
+    tables = {}
+    if not isinstance(raw, dict):
+        return tables
+    for key, value in list(raw.items())[:24]:
+        field_id = str(key or "")
+        if not re.fullmatch(r"^[a-z][a-z0-9_]{1,40}$", field_id):
+            continue
+        table = str(value or "").strip()
+        if table not in {"standard", "assets", "ratings", "ccf"}:
+            continue
+        tables[field_id] = table
+    return tables
+
+
+def _field_names(raw: object) -> dict:
+    names = {}
+    if not isinstance(raw, dict):
+        return names
+    for key, value in list(raw.items())[:24]:
+        field_id = str(key or "")
+        if not re.fullmatch(r"^[a-z][a-z0-9_]{1,40}$", field_id):
+            continue
+        label = str(value or "").strip()[:40]
+        if label:
+            names[field_id] = label
+    return names
+
+
+def _setup_list(raw: object) -> list[dict]:
+    rows = []
+    if not isinstance(raw, list):
+        return rows
+    field_id = re.compile(r"^[a-z][a-z0-9_]{1,40}$")
+    for item in raw[:6]:
+        if not isinstance(item, dict):
+            continue
+        fields = []
+        for value in item.get("fields") or []:
+            token = str(value or "")
+            if field_id.fullmatch(token) and token not in fields:
+                fields.append(token)
+            if len(fields) == 4:
+                break
+        params = []
+        incoming = item.get("params")
+        if isinstance(item.get("param"), str):
+            incoming = [item.get("param")]
+        if not isinstance(incoming, list):
+            incoming = []
+        for value in incoming:
+            token = str(value or "")
+            if field_id.fullmatch(token) and token not in params:
+                params.append(token)
+            if len(params) == 4:
+                break
+        table = str(item.get("table") or "").strip()
+        if table not in {"standard", "assets", "ratings", "ccf"}:
+            table = ""
+        rows.append({"fields": fields, "params": params, "table": table})
+    return rows
+
+
 def _step_logic(raw: dict) -> list[dict]:
     found = []
     seen = set()
@@ -212,6 +275,9 @@ def _step_logic(raw: dict) -> list[dict]:
             "lines": _line_list(item.get("lines")),
             "fields": _field_list(item.get("fields")),
             "formula": _line_list(item.get("formula")),
+            "tables": _field_tables(item.get("tables")),
+            "names": _field_names(item.get("names")),
+            "setup": _setup_list(item.get("setup")),
         })
     return found
 
