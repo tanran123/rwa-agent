@@ -35,7 +35,9 @@ _load_local_env()
 from flask import Flask, jsonify, request, send_file, send_from_directory
 
 from rwa_agent.agent import field_catalog, inspect_workbook, list_type_columns, run_with_mappings, write_rwa_workbook
+from rwa_agent.compare import compare_module, module_catalog, write_comparison
 from rwa_agent.library import calculation_rules, ensure_library, load_library, reset_rule, save_rule
+from rwa_agent.rule_graph import load_graph, save_graph
 from rwa_agent.mapper import suggest_mappings
 from rwa_agent.rule_chat import discuss_rules
 from rwa_agent.rule_learn import learn_from_excel
@@ -51,6 +53,8 @@ app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_MB * 1024 * 1024
 
 # upload_id -> (workbook path, work dir, original filename)
 UPLOADS: dict[str, tuple[Path, Path, str]] = {}
+# upload_id -> exposure grid from the latest detail calculation
+EXPOSURES: dict[str, dict] = {}
 
 
 def _ingest_weights(path: Path, filename: str) -> dict:
@@ -175,6 +179,23 @@ def rules_library():
     return jsonify({"rules": library})
 
 
+@app.get("/api/rules/graph")
+def rules_graph_get():
+    return jsonify({"graph": load_graph()})
+
+
+@app.put("/api/rules/graph")
+def rules_graph_save():
+    data = request.get_json(silent=True) or {}
+    try:
+        graph = save_graph(data.get("graph"))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": f"写入图谱失败: {e}"}), 500
+    return jsonify({"graph": graph})
+
+
 @app.put("/api/rules")
 def rules_save():
     data = request.get_json(silent=True) or {}
@@ -232,6 +253,11 @@ def rules_chat():
     return jsonify(result)
 
 
+@app.get("/api/modules")
+def modules():
+    return jsonify({"modules": module_catalog()})
+
+
 @app.post("/api/calculate")
 def calculate():
     data = request.get_json(silent=True) or {}
@@ -241,7 +267,7 @@ def calculate():
         return jsonify({"error": "请重新上传文件"}), 400
     specs = data.get("tables")
     if not isinstance(specs, list) or not specs:
-        return jsonify({"error": "请至少添加一张计算表并完成字段映射"}), 400
+        return jsonify({"error": "请至少添加一张计算表并对应表头"}), 400
     try:
         result = run_with_mappings(stored[0], specs, calculation_rules())
     except ValueError as e:
@@ -259,7 +285,57 @@ def calculate():
         return jsonify({"error": f"写出 Excel 失败: {e}"}), 500
     result["download_url"] = f"/api/result/{upload_id}"
     result["download_name"] = _result_name(original)
+    exposure = result.get("exposure") or {"currencies": []}
+    exposure["module"] = str(data.get("module") or "")
+    EXPOSURES[upload_id] = exposure
     return jsonify(result)
+
+
+@app.post("/api/compare")
+def compare():
+    upload_id = str(request.form.get("upload_id") or "")
+    stored = UPLOADS.get(upload_id)
+    exposure = EXPOSURES.get(upload_id)
+    if stored is None or exposure is None:
+        return jsonify({"error": "请先上传明细并完成计算"}), 400
+    upload = request.files.get("file")
+    if upload is None or upload.filename == "":
+        return jsonify({"error": "请上传监管结果"}), 400
+    name = upload.filename or ""
+    if not name.lower().endswith((".xlsx", ".xlsm")):
+        return jsonify({"error": "监管结果仅支持 .xlsx 或 .xlsm"}), 400
+    reg_path = stored[1] / "regulatory.xlsx"
+    upload.save(reg_path)
+    try:
+        module = str(request.form.get("module") or "")
+        comparison = compare_module(module, exposure, reg_path)
+        dest = stored[1] / "comparison.xlsx"
+        write_comparison(dest, comparison)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": f"对比失败: {e}"}), 500
+    comparison["download_url"] = f"/api/compare/{upload_id}"
+    comparison["download_name"] = _compare_name(stored[2] if len(stored) > 2 else "结果.xlsx")
+    return jsonify(comparison)
+
+
+@app.get("/api/compare/<upload_id>")
+def compare_file(upload_id: str):
+    stored = UPLOADS.get(upload_id)
+    if stored is None:
+        return jsonify({"error": "请重新上传文件"}), 400
+    path = stored[1] / "comparison.xlsx"
+    if not path.is_file():
+        return jsonify({"error": "还没有可下载的对比结果"}), 404
+    name = _compare_name(stored[2] if len(stored) > 2 else "结果.xlsx")
+    return send_file(path, as_attachment=True, download_name=name)
+
+
+def _compare_name(filename: str) -> str:
+    stem = Path(filename).stem or "结果"
+    stem = re.sub(r"[\\/:*?\"<>|]+", "_", stem).strip()[:80] or "结果"
+    return f"{stem}_对比.xlsx"
 
 
 @app.get("/api/result/<upload_id>")

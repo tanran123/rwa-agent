@@ -4,26 +4,67 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>市场风险 RWA</title>
-  <link rel="stylesheet" href="/shared.css" />
+  <link rel="stylesheet" href="/shared.css?v=fold4" />
 </head>
 <body>
   <div class="workspace">
+    <header class="app-top">
+      <div class="brand">
+        <span class="brand-mark">RWA</span>
+        <div class="brand-text">
+          <strong>市场风险 RWA</strong>
+          <span>澳门金管局 · 资本计量</span>
+        </div>
+      </div>
+      <nav class="top-nav" aria-label="页面">
+        <button type="button" data-go="map" data-nav="map">计算</button>
+        <button type="button" data-go="rules" data-nav="rules">规则库</button>
+        <button type="button" id="weightOpen" data-nav="weights" data-open-weights>权重表</button>
+      </nav>
+    </header>
+    <section class="view" id="viewMap">
     <div class="main-col">
       <header class="page-head">
         <div>
-          <h1>字段映射</h1>
-          <p>先选定类型列，再把明细字段对应到表头。规则对话里可以上传 Excel，解析出的规则会直接写入规则库。</p>
+          <h1>计算</h1>
+          <p>点开一个模块。上面的导览标出当前步骤，点已经走到的步骤可以回去看。</p>
         </div>
-        <button type="button" id="weightOpen">权重表</button>
       </header>
       <main class="page-main">
+        <div class="banner wait" id="banner" data-banner></div>
+        <section id="modulePicker">
+          <div id="moduleList" class="fold-list"></div>
+        </section>
+        <div id="moduleWork" hidden>
+        <nav class="guide-bar" id="guideBar" aria-label="计算步骤">
+          <button type="button" class="guide-step is-current" data-guide="0">
+            <span class="guide-no">1</span>
+            <span class="guide-copy"><strong>明细</strong><small>上传并对应表头</small></span>
+          </button>
+          <span class="guide-sep" aria-hidden="true">›</span>
+          <button type="button" class="guide-step" data-guide="1" disabled>
+            <span class="guide-no">2</span>
+            <span class="guide-copy"><strong>计算</strong><small>按规则得出 RWA</small></span>
+          </button>
+          <span class="guide-sep" aria-hidden="true">›</span>
+          <button type="button" class="guide-step" data-guide="2" disabled>
+            <span class="guide-no">3</span>
+            <span class="guide-copy"><strong>监管结果</strong><small>上传监管回报</small></span>
+          </button>
+          <span class="guide-sep" aria-hidden="true">›</span>
+          <button type="button" class="guide-step" data-guide="3" disabled>
+            <span class="guide-no">4</span>
+            <span class="guide-copy"><strong>偏离</strong><small>对照并导出</small></span>
+          </button>
+        </nav>
+        <section class="calc-step" id="stepDetail">
+          <p class="card-desc">上传这个模块的明细，对应表头，再按规则计算每一笔的 RWA。</p>
         <div class="upload" id="dropZone">
-          <p class="upload-title">上传工作簿</p>
+          <p class="upload-title">上传明细</p>
           <p class="upload-hint">点击选择，或把 .xlsx、.xlsm 拖到这里。上传后先匹配类型，再对应表头。</p>
         </div>
         <input type="file" id="fileInput" accept=".xlsx,.xlsm" />
 
-        <div class="banner wait" id="banner"></div>
         <div class="ai-mask" id="aiLoading" hidden>
           <div class="ai-dialog" role="status" aria-live="polite">
             <span class="spin big"></span>
@@ -32,16 +73,46 @@
           </div>
         </div>
         <div id="mapper"></div>
-        <p class="narrative" id="narrative"></p>
-        <div id="packs"></div>
+        </section>
+        <section class="calc-step" id="stepCalc" hidden>
+          <p class="narrative" id="narrative"></p>
+          <div id="packs"></div>
+          <div id="underlying"></div>
+        </section>
+        <section class="calc-step" id="stepReturn" hidden>
+          <p class="card-desc" id="returnHint">上传这个模块的监管回报。</p>
+          <div class="upload" id="returnZone">
+            <p class="upload-title">上传监管结果</p>
+            <p class="upload-hint">点击选择，或把监管结果工作簿拖到这里。</p>
+          </div>
+          <input type="file" id="returnInput" accept=".xlsx,.xlsm" />
+          <div id="returnGrid"></div>
+        </section>
+        <section class="calc-step" id="stepVariance" hidden>
+          <p class="card-desc">偏离 =（明细统计 − 监管结果）/ 监管结果。监管结果为 0 时记 0。</p>
+          <div id="varianceGrid"></div>
+        </section>
+        </div>
       </main>
     </div>
-    <aside class="kb" id="kb">
-      <div class="kb-tools">
-        <button type="button" id="ruleChatOpen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6.5A2.5 2.5 0 0 1 7.5 4h9A2.5 2.5 0 0 1 19 6.5v6A2.5 2.5 0 0 1 16.5 15H12l-3.6 2.7c-.7.5-1.7 0-1.7-.8V15H7.5A2.5 2.5 0 0 1 5 12.5v-6Z"/></svg>规则对话</button>
+    </section>
+    <section class="view" id="viewRules" hidden>
+      <div class="main-col rules-wrap">
+        <header class="page-head">
+          <div>
+            <h1>规则库</h1>
+            <p>左侧是知识库的层级。点一条，图谱上会打开对应的内容。</p>
+          </div>
+          <div class="head-actions">
+            <button type="button" class="head-btn head-btn-primary" id="ruleChatOpen">规则对话</button>
+          </div>
+        </header>
+        <div class="banner" data-banner></div>
+        <div class="kb" id="kb">
+          <div id="kbRules"></div>
+        </div>
       </div>
-      <div id="kbRules"></div>
-    </aside>
+    </section>
   </div>
   <div class="rule-modal" id="ruleChat" aria-hidden="true">
     <div class="rule-modal-mask" data-chat-close></div>
@@ -92,6 +163,11 @@
     const kbRulesEl = document.getElementById("kbRules");
     const narrative = document.getElementById("narrative");
     const packsEl = document.getElementById("packs");
+    const returnZone = document.getElementById("returnZone");
+    const returnInput = document.getElementById("returnInput");
+    const underlyingEl = document.getElementById("underlying");
+    const returnGridEl = document.getElementById("returnGrid");
+    const varianceGridEl = document.getElementById("varianceGrid");
 
     let catalog = [];
     let workbook = null;
@@ -100,18 +176,26 @@
     let activeIndex = 0;
     let knowledgePack = null;
     let busy = false;
+    let regulatoryFile = null;
+    let currentModule = null;
+    let modules = [];
+    let guideIndex = 0;
+    let guideMax = 0;
+    const GUIDE_PANELS = ["stepDetail", "stepCalc", "stepReturn", "stepVariance"];
 
     function setBanner(text, type) {
-      banner.className = "banner" + (type ? " " + type : "");
-      if (!text) {
-        banner.textContent = "";
-        return;
-      }
-      if (type === "wait") {
-        banner.innerHTML = "<span class=\"spin\"></span><span>" + esc(text) + "</span>";
-        return;
-      }
-      banner.textContent = text;
+      document.querySelectorAll("[data-banner]").forEach((el) => {
+        el.className = "banner" + (type ? " " + type : "");
+        if (!text) {
+          el.textContent = "";
+          return;
+        }
+        if (type === "wait") {
+          el.innerHTML = "<span class=\"spin\"></span><span>" + esc(text) + "</span>";
+          return;
+        }
+        el.textContent = text;
+      });
     }
 
     function esc(value) {
@@ -414,12 +498,57 @@
     let editingId = "";
     let ruleDraft = null;
     let weightCatalog = null;
+    let graphConfig = { positions: {}, nodes: [], edges: [], routes: {}, labels: {} };
+    let graphModel = { nodes: [], edges: [] };
+    let graphSelected = "";
+    let graphOpen = new Set();
+    let treeOpen = new Set(["cat:credit", "cat:market"]);
+    let graphZoom = 1;
+    let graphDrag = null;
+    let graphSaveTimer = 0;
+    const GRAPH_SIZE = {
+      category: { w: 128, h: 44 },
+      rule: { w: 176, h: 72 },
+      basis: { w: 560, h: 72 },
+      step: { w: 200, h: 86 },
+      field: { w: 136, h: 48 },
+      param: { w: 156, h: 54 },
+      formula: { w: 220, h: 90 },
+      custom: { w: 176, h: 74 },
+      "custom-step": { w: 176, h: 74 },
+      "custom-param": { w: 156, h: 64 },
+    };
+    const GRAPH_KIND = {
+      category: "类别",
+      basis: "监管依据",
+      rule: "规则",
+      step: "步骤",
+      field: "字段",
+      param: "参数",
+      formula: "公式",
+      custom: "知识点",
+      "custom-step": "步骤",
+      "custom-param": "参数",
+    };
+
+    function isFreeKind(kind) {
+      return kind === "custom" || kind === "custom-step" || kind === "custom-param";
+    }
 
     async function loadStoredRules() {
       const response = await fetch("/api/rules");
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "读取规则失败");
       ruleEdits = data.rules || {};
+    }
+
+    async function loadGraphConfig() {
+      const response = await fetch("/api/rules/graph");
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "读取图谱失败");
+      graphConfig = data.graph || { positions: {}, nodes: [], edges: [], routes: {}, labels: {} };
+      graphConfig.routes = graphConfig.routes || {};
+      graphConfig.labels = graphConfig.labels || {};
     }
 
     async function persistRule(id) {
@@ -582,86 +711,1194 @@
 
     function renderKnowledge() {
       if (editingId) captureDraft(editingId);
-      if (!catalog.length) {
-        kbRulesEl.innerHTML = "";
-        return;
-      }
-      const focusId = document.activeElement && document.activeElement.id;
-      const block = activeBlock();
-      const choices = block ? columnChoices(block.sheet, block.headerRow) : [];
-      const choiceText = Object.fromEntries(choices);
-      const openId = expandedId();
-      let anySuggest = false;
-      const cards = catalog.map((pack) => {
-        const view = ruleView(pack.id);
-        const open = pack.id === openId;
-        const editing = editingId === pack.id;
-        const summary = lineText(view.lines[0] || []);
-        const bag = columnsForPack(block, pack.id);
-        const mapped = pack.fields.filter((field) => bag[field.id]).length;
-        const tone = pack.id.indexOf("mr_") === 0 ? "high" : "mid";
-        const badge = tone === "high" ? "市场风险" : "信用风险";
-        const title = view.title || pack.title;
-        const fields = Object.fromEntries(pack.fields.map((field) => [field.id, field]));
-        const steps = view.steps.map((step, index) => {
-          const chips = step.fields.map((id) => {
-            const field = fields[id];
-            if (!field) return "";
-            const chosen = bag[id] || "";
-            const header = chosen ? (choiceText[chosen] || chosen) : "";
-            if (block && block.suggested && block.suggested[id]) anySuggest = true;
-            return "<button type=\"button\" class=\"kb-field" + (chosen ? " on" : " miss") + "\" data-jump=\"" + esc(id) + "\">"
-              + "<span class=\"kb-field-name\">" + esc(field.label) + "</span>"
-              + "<span class=\"kb-field-head\">" + esc(header || "还没选表头") + "</span></button>";
-          }).join("");
-          return "<article class=\"kb-card\">"
-            + "<div class=\"kb-card-top\"><span class=\"kb-no\">" + (index + 1) + "</span><h3>" + esc(step.title) + "</h3></div>"
-            + "<p>" + esc(step.line) + "</p>"
-            + "<div class=\"kb-fields\">" + chips + "</div></article>";
-        }).join("");
-        const detail = editing
-          ? editorHtml(pack, view)
-          : "<article class=\"kb-card kb-card-result\"><div class=\"kb-card-top\"><span class=\"kb-no\">=</span><h3>计算结果</h3></div>"
-            + equationsHtml(view.lines) + "</article>" + steps + paramPanel(pack.id, view.params);
-        const actions = editing
-          ? "<button type=\"button\" data-act=\"save\" data-rule=\"" + esc(pack.id) + "\">保存规则</button>"
-            + "<button type=\"button\" data-act=\"cancel\">取消</button>"
-            + "<button type=\"button\" data-act=\"reset\" data-rule=\"" + esc(pack.id) + "\">恢复默认</button>"
-          : "<button type=\"button\" data-pack=\"" + esc(pack.id) + "\">" + (open ? "收起详情" : "展开详情") + "</button>"
-            + "<button type=\"button\" data-act=\"edit\" data-rule=\"" + esc(pack.id) + "\">编辑</button>";
-        return "<article class=\"scene" + (open ? " open" : "") + "\">"
-          + "<button type=\"button\" class=\"scene-hit\" data-pack=\"" + esc(pack.id) + "\">"
-          + "<div class=\"scene-top\"><strong>" + esc(title) + "</strong><span class=\"scene-pill " + tone + "\">" + badge + "</span></div>"
-          + "<p>" + esc(summary) + "</p>"
-          + "<div class=\"scene-panel\">"
-          + "<div><span>步骤</span><b>" + view.steps.length + " 步</b></div>"
-          + "<div><span>字段</span><b>" + pack.fields.length + " 个</b></div>"
-          + "<div><span>已对应</span><b>" + mapped + " 个</b></div>"
-          + "</div></button>"
-          + (open ? "<div class=\"scene-more\">" + detail + "</div>" : "")
-          + "<div class=\"scene-actions\">" + actions + "</div>"
-          + "</article>";
-      }).join("");
-      kbRulesEl.innerHTML = "<div class=\"kb-head\"><strong>规则库</strong><span>点开一条规则查看，或在规则对话里上传 Excel</span></div>"
-        + "<div class=\"kb-body\">" + cards
-        + (anySuggest && openId ? "<button type=\"button\" class=\"apply apply-all\" id=\"applyAll\">全部应用识别到的列</button>" : "")
-        + "</div>";
       const focusLabel = document.getElementById("ruleChatFocus");
       if (focusLabel) {
         const current = viewedPack();
         const currentView = current ? ruleView(current.id) : null;
         focusLabel.textContent = current ? "当前：" + (currentView.title || current.title) : "可以问任意一条规则";
       }
-      if (focusId) {
-        const el = document.getElementById(focusId);
-        if (el) {
-          el.focus();
-          if (typeof el.setSelectionRange === "function" && typeof el.value === "string") {
-            const end = el.value.length;
-            el.setSelectionRange(end, end);
+      paintRuleGraph();
+    }
+
+    function builtinGraph() {
+      const nodes = [];
+      const edges = [];
+      const groups = [
+        ["cat:credit", "信用风险", (pack) => pack.id.indexOf("mr_") !== 0],
+        ["cat:market", "市场风险", (pack) => pack.id.indexOf("mr_") === 0],
+      ];
+      let top = 36;
+      groups.forEach(([catId, catLabel, match]) => {
+        const packs = catalog.filter(match);
+        if (!packs.length) return;
+        nodes.push({ id: catId, kind: "category", label: catLabel, x: 28, y: top + 12 });
+        packs.forEach((pack) => {
+          const view = ruleView(pack.id);
+          const ruleId = "rule:" + pack.id;
+          const title = view.title || pack.title;
+          nodes.push({ id: ruleId, kind: "rule", pack: pack.id, label: title, x: 190, y: top });
+          edges.push({ id: "built:" + catId + ":" + ruleId, from: catId, to: ruleId, label: "包含", builtin: true });
+          let prev = ruleId;
+          view.steps.forEach((step, index) => {
+            const id = "step:" + pack.id + ":" + index;
+            nodes.push({
+              id: id, kind: "step", pack: pack.id, index: index,
+              label: step.title, note: step.line, x: 400 + index * 224, y: top,
+            });
+            edges.push({
+              id: "built:" + prev + ":" + id, from: prev, to: id,
+              label: index === 0 ? "第一步" : "然后", builtin: true,
+            });
+            prev = id;
+          });
+          const formulaId = "formula:" + pack.id;
+          nodes.push({
+            id: formulaId, kind: "formula", pack: pack.id, label: "公式",
+            note: view.lines.map(lineText).join("\n"),
+            x: 400 + view.steps.length * 224, y: top,
+          });
+          edges.push({ id: "built:" + prev + ":" + formulaId, from: prev, to: formulaId, label: "得到", builtin: true });
+          const fieldIds = [];
+          view.steps.forEach((step, index) => {
+            (step.fields || []).forEach((fieldId) => {
+              if (!fieldIds.includes(fieldId)) fieldIds.push(fieldId);
+              edges.push({
+                id: "built:use:" + pack.id + ":" + index + ":" + fieldId,
+                from: "step:" + pack.id + ":" + index,
+                to: "field:" + pack.id + ":" + fieldId,
+                label: "使用", builtin: true,
+              });
+            });
+          });
+          const fieldLabels = Object.fromEntries((pack.fields || []).map((field) => [field.id, field.label]));
+          fieldIds.forEach((fieldId, index) => {
+            nodes.push({
+              id: "field:" + pack.id + ":" + fieldId,
+              kind: "field", pack: pack.id, field: fieldId,
+              label: fieldLabels[fieldId] || fieldId,
+              x: 400 + (index % 5) * 152,
+              y: top + 132 + Math.floor(index / 5) * 60,
+            });
+          });
+          (RULE_FIELDS[pack.id] || []).forEach((field, index) => {
+            const id = "param:" + pack.id + ":" + field.id;
+            nodes.push({
+              id: id, kind: "param", pack: pack.id, param: field.id,
+              label: field.label, note: formatParam(field, view.params[field.id]),
+              x: 190, y: top + 88 + index * 62,
+            });
+            edges.push({ id: "built:" + ruleId + ":" + id, from: ruleId, to: id, label: "参数", builtin: true });
+          });
+          const fieldRows = Math.ceil(fieldIds.length / 5);
+          const paramRows = (RULE_FIELDS[pack.id] || []).length;
+          top += Math.max(188, 100 + paramRows * 62, 148 + fieldRows * 60);
+        });
+        top += 28;
+      });
+      return { nodes: nodes, edges: edges };
+    }
+
+    function composeGraph() {
+      const builtin = catalog.length ? builtinGraph() : { nodes: [], edges: [] };
+      const custom = (graphConfig.nodes || []).map((node) => ({
+        id: node.id,
+        kind: node.role === "step" ? "custom-step" : node.role === "param" ? "custom-param" : "custom",
+        label: node.label,
+        note: node.note,
+        x: 64,
+        y: 64,
+      }));
+      const nodes = builtin.nodes.concat(custom);
+      const edges = builtin.edges.concat((graphConfig.edges || []).map((edge) => ({
+        id: edge.id, from: edge.from, to: edge.to, label: edge.label, builtin: false,
+      })));
+      nodes.forEach((node) => {
+        if (!isFreeKind(node.kind)) return;
+        const saved = graphConfig.positions && graphConfig.positions[node.id];
+        if (saved && Number.isFinite(saved.x) && Number.isFinite(saved.y)) {
+          node.x = saved.x;
+          node.y = saved.y;
+        }
+      });
+      const model = { nodes: nodes, edges: edges };
+      layoutHierarchy(model);
+      return model;
+    }
+
+    function layoutHierarchy(model) {
+      const byId = Object.fromEntries(model.nodes.map((node) => [node.id, node]));
+      model.nodes.forEach((node) => { node.hidden = node.kind !== "category" && node.kind !== "rule" && !isFreeKind(node.kind); });
+      function nodeOf(id) { return byId[id] || null; }
+      function linked(from, label) {
+        return model.edges.filter((edge) => edge.from === from && edge.label === label).map((edge) => nodeOf(edge.to)).filter(Boolean);
+      }
+      function fieldsOf(step) {
+        return model.edges.filter((edge) => edge.from === step.id && edge.label === "使用").map((edge) => nodeOf(edge.to)).filter(Boolean);
+      }
+      const categories = model.nodes.filter((node) => node.kind === "category");
+      let y = 28;
+      categories.forEach((category) => {
+        const rules = linked(category.id, "包含");
+        const top = y;
+        rules.forEach((rule) => {
+          rule.hidden = false;
+          rule.x = 200;
+          rule.y = y;
+          const open = graphOpen.has(rule.id);
+          const first = model.edges.find((edge) => edge.from === rule.id && edge.label === "第一步");
+          const steps = [];
+          let cursor = first ? nodeOf(first.to) : null;
+          while (cursor && cursor.kind === "step") {
+            steps.push(cursor);
+            const next = model.edges.find((edge) => edge.from === cursor.id && edge.label === "然后");
+            cursor = next ? nodeOf(next.to) : null;
           }
+          const last = steps[steps.length - 1];
+          const formulaEdge = last && model.edges.find((edge) => edge.from === last.id && edge.label === "得到");
+          const formula = formulaEdge ? nodeOf(formulaEdge.to) : null;
+          const params = linked(rule.id, "参数");
+          if (!open) {
+            steps.forEach((step) => { step.hidden = true; fieldsOf(step).forEach((field) => { field.hidden = true; }); });
+            if (formula) formula.hidden = true;
+            params.forEach((param) => { param.hidden = true; });
+            y += 84;
+            return;
+          }
+          let below = 0;
+          steps.forEach((step) => {
+            fieldsOf(step).forEach((field) => { field.hidden = true; });
+          });
+          steps.forEach((step, index) => {
+            step.hidden = false;
+            step.x = 430 + index * 236;
+            step.y = y;
+            const fields = fieldsOf(step);
+            if (graphOpen.has(step.id)) {
+              const stepHeight = nodeBox(step).h;
+              const pitch = nodeBox({ kind: "field", label: "字段", note: "" }).h + 16;
+              fields.forEach((field, fieldIndex) => {
+                field.hidden = false;
+                field.x = step.x;
+                field.y = step.y + stepHeight + 36 + fieldIndex * pitch;
+              });
+              below = Math.max(below, stepHeight + 36 + fields.length * pitch);
+            }
+          });
+          if (formula) {
+            formula.hidden = false;
+            formula.x = 430 + steps.length * 236;
+            formula.y = y;
+          }
+          let paramY = y + nodeBox(rule).h + 16;
+          params.forEach((param) => {
+            param.hidden = false;
+            param.x = 200;
+            param.y = paramY;
+            paramY += nodeBox(param).h + 12;
+          });
+          const paramHeight = params.length ? paramY - y : 0;
+          y += Math.max(nodeBox(rule).h + 28, below + 28, paramHeight + 36);
+        });
+        category.x = 24;
+        category.y = top + Math.max(0, (y - top) / 2 - 22);
+        y += 24;
+      });
+    }
+
+    function ensureGraphShell() {
+      if (document.getElementById("graphStage")) return;
+      kbRulesEl.innerHTML = "<div class=\"graph-shell\">"
+        + "<div class=\"graph-toolbar\">"
+        + "<button type=\"button\" class=\"head-btn\" id=\"graphAddNode\">添加知识点</button>"
+        + "<button type=\"button\" class=\"head-btn\" id=\"graphAddStep\">添加步骤</button>"
+        + "<button type=\"button\" class=\"head-btn\" id=\"graphAddParam\">添加参数</button>"
+        + "<span id=\"graphHint\">点连线上的字就能改。按住节点右侧的圆点，拖到另一个节点上，可以连一条新关系。</span>"
+        + "<div class=\"graph-zoom\">"
+        + "<button type=\"button\" class=\"head-btn\" id=\"graphZoomOut\">缩小</button>"
+        + "<button type=\"button\" class=\"head-btn\" id=\"graphZoomLabel\">100%</button>"
+        + "<button type=\"button\" class=\"head-btn\" id=\"graphZoomIn\">放大</button>"
+        + "</div>"
+        + "</div>"
+        + "<nav class=\"graph-tree\" id=\"graphTree\" aria-label=\"知识库层级\"></nav>"
+        + "<div class=\"graph-stage\" id=\"graphStage\"><div id=\"graphWorld\"><div id=\"graphScale\"><svg id=\"graphSvg\"></svg><div id=\"graphNodes\"></div><div id=\"graphBends\"></div></div></div></div>"
+        + "<aside class=\"graph-inspector\" id=\"graphInspector\"></aside>"
+        + "</div>";
+      document.getElementById("graphAddNode").addEventListener("click", () => addGraphNode("knowledge"));
+      document.getElementById("graphAddStep").addEventListener("click", () => addGraphNode("step"));
+      document.getElementById("graphAddParam").addEventListener("click", () => addGraphNode("param"));
+      document.getElementById("graphZoomIn").addEventListener("click", () => setGraphZoom(graphZoom * 1.2));
+      document.getElementById("graphZoomOut").addEventListener("click", () => setGraphZoom(graphZoom / 1.2));
+      document.getElementById("graphZoomLabel").addEventListener("click", () => setGraphZoom(1));
+      document.getElementById("graphTree").addEventListener("click", onKnowledgeTreeClick);
+      const stage = document.getElementById("graphStage");
+      stage.addEventListener("pointerdown", onGraphPointerDown);
+      stage.addEventListener("pointermove", onGraphPointerMove);
+      stage.addEventListener("pointerup", onGraphPointerUp);
+      stage.addEventListener("pointercancel", () => {
+        if (!graphDrag || graphDrag.kind !== "link") return;
+        graphDrag = null;
+        clearDraftLine();
+      });
+      stage.addEventListener("click", onGraphEdgeClick);
+      stage.addEventListener("wheel", onGraphWheel, { passive: false });
+      document.getElementById("graphInspector").addEventListener("click", (event) => {
+        if (event.target.id === "graphSave") saveGraphForm();
+        if (event.target.id === "graphDelete") deleteGraphSelection();
+        if (event.target.id === "graphStraighten") straightenGraphEdge();
+      });
+      document.getElementById("graphInspector").addEventListener("keydown", (event) => {
+        if (event.key === "Enter" && event.target.id === "graphLabel") {
+          event.preventDefault();
+          saveGraphForm();
+        }
+      });
+    }
+
+    function paintRuleGraph() {
+      ensureGraphShell();
+      if (graphDrag) return;
+      const typing = document.getElementById("graphInspector");
+      const keepInspector = typing && typing.contains(document.activeElement);
+      graphModel = composeGraph();
+      if (graphSelected && !graphModel.nodes.some((node) => node.id === graphSelected) && !graphModel.edges.some((edge) => edge.id === graphSelected)) {
+        graphSelected = "";
+      }
+      let width = 960;
+      let height = 640;
+      graphModel.nodes.forEach((node) => {
+        if (node.hidden) return;
+        const size = nodeBox(node);
+        width = Math.max(width, node.x + size.w + 64);
+        height = Math.max(height, node.y + size.h + 64);
+      });
+      const svg = document.getElementById("graphSvg");
+      const layer = document.getElementById("graphNodes");
+      const scale = document.getElementById("graphScale");
+      svg.setAttribute("width", String(width));
+      svg.setAttribute("height", String(height));
+      layer.style.width = width + "px";
+      layer.style.height = height + "px";
+      if (scale) {
+        scale.dataset.width = String(width);
+        scale.dataset.height = String(height);
+        scale.style.width = width + "px";
+        scale.style.height = height + "px";
+      }
+      layer.innerHTML = graphModel.nodes.filter((node) => !node.hidden).map(graphNodeHtml).join("");
+      paintGraphEdges();
+      applyGraphZoom();
+      if (!keepInspector) renderGraphInspector();
+      paintKnowledgeTree();
+      const hint = document.getElementById("graphHint");
+      if (hint) {
+        hint.textContent = "点连线上的字就能改。按住节点右侧的圆点，拖到另一个节点上，可以连一条新关系。";
+      }
+    }
+
+    function paintKnowledgeTree() {
+      const host = document.getElementById("graphTree");
+      if (!host) return;
+      if (graphSelected) keepTreeOpen(graphSelected);
+      const groups = [
+        ["cat:credit", "信用风险", (pack) => pack.id.indexOf("mr_") !== 0],
+        ["cat:market", "市场风险", (pack) => pack.id.indexOf("mr_") === 0],
+      ];
+      const branches = groups.map(([catId, label, match]) => {
+        const packs = catalog.filter(match);
+        if (!packs.length) return "";
+        return treeRow(catId, label, "类别", 0, true) + (treeOpen.has(catId) ? packs.map(treeRuleBranch).join("") : "");
+      }).join("");
+      const customs = graphConfig.nodes || [];
+      const groupsOf = [
+        ["knowledge", "自建知识点", "知识点"],
+        ["step", "自建步骤", "步骤"],
+        ["param", "自建参数", "参数"],
+      ];
+      const customBranch = groupsOf.map(([role, title, kind]) => {
+        const rows = customs.filter((node) => (node.role || "knowledge") === role);
+        if (!rows.length) return "";
+        const groupId = "tree:custom:" + role;
+        return treeRow(groupId, title, kind, 0, true) + (treeOpen.has(groupId) ? rows.map((node) => treeRow(node.id, node.label, kind, 1, false)).join("") : "");
+      }).join("");
+      host.innerHTML = "<div class=\"tree-title\">知识库</div>" + branches + customBranch;
+    }
+
+    function treeRuleBranch(pack) {
+      const view = ruleView(pack.id);
+      const ruleId = "rule:" + pack.id;
+      let html = treeRow(ruleId, view.title || pack.title, "规则", 1, true);
+      if (!treeOpen.has(ruleId)) return html;
+      const steps = view.steps || [];
+      const stepGroup = "tree:steps:" + pack.id;
+      html += treeRow(stepGroup, "步骤", "步骤", 2, true);
+      if (treeOpen.has(stepGroup)) {
+        const labels = Object.fromEntries((pack.fields || []).map((field) => [field.id, field.label]));
+        steps.forEach((step, index) => {
+          const stepId = "step:" + pack.id + ":" + index;
+          const fields = step.fields || [];
+          html += treeRow(stepId, step.title, "步骤", 3, fields.length > 0);
+          if (fields.length && treeOpen.has(stepId)) {
+            fields.forEach((fieldId) => {
+              html += treeRow("field:" + pack.id + ":" + fieldId, labels[fieldId] || fieldId, "字段", 4, false);
+            });
+          }
+        });
+      }
+      const params = RULE_FIELDS[pack.id] || [];
+      if (params.length) {
+        const paramGroup = "tree:params:" + pack.id;
+        html += treeRow(paramGroup, "参数", "参数", 2, true);
+        if (treeOpen.has(paramGroup)) {
+          params.forEach((field) => {
+            html += treeRow("param:" + pack.id + ":" + field.id, field.label, "参数", 3, false);
+          });
         }
       }
+      html += treeRow("formula:" + pack.id, "公式", "公式", 2, false);
+      return html;
+    }
+
+    function treeRow(id, label, kind, depth, branch) {
+      const selected = graphSelected === id ? " selected" : "";
+      const twist = branch ? (treeOpen.has(id) ? "▾" : "▸") : "";
+      return "<button type=\"button\" class=\"tree-row" + selected + "\" data-tree=\"" + esc(id) + "\" data-branch=\"" + (branch ? "1" : "0") + "\" style=\"--tree-depth:" + depth + "\">"
+        + "<span class=\"tree-twist\">" + twist + "</span>"
+        + "<span class=\"tree-kind\">" + esc(kind) + "</span>"
+        + "<span class=\"tree-label\">" + esc(label) + "</span></button>";
+    }
+
+    function keepTreeOpen(id) {
+      if (id.indexOf("tree:custom:") === 0 || id.indexOf("custom:") === 0) {
+        const node = (graphConfig.nodes || []).find((item) => item.id === id);
+        treeOpen.add("tree:custom:" + ((node && node.role) || "knowledge"));
+        return;
+      }
+      const kind = id.split(":")[0];
+      const pack = id.split(":")[1] || "";
+      if (!pack || kind === "cat" || kind === "tree") return;
+      treeOpen.add(pack.indexOf("mr_") === 0 ? "cat:market" : "cat:credit");
+      if (kind !== "rule") treeOpen.add("rule:" + pack);
+      if (kind === "step" || kind === "field") treeOpen.add("tree:steps:" + pack);
+      if (kind === "field") {
+        const fieldId = id.split(":").slice(2).join(":");
+        const index = (ruleView(pack).steps || []).findIndex((step) => (step.fields || []).indexOf(fieldId) >= 0);
+        if (index >= 0) treeOpen.add("step:" + pack + ":" + index);
+      }
+      if (kind === "param") treeOpen.add("tree:params:" + pack);
+    }
+
+    function onKnowledgeTreeClick(event) {
+      const row = event.target.closest("[data-tree]");
+      if (!row) return;
+      const id = row.dataset.tree;
+      if (event.target.closest(".tree-twist") && row.dataset.branch === "1") {
+        if (treeOpen.has(id)) treeOpen.delete(id);
+        else treeOpen.add(id);
+        paintKnowledgeTree();
+        return;
+      }
+      if (id.indexOf("tree:") === 0) {
+        if (treeOpen.has(id)) treeOpen.delete(id);
+        else treeOpen.add(id);
+        paintKnowledgeTree();
+        return;
+      }
+      openGraphFromTree(id);
+    }
+
+    function openGraphFromTree(id) {
+      const kind = id.split(":")[0];
+      const pack = id.split(":")[1] || "";
+      keepTreeOpen(id);
+      if (kind === "rule") {
+        graphOpen.add(id);
+        treeOpen.add(id);
+      }
+      if (kind === "step") {
+        graphOpen.add("rule:" + pack);
+        graphOpen.add(id);
+      }
+      if (kind === "field") {
+        graphOpen.add("rule:" + pack);
+        const fieldId = id.split(":").slice(2).join(":");
+        const index = (ruleView(pack).steps || []).findIndex((step) => (step.fields || []).indexOf(fieldId) >= 0);
+        if (index >= 0) graphOpen.add("step:" + pack + ":" + index);
+      }
+      if (kind === "param" || kind === "formula") graphOpen.add("rule:" + pack);
+      graphSelected = id;
+      paintRuleGraph();
+      const stage = document.getElementById("graphStage");
+      const node = graphModel.nodes.find((item) => item.id === id);
+      if (!stage || !node || node.hidden) return;
+      const box = nodeBox(node);
+      stage.scrollLeft = Math.max(0, (node.x + box.w / 2) * graphZoom - stage.clientWidth / 2);
+      stage.scrollTop = Math.max(0, (node.y + box.h / 2) * graphZoom - stage.clientHeight / 2);
+    }
+
+    function applyGraphZoom() {
+      const scale = document.getElementById("graphScale");
+      const world = document.getElementById("graphWorld");
+      const label = document.getElementById("graphZoomLabel");
+      if (!scale || !world) return;
+      const width = Number(scale.dataset.width) || 960;
+      const height = Number(scale.dataset.height) || 640;
+      scale.style.transform = "scale(" + graphZoom + ")";
+      world.style.width = (width * graphZoom) + "px";
+      world.style.height = (height * graphZoom) + "px";
+      if (label) label.textContent = Math.round(graphZoom * 100) + "%";
+    }
+
+    function setGraphZoom(next, anchor) {
+      const stage = document.getElementById("graphStage");
+      const old = graphZoom || 1;
+      const zoom = Math.min(2.5, Math.max(0.35, next));
+      if (!stage) {
+        graphZoom = zoom;
+        applyGraphZoom();
+        return;
+      }
+      const rect = stage.getBoundingClientRect();
+      const px = anchor ? anchor.clientX - rect.left : stage.clientWidth / 2;
+      const py = anchor ? anchor.clientY - rect.top : stage.clientHeight / 2;
+      const contentX = (stage.scrollLeft + px) / old;
+      const contentY = (stage.scrollTop + py) / old;
+      graphZoom = zoom;
+      applyGraphZoom();
+      stage.scrollLeft = contentX * zoom - px;
+      stage.scrollTop = contentY * zoom - py;
+    }
+
+    function onGraphWheel(event) {
+      if (!event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+      const factor = event.deltaY < 0 ? 1.08 : 1 / 1.08;
+      setGraphZoom(graphZoom * factor, event);
+    }
+
+    function graphPoint(event) {
+      const stage = document.getElementById("graphStage");
+      const rect = stage.getBoundingClientRect();
+      return {
+        x: (event.clientX - rect.left + stage.scrollLeft) / graphZoom,
+        y: (event.clientY - rect.top + stage.scrollTop) / graphZoom,
+      };
+    }
+
+    function graphFocusIds() {
+      if (!graphSelected) return null;
+      const node = graphModel.nodes.find((item) => item.id === graphSelected);
+      const edge = graphModel.edges.find((item) => item.id === graphSelected);
+      const seeds = [];
+      if (node) seeds.push(node.id);
+      if (edge) seeds.push(edge.from, edge.to);
+      if (!seeds.length) return null;
+      const keep = new Set();
+      const packs = new Set();
+      function absorb(id) {
+        const item = graphModel.nodes.find((entry) => entry.id === id);
+        if (!item) return;
+        keep.add(item.id);
+        if (item.pack) packs.add(item.pack);
+      }
+      seeds.forEach((id) => {
+        absorb(id);
+        const item = graphModel.nodes.find((entry) => entry.id === id);
+        if (!item) return;
+        if (item.kind === "category" || !item.pack) {
+          graphModel.edges.forEach((link) => {
+            if (link.from === id) absorb(link.to);
+            if (link.to === id) absorb(link.from);
+          });
+        }
+      });
+      graphOpen.forEach((id) => absorb(id));
+      graphModel.nodes.forEach((item) => {
+        if (item.pack && packs.has(item.pack)) keep.add(item.id);
+      });
+      graphModel.edges.forEach((link) => {
+        const fromKept = keep.has(link.from);
+        const toKept = keep.has(link.to);
+        if (fromKept === toKept) return;
+        const otherId = fromKept ? link.to : link.from;
+        const other = graphModel.nodes.find((item) => item.id === otherId);
+        if (other && (other.kind === "category" || isFreeKind(other.kind))) keep.add(other.id);
+      });
+      return keep;
+    }
+
+    function nodeBox(node) {
+      const size = GRAPH_SIZE[node.kind] || { w: 176, h: 74 };
+      const expandable = node.kind === "rule" || node.kind === "step";
+      const inner = Math.max(72, size.w - 20 - (expandable ? 12 : 0));
+      const lines = (text, font) => {
+        if (!text) return 0;
+        const per = Math.max(6, Math.floor(inner / (font + 1)));
+        return String(text).split("\n").reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / per)), 0);
+      };
+      const textH = 16 + lines(node.label, 13) * 18 + (node.note ? 6 + lines(node.note, 12) * 18 : 0);
+      return { w: size.w, h: Math.max(size.h, textH + 18) };
+    }
+
+    function graphNodeHtml(node) {
+      const size = nodeBox(node);
+      const focus = graphFocusIds();
+      const selected = node.id === graphSelected ? " selected" : "";
+      const dim = focus && !focus.has(node.id) ? " dim" : "";
+      const expandable = node.kind === "rule" || (node.kind === "step" && graphModel.edges.some((edge) => edge.from === node.id && edge.label === "使用"));
+      const twist = expandable ? "<span class=\"graph-twist\">" + (graphOpen.has(node.id) ? "▾" : "▸") + "</span>" : "";
+      const note = node.note ? "<span class=\"graph-note\">" + esc(node.note) + "</span>" : "";
+      return "<div class=\"graph-node " + node.kind + (expandable ? " can-open" : "") + selected + dim + "\" data-node=\"" + esc(node.id) + "\" style=\"left:"
+        + node.x + "px;top:" + node.y + "px;width:" + size.w + "px;height:" + size.h + "px\">"
+        + twist
+        + "<span class=\"graph-kind\">" + GRAPH_KIND[node.kind] + "</span>"
+        + "<span class=\"graph-label\">" + esc(node.label) + "</span>" + note
+        + "<button type=\"button\" class=\"graph-port\" data-port=\"" + esc(node.id) + "\" aria-label=\"连线\"></button></div>";
+    }
+
+    function graphCenter(id) {
+      const node = graphModel.nodes.find((item) => item.id === id);
+      if (!node || node.hidden) return null;
+      const size = nodeBox(node);
+      return { x: node.x + size.w / 2, y: node.y + size.h / 2 };
+    }
+
+    function edgeBends(edgeId) {
+      const saved = graphConfig.routes && graphConfig.routes[edgeId];
+      if (!Array.isArray(saved)) return [];
+      return saved.filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
+    }
+
+    function facingPoint(node, toward) {
+      const box = nodeBox(node);
+      const cx = node.x + box.w / 2;
+      const cy = node.y + box.h / 2;
+      const dx = toward.x - cx;
+      const dy = toward.y - cy;
+      if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return { x: cx, y: cy };
+      if (Math.abs(dx) > Math.abs(dy)) return { x: dx > 0 ? node.x + box.w : node.x, y: cy };
+      return { x: cx, y: dy > 0 ? node.y + box.h : node.y };
+    }
+
+    function graphRoute(fromNode, toNode, edge) {
+      const fromBox = nodeBox(fromNode);
+      const toBox = nodeBox(toNode);
+      const bends = edge ? edgeBends(edge.id) : [];
+      if (bends.length) {
+        const start = facingPoint(fromNode, bends[0]);
+        const end = facingPoint(toNode, bends[bends.length - 1]);
+        const pts = [start].concat(bends).concat([end]);
+        const mid = bends[0];
+        return {
+          points: pts.map((point) => point.x + "," + point.y).join(" "),
+          labelX: mid.x,
+          labelY: mid.y - 10,
+          label: true,
+          bends: bends,
+        };
+      }
+      const fromCx = fromNode.x + fromBox.w / 2;
+      const toCx = toNode.x + toBox.w / 2;
+      const fromBottom = fromNode.y + fromBox.h;
+      if (fromNode.kind === "category" && toNode.kind === "rule") {
+        const x1 = fromNode.x + fromBox.w;
+        const y1 = fromNode.y + fromBox.h / 2;
+        const x2 = toNode.x;
+        const y2 = toNode.y + Math.min(22, toBox.h / 2);
+        const gutter = x2 - 22;
+        return {
+          points: x1 + "," + y1 + " " + gutter + "," + y1 + " " + gutter + "," + y2 + " " + x2 + "," + y2,
+          labelX: (gutter + x2) / 2,
+          labelY: y2 - 8,
+          label: true,
+        };
+      }
+      const overlapsX = fromNode.x < toNode.x + toBox.w && toNode.x < fromNode.x + fromBox.w;
+      if (toNode.y >= fromBottom - 8 && overlapsX) {
+        const gutter = Math.min(fromNode.x, toNode.x) - 18;
+        const y2 = toNode.y + toBox.h / 2;
+        const fields = graphModel.edges.filter((edge) => edge.from === fromNode.id && edge.label === "使用")
+          .map((edge) => graphModel.nodes.find((item) => item.id === edge.to))
+          .filter((item) => item && !item.hidden)
+          .sort((a, b) => a.y - b.y);
+        return {
+          points: fromNode.x + "," + fromBottom + " " + gutter + "," + fromBottom + " " + gutter + "," + y2 + " " + toNode.x + "," + y2,
+          labelX: fromCx,
+          labelY: fromBottom + 16,
+          label: !fields.length || fields[0].id === toNode.id,
+        };
+      }
+      const goRight = toCx >= fromCx;
+      const x1 = goRight ? fromNode.x + fromBox.w : fromNode.x;
+      const x2 = goRight ? toNode.x : toNode.x + toBox.w;
+      const y1 = fromNode.y + fromBox.h / 2;
+      const y2 = toNode.y + toBox.h / 2;
+      return {
+        points: x1 + "," + y1 + " " + x2 + "," + y2,
+        labelX: (x1 + x2) / 2,
+        labelY: (y1 + y2) / 2 - 4,
+        label: true,
+      };
+    }
+
+    let suppressGraphClick = false;
+
+    function edgeCaption(edge) {
+      const saved = graphConfig.labels && graphConfig.labels[edge.id];
+      return saved || edge.label;
+    }
+
+    function applyEdgeCaption(edge, value) {
+      const text = (value || "").trim().slice(0, 40);
+      if (edge.builtin) {
+        if (!graphConfig.labels) graphConfig.labels = {};
+        if (!text || text === edge.label) delete graphConfig.labels[edge.id];
+        else graphConfig.labels[edge.id] = text;
+        return true;
+      }
+      const item = (graphConfig.edges || []).find((entry) => entry.id === edge.id);
+      if (!item) return false;
+      item.label = text || "相关";
+      return true;
+    }
+
+    function openEdgeLabelEditor(edgeId, x, y) {
+      const edge = graphModel.edges.find((item) => item.id === edgeId);
+      const host = document.getElementById("graphScale");
+      if (!edge || !host || !Number.isFinite(x) || !Number.isFinite(y)) return;
+      graphSelected = edgeId;
+      renderGraphInspector();
+      let input = document.getElementById("edgeLabelEditor");
+      if (!input) {
+        input = document.createElement("input");
+        input.id = "edgeLabelEditor";
+        input.className = "edge-label-editor";
+        input.setAttribute("aria-label", "连线上的字");
+        input.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            input.blur();
+          } else if (event.key === "Escape") {
+            input.dataset.cancel = "1";
+            input.blur();
+          }
+        });
+        input.addEventListener("blur", () => {
+          commitEdgeLabelEditor().catch((error) => setBanner(error.message || "写入图谱失败", "err"));
+        });
+        host.appendChild(input);
+      }
+      input.dataset.edge = edgeId;
+      input.dataset.cancel = "";
+      input.value = edgeCaption(edge);
+      input.style.left = x + "px";
+      input.style.top = y + "px";
+      input.hidden = false;
+      input.focus();
+      input.select();
+    }
+
+    async function commitEdgeLabelEditor() {
+      const input = document.getElementById("edgeLabelEditor");
+      if (!input || input.hidden || input.dataset.saving === "1") return;
+      const edgeId = input.dataset.edge;
+      const cancel = input.dataset.cancel === "1";
+      const value = input.value;
+      input.dataset.cancel = "";
+      input.hidden = true;
+      if (cancel) return;
+      const edge = graphModel.edges.find((item) => item.id === edgeId);
+      if (!edge || edgeCaption(edge) === value.trim()) return;
+      if (!applyEdgeCaption(edge, value)) return;
+      input.dataset.saving = "1";
+      try {
+        await flushGraphSave();
+        paintRuleGraph();
+        setBanner("连线上的字已保存。", "ok");
+      } finally {
+        input.dataset.saving = "";
+      }
+    }
+
+    function focusEdgeLabel() {
+      const input = document.getElementById("graphLabel");
+      if (!input || input.disabled) return;
+      input.focus();
+      input.select();
+    }
+
+    function paintGraphEdges() {
+      const svg = document.getElementById("graphSvg");
+      if (!svg) return;
+      svg.innerHTML = graphModel.edges.map((edge) => {
+        const from = graphCenter(edge.from);
+        const to = graphCenter(edge.to);
+        if (!from || !to) return "";
+        if (edge.label === "使用" && !graphOpen.has(edge.from)) return "";
+        const fromNode = graphModel.nodes.find((item) => item.id === edge.from);
+        const toNode = graphModel.nodes.find((item) => item.id === edge.to);
+        const route = graphRoute(fromNode, toNode, edge);
+        const focus = graphFocusIds();
+        const dim = focus && (!focus.has(edge.from) || !focus.has(edge.to));
+        const selected = edge.id === graphSelected;
+        const color = selected ? "#2f5fbf" : (dim ? "#d7dee8" : "#9aa8bd");
+        const caption = edgeCaption(edge);
+        const showLabel = caption !== "使用" || route.label;
+        return "<polyline points=\"" + route.points + "\" fill=\"none\" stroke=\"transparent\" stroke-width=\"12\" data-edge=\"" + esc(edge.id) + "\" data-builtin=\""
+          + (edge.builtin ? "1" : "0") + "\" />"
+          + "<polyline points=\"" + route.points + "\" fill=\"none\" stroke=\"" + color + "\" stroke-width=\"1.4\" pointer-events=\"none\" />"
+          + (showLabel ? "<text class=\"graph-edge-label" + (dim ? " dim" : "") + "\" x=\"" + route.labelX + "\" y=\"" + route.labelY + "\" text-anchor=\"middle\" data-edge=\""
+          + esc(edge.id) + "\">" + esc(caption) + "</text>" : "");
+      }).join("");
+      const bends = document.getElementById("graphBends");
+      if (!bends) return;
+      bends.innerHTML = graphModel.edges.map((edge) => edgeBends(edge.id).map((point, index) => {
+        return "<button type=\"button\" class=\"edge-bend\" data-edge=\"" + esc(edge.id) + "\" data-bend=\"" + index
+          + "\" style=\"left:" + point.x + "px;top:" + point.y + "px\"></button>";
+      }).join("")).join("");
+    }
+
+    function basisHtml(packId) {
+      const basis = (catalog.find((item) => item.id === packId) || {}).basis || "";
+      if (!basis) return "";
+      return "<div class=\"reg-basis\"><span>监管依据</span>" + esc(basis) + "</div>";
+    }
+
+    function renderGraphInspector() {
+      const host = document.getElementById("graphInspector");
+      if (!host) return;
+      const node = graphModel.nodes.find((item) => item.id === graphSelected);
+      const edge = graphModel.edges.find((item) => item.id === graphSelected);
+      if (!node && !edge) {
+        host.innerHTML = "<h3>知识图谱</h3><p>类别下面是规则。点开一条规则，才出现它的步骤、参数和公式；点开一个步骤，才出现这个步骤用到的字段。</p>";
+        return;
+      }
+      if (edge) {
+        const caption = edgeCaption(edge);
+        host.innerHTML = "<h3>关系</h3><p>连线上的字可以改。清空后保存，会回到原来的字。</p>"
+          + "<label>连线上的字</label><input id=\"graphLabel\" value=\"" + esc(caption) + "\">"
+          + "<div class=\"graph-actions\">"
+          + "<button type=\"button\" class=\"head-btn head-btn-primary\" id=\"graphSave\">保存</button>"
+          + (edge.builtin ? "" : "<button type=\"button\" class=\"head-btn\" id=\"graphDelete\">删除关系</button>")
+          + "<button type=\"button\" class=\"head-btn\" id=\"graphStraighten\">恢复直线</button></div>";
+        return;
+      }
+      if (node.kind === "category") {
+        host.innerHTML = "<h3>" + esc(node.label) + "</h3><p>这一类下面挂着对应的计算规则。</p>";
+        return;
+      }
+      if (node.kind === "basis") {
+        host.innerHTML = "<h3>监管依据</h3><div class=\"reg-basis\"><span>监管要求</span>" + esc(node.note || "") + "</div>"
+          + "<p>这条来自监管要求。计算按它取值，不能在图谱里改成别的口径。</p>";
+        return;
+      }
+      if (node.kind === "field") {
+        host.innerHTML = "<h3>" + esc(node.label) + "</h3><p>计算时从上传表的表头里选这一列。</p>"
+          + "<div class=\"graph-actions\"><button type=\"button\" class=\"head-btn head-btn-primary\" data-jump=\"" + esc(node.field) + "\">去计算</button></div>";
+        return;
+      }
+      if (isFreeKind(node.kind)) {
+        const title = GRAPH_KIND[node.kind] || "知识点";
+        host.innerHTML = "<h3>" + esc(title) + "</h3>"
+          + "<label>名称</label><input id=\"graphLabel\" value=\"" + esc(node.label) + "\">"
+          + "<label>说明</label><textarea id=\"graphNote\">" + esc(node.note || "") + "</textarea>"
+          + "<div class=\"graph-actions\"><button type=\"button\" class=\"head-btn head-btn-primary\" id=\"graphSave\">保存</button><button type=\"button\" class=\"head-btn\" id=\"graphDelete\">删除</button></div>";
+        return;
+      }
+      if (node.kind === "rule") {
+        host.innerHTML = basisHtml(node.pack)
+          + "<h3>规则</h3><label>名称</label><input id=\"graphLabel\" value=\"" + esc(node.label) + "\">"
+          + "<div class=\"graph-actions\"><button type=\"button\" class=\"head-btn head-btn-primary\" id=\"graphSave\">保存</button>"
+          + "<button type=\"button\" class=\"head-btn\" data-act=\"reset\" data-rule=\"" + esc(node.pack) + "\">恢复默认</button></div>";
+        return;
+      }
+      if (node.kind === "step") {
+        const block = activeBlock();
+        const pack = catalog.find((item) => item.id === node.pack);
+        const fields = pack ? Object.fromEntries(pack.fields.map((field) => [field.id, field])) : {};
+        const step = (ruleView(node.pack).steps || [])[node.index] || { fields: [] };
+        const chips = (step.fields || []).map((id) => {
+          const field = fields[id];
+          if (!field) return "";
+          return "<button type=\"button\" class=\"kb-field\" data-jump=\"" + esc(id) + "\"><span class=\"kb-field-name\">" + esc(field.label) + "</span></button>";
+        }).join("");
+        const suggest = block && block.suggested && (step.fields || []).some((id) => block.suggested[id]);
+        host.innerHTML = basisHtml(node.pack) + "<h3>步骤</h3><label>标题</label><input id=\"graphLabel\" value=\"" + esc(node.label) + "\">"
+          + "<label>说明</label><textarea id=\"graphNote\">" + esc(node.note || "") + "</textarea>"
+          + "<div class=\"kb-fields\">" + chips + "</div>"
+          + "<div class=\"graph-actions\"><button type=\"button\" class=\"head-btn head-btn-primary\" id=\"graphSave\">保存</button>"
+          + (suggest ? "<button type=\"button\" class=\"head-btn\" id=\"applyAll\">应用识别到的列</button>" : "")
+          + "</div>";
+        return;
+      }
+      if (node.kind === "param") {
+        const field = (RULE_FIELDS[node.pack] || []).find((item) => item.id === node.param);
+        const shown = field ? paramInputValue(field, ruleView(node.pack).params[node.param]) : "";
+        host.innerHTML = basisHtml(node.pack) + "<h3>" + esc(node.label) + "</h3>"
+          + "<label>数值" + (field && field.kind === "percent" ? "（%）" : "") + "</label>"
+          + "<input id=\"graphLabel\" value=\"" + esc(shown) + "\">"
+          + "<div class=\"graph-actions\"><button type=\"button\" class=\"head-btn head-btn-primary\" id=\"graphSave\">保存</button></div>";
+        return;
+      }
+      host.innerHTML = basisHtml(node.pack) + "<h3>公式</h3><label>一行一条</label><textarea id=\"graphNote\">" + esc(node.note || "") + "</textarea>"
+        + "<div class=\"graph-actions\"><button type=\"button\" class=\"head-btn head-btn-primary\" id=\"graphSave\">保存</button></div>";
+    }
+
+    function addGraphNode(role) {
+      const names = { step: "新步骤", param: "新参数", knowledge: "新知识点" };
+      const id = "custom:" + Date.now().toString(36);
+      const stage = document.getElementById("graphStage");
+      graphConfig.nodes = (graphConfig.nodes || []).concat([{
+        id: id,
+        role: role === "step" || role === "param" ? role : "knowledge",
+        label: names[role] || names.knowledge,
+        note: "",
+      }]);
+      graphConfig.positions[id] = {
+        x: 48 + (stage ? stage.scrollLeft / graphZoom : 0),
+        y: 48 + (stage ? stage.scrollTop / graphZoom : 0),
+      };
+      graphSelected = id;
+      treeOpen.add("tree:custom:" + (role === "step" || role === "param" ? role : "knowledge"));
+      paintRuleGraph();
+      flushGraphSave().catch((error) => setBanner(error.message || "写入图谱失败", "err"));
+    }
+
+    function nodeAnchor(node) {
+      const box = nodeBox(node);
+      return { x: node.x + box.w - 8, y: node.y + box.h / 2 };
+    }
+
+    function setDraftLine(x1, y1, x2, y2) {
+      const svg = document.getElementById("graphSvg");
+      if (!svg) return;
+      let line = document.getElementById("graphDraft");
+      if (!line) {
+        line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        line.id = "graphDraft";
+        line.setAttribute("stroke", "#2f5fbf");
+        line.setAttribute("stroke-width", "2");
+        line.setAttribute("stroke-dasharray", "5 4");
+        line.setAttribute("pointer-events", "none");
+        svg.appendChild(line);
+      }
+      line.setAttribute("x1", String(x1));
+      line.setAttribute("y1", String(y1));
+      line.setAttribute("x2", String(x2));
+      line.setAttribute("y2", String(y2));
+    }
+
+    function clearDraftLine() {
+      const line = document.getElementById("graphDraft");
+      if (line) line.remove();
+    }
+
+    function onGraphPointerDown(event) {
+      if (event.button !== 0) return;
+      const labelEl = event.target.closest(".graph-edge-label");
+      if (labelEl) {
+        suppressGraphClick = true;
+        openEdgeLabelEditor(labelEl.dataset.edge, Number(labelEl.getAttribute("x")), Number(labelEl.getAttribute("y")));
+        return;
+      }
+      const port = event.target.closest("[data-port]");
+      if (port) {
+        const id = port.dataset.port;
+        const node = graphModel.nodes.find((item) => item.id === id);
+        if (!node) return;
+        const start = nodeAnchor(node);
+        const point = graphPoint(event);
+        graphDrag = { kind: "link", id: id, startX: start.x, startY: start.y, moved: false };
+        setDraftLine(start.x, start.y, point.x, point.y);
+        port.setPointerCapture(event.pointerId);
+        event.preventDefault();
+        return;
+      }
+      const nodeEl = event.target.closest("[data-node]");
+      if (nodeEl) {
+        const id = nodeEl.dataset.node;
+        const node = graphModel.nodes.find((item) => item.id === id);
+        if (!node) return;
+        const point = graphPoint(event);
+        graphDrag = {
+          kind: "node",
+          id: id,
+          offsetX: point.x - node.x,
+          offsetY: point.y - node.y,
+          moved: false,
+        };
+        nodeEl.setPointerCapture(event.pointerId);
+        return;
+      }
+      const bendEl = event.target.closest("[data-bend]");
+      const lineEl = event.target.closest("[data-edge]");
+      if (!bendEl && !lineEl) return;
+      const edgeId = (bendEl || lineEl).dataset.edge;
+      const point = graphPoint(event);
+      const stage = document.getElementById("graphStage");
+      if (!graphConfig.routes) graphConfig.routes = {};
+      graphDrag = {
+        kind: "edge",
+        id: edgeId,
+        index: bendEl ? Number(bendEl.dataset.bend) : -1,
+        startX: point.x,
+        startY: point.y,
+        moved: false,
+      };
+      if (stage) stage.setPointerCapture(event.pointerId);
+    }
+
+    function onGraphPointerMove(event) {
+      if (!graphDrag) return;
+      const point = graphPoint(event);
+      if (graphDrag.kind === "link") {
+        if (Math.hypot(point.x - graphDrag.startX, point.y - graphDrag.startY) > 3) graphDrag.moved = true;
+        setDraftLine(graphDrag.startX, graphDrag.startY, point.x, point.y);
+        return;
+      }
+      if (graphDrag.kind === "edge") {
+        if (!graphDrag.moved && Math.hypot(point.x - graphDrag.startX, point.y - graphDrag.startY) < 3) return;
+        graphDrag.moved = true;
+        const bends = (graphConfig.routes[graphDrag.id] || []).slice();
+        const next = { x: Math.round(point.x), y: Math.round(point.y) };
+        if (graphDrag.index < 0) {
+          bends.push(next);
+          graphDrag.index = bends.length - 1;
+        } else {
+          bends[graphDrag.index] = next;
+        }
+        graphConfig.routes[graphDrag.id] = bends.slice(-8);
+        graphDrag.index = Math.min(graphDrag.index, graphConfig.routes[graphDrag.id].length - 1);
+        paintGraphEdges();
+        return;
+      }
+      const x = Math.round(point.x - graphDrag.offsetX);
+      const y = Math.round(point.y - graphDrag.offsetY);
+      const node = graphModel.nodes.find((item) => item.id === graphDrag.id);
+      if (!node || !isFreeKind(node.kind)) return;
+      if (Math.abs(x - node.x) > 2 || Math.abs(y - node.y) > 2) graphDrag.moved = true;
+      node.x = x;
+      node.y = y;
+      graphConfig.positions[graphDrag.id] = { x: x, y: y };
+      document.querySelectorAll("[data-node]").forEach((el) => {
+        if (el.dataset.node === graphDrag.id) {
+          el.style.left = x + "px";
+          el.style.top = y + "px";
+        }
+      });
+      paintGraphEdges();
+    }
+
+    function onGraphPointerUp(event) {
+      if (!graphDrag) return;
+      suppressGraphClick = true;
+      if (graphDrag.kind === "link") {
+        const from = graphDrag.id;
+        const moved = graphDrag.moved;
+        graphDrag = null;
+        clearDraftLine();
+        if (!moved || !event) return;
+        const hit = document.elementFromPoint(event.clientX, event.clientY);
+        const target = hit && hit.closest("[data-node]");
+        const to = target && target.dataset.node;
+        if (!to || to === from) return;
+        const existing = (graphConfig.edges || []).find((edge) => edge.from === from && edge.to === to);
+        if (existing) {
+          graphSelected = existing.id;
+          paintRuleGraph();
+          focusEdgeLabel();
+          return;
+        }
+        const id = "link:" + Date.now().toString(36);
+        graphConfig.edges = (graphConfig.edges || []).concat([{ id: id, from: from, to: to, label: "相关" }]);
+        graphSelected = id;
+        paintRuleGraph();
+        focusEdgeLabel();
+        flushGraphSave().catch((error) => setBanner(error.message || "写入图谱失败", "err"));
+        return;
+      }
+      if (graphDrag.kind === "edge") {
+        const moved = graphDrag.moved;
+        const id = graphDrag.id;
+        const fromLine = graphDrag.index < 0;
+        graphDrag = null;
+        graphSelected = id;
+        if (moved) {
+          scheduleGraphSave();
+          renderGraphInspector();
+          return;
+        }
+        paintRuleGraph();
+        if (fromLine) {
+          const text = document.querySelector(".graph-edge-label[data-edge=\"" + id.replace(/"/g, "") + "\"]");
+          if (text) {
+            openEdgeLabelEditor(id, Number(text.getAttribute("x")), Number(text.getAttribute("y")));
+            return;
+          }
+        }
+        focusEdgeLabel();
+        return;
+      }
+      const id = graphDrag.id;
+      const moved = graphDrag.moved;
+      const node = graphModel.nodes.find((item) => item.id === id);
+      graphDrag = null;
+      if (node && isFreeKind(node.kind) && moved) {
+        scheduleGraphSave();
+        return;
+      }
+      if (moved) {
+        paintRuleGraph();
+        return;
+      }
+      toggleGraphLevel(node);
+      graphSelected = id;
+      paintRuleGraph();
+    }
+
+    function toggleGraphLevel(node) {
+      if (!node) return;
+      if (node.kind === "rule") {
+        if (graphOpen.has(node.id)) graphOpen.delete(node.id);
+        else graphOpen.add(node.id);
+        return;
+      }
+      if (node.kind === "step" && graphModel.edges.some((edge) => edge.from === node.id && edge.label === "使用")) {
+        if (graphOpen.has(node.id)) graphOpen.delete(node.id);
+        else {
+          graphOpen.add("rule:" + node.pack);
+          graphOpen.add(node.id);
+        }
+      }
+    }
+
+    function onGraphEdgeClick(event) {
+      if (suppressGraphClick) {
+        suppressGraphClick = false;
+        return;
+      }
+      const line = event.target.closest("[data-edge]");
+      if (line && !event.target.closest("[data-node]")) {
+        graphSelected = line.dataset.edge;
+        paintRuleGraph();
+        focusEdgeLabel();
+        return;
+      }
+      if (event.target.closest("[data-node]") || event.target.closest("[data-port]")) return;
+      graphSelected = "";
+      paintRuleGraph();
+    }
+
+    function scheduleGraphSave() {
+      clearTimeout(graphSaveTimer);
+      graphSaveTimer = setTimeout(() => {
+        flushGraphSave().catch((error) => setBanner(error.message || "写入图谱失败", "err"));
+      }, 400);
+    }
+
+    async function flushGraphSave() {
+      clearTimeout(graphSaveTimer);
+      const response = await fetch("/api/rules/graph", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ graph: { positions: graphConfig.positions, nodes: graphConfig.nodes, edges: graphConfig.edges, routes: graphConfig.routes || {}, labels: graphConfig.labels || {} } }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "写入图谱失败");
+      graphConfig = data.graph;
+      graphConfig.routes = graphConfig.routes || {};
+      graphConfig.labels = graphConfig.labels || {};
+    }
+
+    function straightenGraphEdge() {
+      if (!graphSelected || !graphConfig.routes) return;
+      delete graphConfig.routes[graphSelected];
+      paintRuleGraph();
+      flushGraphSave().catch((error) => setBanner(error.message || "写入图谱失败", "err"));
+    }
+
+    async function saveGraphForm() {
+      const node = graphModel.nodes.find((item) => item.id === graphSelected);
+      const edge = graphModel.edges.find((item) => item.id === graphSelected);
+      try {
+        if (edge) {
+          const input = document.getElementById("graphLabel");
+          if (!applyEdgeCaption(edge, input ? input.value : "")) return;
+          await flushGraphSave();
+          paintRuleGraph();
+          setBanner("连线上的字已保存。", "ok");
+          return;
+        }
+        if (!node) return;
+        if (isFreeKind(node.kind)) {
+          const item = graphConfig.nodes.find((entry) => entry.id === node.id);
+          if (!item) return;
+          const fallback = GRAPH_KIND[node.kind] || "知识点";
+          item.label = (document.getElementById("graphLabel").value || fallback).trim().slice(0, 40) || fallback;
+          item.note = (document.getElementById("graphNote").value || "").trim().slice(0, 200);
+          await flushGraphSave();
+          paintRuleGraph();
+          setBanner(fallback + "已保存。", "ok");
+          return;
+        }
+        const view = ruleView(node.pack);
+        const pack = catalog.find((item) => item.id === node.pack);
+        const patch = {
+          title: view.title || (pack && pack.title) || "",
+          lines: view.lines.map(lineText),
+          steps: view.steps.map((step) => ({ title: step.title, line: step.line, fields: step.fields || [] })),
+          params: Object.assign({}, view.params),
+        };
+        if (node.kind === "rule") {
+          patch.title = (document.getElementById("graphLabel").value || "").trim();
+        } else if (node.kind === "step") {
+          const current = patch.steps[node.index];
+          patch.steps[node.index] = {
+            title: (document.getElementById("graphLabel").value || "").trim() || current.title,
+            line: (document.getElementById("graphNote").value || "").trim() || current.line,
+            fields: current.fields,
+          };
+        } else if (node.kind === "formula") {
+          const lines = document.getElementById("graphNote").value.split("\n").map((line) => line.trim()).filter(Boolean);
+          if (!lines.length) {
+            setBanner("至少保留一行公式。", "err");
+            return;
+          }
+          patch.lines = lines;
+        } else if (node.kind === "param") {
+          const field = (RULE_FIELDS[node.pack] || []).find((item) => item.id === node.param);
+          const parsed = parseParam(field, document.getElementById("graphLabel").value);
+          if (parsed.error) {
+            setBanner(parsed.error, "err");
+            return;
+          }
+          patch.params[node.param] = parsed.value;
+          if (node.pack === "ccr_fx" && patch.params.cut_mid < patch.params.cut_short) {
+            setBanner("中期限上限要大于短期限上限。", "err");
+            return;
+          }
+        }
+        ruleEdits[node.pack] = patch;
+        await persistRule(node.pack);
+        paintRuleGraph();
+        setBanner("规则已写入。下次计算会先读这份文件。", "ok");
+      } catch (error) {
+        setBanner(error.message || "保存失败", "err");
+      }
+    }
+
+    function deleteGraphSelection() {
+      if (graphSelected.indexOf("custom:") === 0) {
+        graphConfig.nodes = (graphConfig.nodes || []).filter((node) => node.id !== graphSelected);
+        graphConfig.edges = (graphConfig.edges || []).filter((edge) => edge.from !== graphSelected && edge.to !== graphSelected);
+        delete graphConfig.positions[graphSelected];
+      } else if (graphSelected.indexOf("link:") === 0) {
+        graphConfig.edges = (graphConfig.edges || []).filter((edge) => edge.id !== graphSelected);
+      } else {
+        return;
+      }
+      graphSelected = "";
+      paintRuleGraph();
+      flushGraphSave().catch((error) => setBanner(error.message || "写入图谱失败", "err"));
     }
 
     function renderMapper() {
@@ -785,7 +2022,8 @@
             + "<td>" + tag + "</td>"
             + "<td class=\"num\">" + money(row.capital, row.currency) + "</td>"
             + "<td class=\"num\">" + money(row.rwa, row.currency) + "</td>"
-            + "<td>" + esc(row.summary) + (steps ? "<ul class=\"steps\">" + steps + "</ul>" : "") + "</td></tr>";
+            + "<td><div class=\"reg-basis\"><span>监管依据</span>" + esc(row.basis || pack.basis || "") + "</div>"
+            + "<div class=\"calc-note\">" + esc(row.summary) + (steps ? "<ul class=\"steps\">" + steps + "</ul>" : "") + "</div></td></tr>";
         }).join("");
         const notes = (pack.notes || []).map((note) => "<li>" + esc(note) + "</li>").join("");
         let portfolio = "";
@@ -804,6 +2042,7 @@
           + "<p class=\"card-desc\">" + esc(pack.sheet) + "。合计 RWA "
           + money(pack.total_rwa, pack.currency) + "，资本 " + money(pack.total_capital, pack.currency) + "。</p>"
           + "<p class=\"formula\">" + esc(pack.formula) + "</p>"
+          + (pack.basis ? "<div class=\"reg-basis\"><span>监管依据</span>" + esc(pack.basis) + "</div>" : "")
           + (notes ? "<ul class=\"notes\">" + notes + "</ul>" : "")
           + portfolio
           + hidden
@@ -811,6 +2050,346 @@
           + "<th>交易</th><th>状态</th><th>资本</th><th>RWA</th><th>依据</th>"
           + "</tr></thead><tbody>" + rows + "</tbody></table></div></section>";
       }).join("");
+      renderUnderlying(data.exposure);
+    }
+
+    const GRID_COLS = [
+      ["on_principal", "表内本金"],
+      ["on_crm", "表内 CRM 后"],
+      ["off_notional", "表外本金 / 名义"],
+      ["off_ce", "表外信用等值"],
+      ["off_dre", "表外违约风险暴露"],
+      ["rwa", "风险加权资产"],
+    ];
+
+    function ccyLabel(code) {
+      if (code === "USD") return "美元";
+      if (code === "MOP") return "澳门元";
+      return code || "";
+    }
+
+    function approachLabel(code) {
+      if (code === "external") return "外部信用评级法";
+      if (code === "standardized") return "标准信用风险法";
+      return code || "";
+    }
+
+    function gridNumber(value, variance) {
+      if (value == null || value === "") return "—";
+      const n = Number(value);
+      if (!Number.isFinite(n)) return "—";
+      if (variance) {
+        return n.toLocaleString("zh-CN", { style: "percent", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      }
+      return n.toLocaleString("zh-CN", { maximumFractionDigits: 2 });
+    }
+
+    function weightText(value) {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return "";
+      return String(Math.round(n * 10000) / 10000);
+    }
+
+    function gridHtml(rows, mode, totals) {
+      const head = "<tr><th>口径</th><th>权重</th>"
+        + "<th colspan=\"2\">表内敞口</th><th colspan=\"3\">表外敞口</th><th>风险加权资产</th></tr>"
+        + "<tr><th></th><th></th>"
+        + GRID_COLS.map((col) => "<th>" + col[1] + "</th>").join("")
+        + "</tr>";
+      let body = "";
+      let last = "";
+      (rows || []).forEach((row) => {
+        if (row.approach !== last) {
+          body += "<tr class=\"section-row\"><td colspan=\"8\">" + esc(approachLabel(row.approach)) + "</td></tr>";
+          last = row.approach;
+        }
+        const source = mode === "flat" ? row : (row[mode] || {});
+        body += "<tr><td></td><td class=\"num\">" + esc(weightText(row.weight)) + "</td>"
+          + GRID_COLS.map((col) => "<td class=\"num\">" + gridNumber(source[col[0]], mode === "variance") + "</td>").join("")
+          + "</tr>";
+      });
+      if (totals) {
+        const source = mode === "flat" ? totals : (totals[mode] || totals);
+        body += "<tr class=\"total-row\"><td>合计</td><td></td>"
+          + GRID_COLS.map((col) => "<td class=\"num\">" + gridNumber(source[col[0]], mode === "variance") + "</td>").join("")
+          + "</tr>";
+      }
+      return "<div class=\"table-wrap show\"><table class=\"data compare-table\"><thead>" + head + "</thead><tbody>"
+        + (body || "<tr><td colspan=\"8\">没有可汇总的行。</td></tr>")
+        + "</tbody></table></div>";
+    }
+
+    function outsideNote(block) {
+      const amount = Number(block && block.outside_rwa);
+      if (!amount) return "";
+      return "<p class=\"card-desc\">市场风险 RWA " + gridNumber(amount, false)
+        + " 不进入这张信用风险权重表，仍留在上面的分笔结果里。</p>";
+    }
+
+    function renderUnderlying(exposure) {
+      if (!underlyingEl) return;
+      if (currentModule && currentModule.id === "corporate") {
+        const ratings = (exposure && exposure.ratings) || [];
+        if (!ratings.length) {
+          underlyingEl.innerHTML = "<p class=\"card-desc\">这几笔没有外部评级，企业暴露按评级对照时对不上。</p>";
+          return;
+        }
+        const body = ratings.map((item) => "<tr><td>" + esc(item.rating) + "</td><td class=\"num\">"
+          + (item.mixed ? "同一评级算出了不同权重" : gridNumber(item.weight, false))
+          + "</td><td class=\"num\">" + Number(item.count || 0).toLocaleString("zh-CN") + "</td><td class=\"num\">"
+          + gridNumber(item.rwa, false) + "</td></tr>").join("");
+        underlyingEl.innerHTML = "<h3 class=\"grid-title\">明细统计</h3>"
+          + "<div class=\"table-wrap show\"><table class=\"data\"><thead><tr><th>评级</th><th>计算权重</th><th>笔数</th><th>RWA</th></tr></thead><tbody>"
+          + body + "</tbody></table></div>";
+        return;
+      }
+      if (currentModule && currentModule.id !== "bank") {
+        underlyingEl.innerHTML = "<h3 class=\"grid-title\">明细统计</h3>"
+          + "<p class=\"card-desc\">明细已按规则算完。上传这个模块的监管结果后，再按该表的行对照。</p>";
+        return;
+      }
+      const currencies = (exposure && exposure.currencies) || [];
+      if (!currencies.length) {
+        underlyingEl.innerHTML = "";
+        return;
+      }
+      underlyingEl.innerHTML = "<h3 class=\"grid-title\">明细统计</h3>"
+        + currencies.map((block) => {
+          const rows = (block.rows || []).filter((row) => GRID_COLS.some((col) => Number(row[col[0]])));
+          const totals = {};
+          GRID_COLS.forEach((col) => {
+            totals[col[0]] = rows.reduce((sum, row) => sum + Number(row[col[0]] || 0), 0);
+          });
+          return "<p class=\"card-desc\">" + esc(ccyLabel(block.currency)) + "。这是按规则算出的 RWA，按风险权重加总。</p>"
+            + gridHtml(rows, "flat", totals)
+            + outsideNote(block);
+        }).join("");
+    }
+
+    function columnTable(rows, columns, side, totals, showTotals) {
+      const groups = [];
+      (columns || []).forEach((col) => {
+        const name = col.group || "";
+        const last = groups[groups.length - 1];
+        if (last && last.name === name) last.span += 1;
+        else groups.push({ name: name, span: 1 });
+      });
+      const span = 1 + (columns || []).length;
+      const head = "<tr><th>项目</th>"
+        + groups.map((group) => "<th colspan=\"" + group.span + "\">" + esc(group.name) + "</th>").join("")
+        + "</tr><tr><th></th>"
+        + (columns || []).map((col) => "<th>" + esc(col.label) + "</th>").join("")
+        + "</tr>";
+      let body = "";
+      let last = "";
+      (rows || []).forEach((row) => {
+        const section = row.section || "";
+        if (section && section !== last) {
+          body += "<tr class=\"section-row\"><td colspan=\"" + span + "\">" + esc(section) + "</td></tr>";
+          last = section;
+        }
+        const source = row[side] || {};
+        body += "<tr><td>" + esc(row.label || "") + "</td>"
+          + (columns || []).map((col) => "<td class=\"num\">" + gridNumber(source[col.id], side === "variance") + "</td>").join("")
+          + "</tr>";
+      });
+      if (showTotals && totals) {
+        const source = totals[side] || {};
+        body += "<tr class=\"total-row\"><td>合计</td>"
+          + (columns || []).map((col) => "<td class=\"num\">" + gridNumber(source[col.id], side === "variance") + "</td>").join("")
+          + "</tr>";
+      }
+      return "<div class=\"table-wrap show\"><table class=\"data compare-table\"><thead>" + head + "</thead><tbody>"
+        + (body || "<tr><td colspan=\"" + span + "\">没有可对照的行。</td></tr>")
+        + "</tbody></table></div>";
+    }
+
+    function blockCaption(block) {
+      if (!block || !block.currency || block.currency === "—") return "";
+      return "<p class=\"card-desc\">" + esc(ccyLabel(block.currency)) + "</p>";
+    }
+
+    function renderComparison(data) {
+      const unit = data.unit ? "单位：" + data.unit + "。" : "";
+      const columns = data.columns || [];
+      const showTotals = data.show_totals !== false;
+      const blocks = data.blocks || [];
+      if (underlyingEl) {
+        underlyingEl.innerHTML = "<h3 class=\"grid-title\">明细统计</h3><p class=\"card-desc\">" + esc(unit)
+          + "与监管结果同一口径。</p>"
+          + blocks.map((block) => blockCaption(block)
+            + columnTable(block.rows, columns, "underlying", block.totals, showTotals)
+            + outsideNote(block)).join("");
+      }
+      if (returnGridEl) {
+        returnGridEl.innerHTML = "<h3 class=\"grid-title\">监管结果</h3><p class=\"card-desc\">" + esc(unit) + "</p>"
+          + blocks.map((block) => blockCaption(block)
+            + columnTable(block.rows, columns, "regulatory", block.totals, showTotals)).join("");
+      }
+      if (varianceGridEl) {
+        const link = data.download_url
+          ? "<a class=\"btn show\" id=\"downloadCompare\" href=\"" + esc(data.download_url)
+            + "\" download=\"" + esc(data.download_name || "对比.xlsx") + "\">下载 Excel，三块对照在同一张表</a>"
+          : "";
+        varianceGridEl.innerHTML = blocks.map((block) => blockCaption(block)
+          + columnTable(block.rows, columns, "variance", block.totals, showTotals)).join("") + link;
+      }
+    }
+
+    function resetModuleWork() {
+      uploadId = "";
+      workbook = null;
+      blocks = [];
+      if (mapperEl) mapperEl.innerHTML = "";
+      if (packsEl) packsEl.innerHTML = "";
+      if (narrative) narrative.textContent = "";
+      clearComparison();
+    }
+
+    function closeFold(card) {
+      card.classList.remove("open");
+      const head = card.querySelector(".fold-head");
+      const body = card.querySelector(".fold-body");
+      if (head) head.setAttribute("aria-expanded", "false");
+      if (body) body.hidden = true;
+    }
+
+    function toggleModule(item) {
+      const card = document.querySelector(".fold-card[data-module=\"" + item.id + "\"]");
+      if (!card) return;
+      const body = card.querySelector(".fold-body");
+      const work = document.getElementById("moduleWork");
+      if (card.classList.contains("open")) {
+        if (body.contains(work)) {
+          document.getElementById("modulePicker").appendChild(work);
+          work.hidden = true;
+          if (currentModule && currentModule.id === item.id) currentModule = null;
+        }
+        closeFold(card);
+        return;
+      }
+      const switching = currentModule && currentModule.id !== item.id;
+      if (switching) resetModuleWork();
+      body.hidden = false;
+      body.appendChild(work);
+      card.classList.add("open");
+      card.querySelector(".fold-head").setAttribute("aria-expanded", "true");
+      currentModule = item;
+      document.getElementById("returnHint").textContent = item.return_hint || "上传这个模块的监管回报。";
+      work.hidden = false;
+      if (switching || !uploadId) hideLaterSteps();
+    }
+
+    function renderModulePicker() {
+      const list = document.getElementById("moduleList");
+      const work = document.getElementById("moduleWork");
+      if (!list) return;
+      if (work && work.parentElement && work.parentElement.classList.contains("fold-body")) {
+        document.getElementById("modulePicker").appendChild(work);
+        work.hidden = true;
+      }
+      list.innerHTML = modules.map((item, index) =>
+        "<section class=\"fold-card\" data-module=\"" + esc(item.id) + "\">"
+        + "<button type=\"button\" class=\"fold-head\" aria-expanded=\"false\">"
+        + "<span class=\"fold-no\">" + (index + 1) + "</span>"
+        + "<span class=\"fold-copy\"><strong>" + esc(item.title) + "</strong><span>"
+        + esc(item.blurb || "") + "</span></span>"
+        + "<span class=\"fold-twist\" aria-hidden=\"true\">›</span></button>"
+        + "<div class=\"fold-body\" hidden><p class=\"fold-paused\">已展开。再点一次标题就收起。</p></div></section>"
+      ).join("");
+    }
+
+    async function loadModules() {
+      const response = await fetch("/api/modules");
+      const data = await response.json();
+      modules = data.modules || [];
+      renderModulePicker();
+    }
+
+    document.getElementById("moduleList").addEventListener("click", (event) => {
+      const head = event.target.closest(".fold-head");
+      if (!head) return;
+      const card = head.closest(".fold-card");
+      const item = modules.find((mod) => mod.id === card.getAttribute("data-module"));
+      if (item) toggleModule(item);
+    });
+
+    function showGuide(index) {
+      if (index < 0 || index > guideMax) return;
+      guideIndex = index;
+      GUIDE_PANELS.forEach((id, step) => {
+        const panel = document.getElementById(id);
+        if (panel) panel.hidden = step !== index;
+      });
+      document.querySelectorAll("#guideBar .guide-step").forEach((button, step) => {
+        button.classList.toggle("is-current", step === index);
+        button.classList.toggle("is-done", step < index);
+        button.classList.toggle("is-ready", step > index && step <= guideMax);
+        button.disabled = step > guideMax;
+      });
+    }
+
+    function resetGuide() {
+      guideMax = 0;
+      showGuide(0);
+    }
+
+    function revealStep(id) {
+      const index = GUIDE_PANELS.indexOf(id);
+      if (index < 0) return;
+      guideMax = Math.max(guideMax, index);
+      showGuide(index);
+      const bar = document.getElementById("guideBar");
+      if (bar) bar.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+
+    function hideLaterSteps() {
+      resetGuide();
+    }
+
+    document.getElementById("guideBar").addEventListener("click", (event) => {
+      const button = event.target.closest("[data-guide]");
+      if (!button || button.disabled) return;
+      showGuide(Number(button.getAttribute("data-guide")));
+    });
+
+    function clearComparison() {
+      regulatoryFile = null;
+      if (returnInput) returnInput.value = "";
+      if (underlyingEl) underlyingEl.innerHTML = "";
+      if (returnGridEl) returnGridEl.innerHTML = "";
+      if (varianceGridEl) varianceGridEl.innerHTML = "";
+      hideLaterSteps();
+    }
+
+    async function submitCompare(file) {
+      if (!file) return;
+      regulatoryFile = file;
+      if (!uploadId) {
+        setBanner("请先上传明细并完成计算", "err");
+        return;
+      }
+      busy = true;
+      setBanner("正在读取监管结果并计算偏离…", "wait");
+      const body = new FormData();
+      body.append("file", file);
+      body.append("upload_id", uploadId);
+      body.append("module", currentModule ? currentModule.id : "");
+      try {
+        const response = await fetch("/api/compare", { method: "POST", body });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "对比失败");
+        renderComparison(data);
+        const fileLink = document.getElementById("downloadCompare");
+        if (fileLink) fileLink.click();
+        const where = data.unit === "千元" ? "监管表按千元，明细统计已换成同一单位。" : "两边按上传表的原数对比。";
+        setBanner("已生成偏离。" + where + " Excel 含监管结果、明细统计和偏离。", "ok");
+        revealStep("stepVariance");
+      } catch (error) {
+        setBanner(error.message || "对比失败", "err");
+      } finally {
+        busy = false;
+      }
     }
 
     async function loadCatalog() {
@@ -836,11 +2415,28 @@
       if (file) inspect(file);
     });
 
+    returnZone.addEventListener("click", () => returnInput.click());
+    returnInput.addEventListener("change", () => {
+      if (returnInput.files[0]) submitCompare(returnInput.files[0]);
+    });
+    returnZone.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      returnZone.classList.add("dragover");
+    });
+    returnZone.addEventListener("dragleave", () => returnZone.classList.remove("dragover"));
+    returnZone.addEventListener("drop", (event) => {
+      event.preventDefault();
+      returnZone.classList.remove("dragover");
+      const file = event.dataTransfer.files && event.dataTransfer.files[0];
+      if (file) submitCompare(file);
+    });
+
     async function inspect(file) {
       if (busy) return;
       busy = true;
       narrative.textContent = "";
       packsEl.innerHTML = "";
+      clearComparison();
       setBanner("正在读取表头…", "wait");
       const body = new FormData();
       body.append("file", file);
@@ -1198,6 +2794,10 @@
         setBanner("请先添加一张计算表", "err");
         return;
       }
+      if (!currentModule) {
+        setBanner("请先选择模块", "err");
+        return;
+      }
       const gaps = missingRequired();
       if (gaps.length) {
         setBanner("还有必填字段没有选列：" + gaps.slice(0, 4).join("、"), "err");
@@ -1205,12 +2805,14 @@
       }
       busy = true;
       setBanner("正在按你的映射计算…", "wait");
+      let calculated = false;
       try {
         const response = await fetch("/api/calculate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             upload_id: uploadId,
+            module: currentModule.id,
             tables: tablesPayload(),
             rules: rulesPayload(),
           }),
@@ -1218,15 +2820,17 @@
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || "计算失败");
         renderResults(data);
-        const fileLink = document.getElementById("downloadRwa");
-        if (fileLink) fileLink.click();
-        setBanner("已按当前映射算出 " + data.row_count + " 笔。计算 RWA 已写在每行后面。", "ok");
-        narrative.scrollIntoView({ behavior: "smooth", block: "start" });
+        setBanner("已按当前映射算出 " + data.row_count + " 笔。结果在「计算」，接着可以去「监管结果」。", "ok");
+        calculated = true;
+        if (varianceGridEl) varianceGridEl.innerHTML = "";
+        guideMax = 2;
+        showGuide(1);
       } catch (error) {
         setBanner(error.message || "计算失败", "err");
       } finally {
         busy = false;
       }
+      if (calculated && regulatoryFile) await submitCompare(regulatoryFile);
     }
 
     kbEl.addEventListener("change", (event) => {
@@ -1395,11 +2999,14 @@
       }
       const jump = event.target.closest("[data-jump]");
       if (jump) {
+        showView("map");
         const row = document.querySelector("[data-block=\"" + activeIndex + "\"] [data-row-field=\"" + jump.dataset.jump + "\"]");
         if (row) {
           row.classList.add("row-focus");
           row.scrollIntoView({ behavior: "smooth", block: "center" });
           setTimeout(() => row.classList.remove("row-focus"), 1200);
+        } else {
+          setBanner("先上传工作簿，再把这个字段对应到表头。", "wait");
         }
         return;
       }
@@ -1679,14 +3286,52 @@
       renderWeightBody();
       weightDrawer.classList.add("open");
       weightDrawer.setAttribute("aria-hidden", "false");
+      markNav("weights");
     }
 
     function closeWeightDrawer() {
       weightDrawer.classList.remove("open");
       weightDrawer.setAttribute("aria-hidden", "true");
+      markNav(currentView);
     }
 
-    document.getElementById("weightOpen").addEventListener("click", openWeightDrawer);
+    let currentView = "map";
+
+    function markNav(name) {
+      document.querySelectorAll("[data-nav]").forEach((button) => {
+        button.classList.toggle("active", button.dataset.nav === name);
+      });
+    }
+
+    function showView(name) {
+      const map = document.getElementById("viewMap");
+      const rules = document.getElementById("viewRules");
+      if (name !== "rules") name = "map";
+      map.hidden = name !== "map";
+      rules.hidden = name !== "rules";
+      currentView = name;
+      markNav(name);
+      const next = name === "map" ? "" : "#rules";
+      if (location.hash !== next) history.replaceState(null, "", location.pathname + location.search + next);
+      window.scrollTo(0, 0);
+    }
+
+    function viewFromHash() {
+      return location.hash === "#rules" ? "rules" : "map";
+    }
+
+    document.addEventListener("click", (event) => {
+      if (event.target.closest("[data-open-weights]")) {
+        openWeightDrawer();
+        return;
+      }
+      const go = event.target.closest("[data-go]");
+      if (!go) return;
+      closeWeightDrawer();
+      showView(go.dataset.go);
+    });
+    window.addEventListener("hashchange", () => showView(viewFromHash()));
+    showView(viewFromHash());
     weightDrawer.addEventListener("click", (event) => {
       if (event.target.closest("[data-weight-close]")) closeWeightDrawer();
     });
@@ -1727,7 +3372,8 @@
       renderWeightBody();
     }
 
-    Promise.all([loadCatalog(), loadStoredRules(), loadWeights()]).then(renderKnowledge).catch(() => setBanner("规则库加载失败", "err"));
+    Promise.all([loadCatalog(), loadStoredRules(), loadWeights(), loadGraphConfig()]).then(renderKnowledge).catch(() => setBanner("规则库加载失败", "err"));
+    loadModules().catch(() => setBanner("模块列表没有读到", "err"));
   </script>
   <style>
     body { background: #f3f5f8; color: #1c2434; }
@@ -1737,21 +3383,62 @@
       --border: #e3e8f0;
       --accent: #2f5fbf;
       --success: #1d7a4a;
-      display: flex;
-      align-items: stretch;
       min-height: 100vh;
       background: #f3f5f8;
       color: var(--text);
     }
-    .main-col { flex: 1; min-width: 0; padding: 20px 24px 48px; }
+    .view[hidden] { display: none !important; }
+    .app-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      padding: 14px 24px;
+      background: #f7f8fb;
+      border-bottom: 1px solid #e6ebf2;
+    }
+    .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .brand-mark {
+      width: 42px;
+      height: 42px;
+      border-radius: 10px;
+      background: #1e3a8a;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: none;
+    }
+    .brand-text { display: flex; flex-direction: column; line-height: 1.25; }
+    .brand-text strong { font-size: 16px; font-weight: 700; color: #1c2434; }
+    .brand-text span { margin-top: 2px; font-size: 12px; color: #8b97a8; }
+    .top-nav { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+    .top-nav button {
+      border: none;
+      background: transparent;
+      color: #5c6b82;
+      font: inherit;
+      font-size: 14px;
+      font-weight: 600;
+      padding: 8px 16px;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+    .top-nav button:hover { color: #1c2434; background: #eef2f7; }
+    .top-nav button.active { color: #1e3a5f; background: #e7eefb; }
+    .main-col { min-width: 0; padding: 20px 24px 48px; }
     .page-head { margin-bottom: 16px; display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
     .page-head h1 { margin: 0; font-size: 20px; font-weight: 650; }
     .page-head p { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
-    #weightOpen {
+    .head-actions { display: flex; gap: 8px; flex: none; }
+    .head-btn {
       flex: none;
-      background: #2f5fbf;
-      color: #fff;
-      border: 1px solid #2f5fbf;
+      background: #fff;
+      color: #1c2434;
+      border: 1px solid #e3e8f0;
       border-radius: 8px;
       padding: 8px 14px;
       font: inherit;
@@ -1759,7 +3446,9 @@
       font-weight: 600;
       cursor: pointer;
     }
-    #weightOpen:hover { background: #274f9e; }
+    .head-btn:hover { border-color: #2f5fbf; color: #2f5fbf; }
+    .head-btn-primary { background: #2f5fbf; color: #fff; border-color: #2f5fbf; }
+    .head-btn-primary:hover { background: #274f9e; color: #fff; }
     .page-main { background: transparent; border: none; box-shadow: none; padding: 0; }
     .upload {
       border: 1.5px dashed #d5deea;
@@ -1770,13 +3459,7 @@
     }
     .upload:hover, .upload.dragover { border-color: #2f5fbf; background: #fff; }
     .kb {
-      width: 420px;
-      flex: none;
-      position: sticky;
-      top: 0;
-      height: 100vh;
-      background: #f3f5f8;
-      border-left: 1px solid #e3e8f0;
+      background: transparent;
       display: flex;
       flex-direction: column;
     }
@@ -1789,8 +3472,211 @@
     }
     .kb-head strong { font-size: 16px; }
     .kb-head span { color: var(--muted); font-size: 12px; font-weight: 400; }
-    #kbRules { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-    .kb-body { flex: 1; overflow: auto; padding: 12px 12px 24px; background: transparent; }
+    #kbRules { display: block; }
+    .rules-wrap { max-width: none; }
+    .kb-body { padding: 0 0 24px; background: transparent; }
+    .graph-shell {
+      display: grid;
+      grid-template-columns: 248px minmax(0, 1fr) 300px;
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: 12px;
+      height: calc(100vh - 210px);
+      min-height: 560px;
+    }
+    .graph-tree {
+      grid-row: 2;
+      overflow: auto;
+      background: #fff;
+      border: 1px solid #e3e8f0;
+      border-radius: 12px;
+      padding: 8px 6px 12px;
+    }
+    .tree-title {
+      margin: 4px 10px 8px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #8b97a8;
+    }
+    .tree-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      width: 100%;
+      border: none;
+      background: transparent;
+      color: #1c2434;
+      font: inherit;
+      font-size: 13px;
+      text-align: left;
+      border-radius: 8px;
+      padding: 6px 8px 6px calc(8px + var(--tree-depth) * 14px);
+      cursor: pointer;
+    }
+    .tree-row:hover { background: #eef2f7; }
+    .tree-row.selected { background: #e7eefb; color: #1e3a5f; font-weight: 650; }
+    .tree-twist { width: 12px; flex: none; color: #5c6b82; }
+    .tree-kind { flex: none; font-size: 11px; color: #8b97a8; }
+    .tree-row.selected .tree-kind { color: #1e3a5f; }
+    .tree-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .graph-toolbar { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; }
+    .graph-zoom { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; }
+    #graphZoomLabel { min-width: 64px; }
+    .graph-toolbar input {
+      width: 180px;
+      border: 1px solid #e3e8f0;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font: inherit;
+      font-size: 13px;
+      background: #fff;
+    }
+    #graphHint { color: var(--muted); font-size: 12px; }
+    .graph-stage {
+      position: relative;
+      overflow: auto;
+      background-color: #fbfcfe;
+      background-image: radial-gradient(#e3e8f0 1px, transparent 1px);
+      background-size: 18px 18px;
+      border: 1px solid #e3e8f0;
+      border-radius: 12px;
+    }
+    #graphWorld { position: relative; }
+    #graphScale { position: relative; transform-origin: 0 0; }
+    #graphBends { position: absolute; left: 0; top: 0; z-index: 3; }
+    .edge-bend {
+      position: absolute;
+      width: 12px;
+      height: 12px;
+      margin: -6px 0 0 -6px;
+      padding: 0;
+      border-radius: 50%;
+      border: 2px solid #2f5fbf;
+      background: #fff;
+      cursor: grab;
+    }
+    #graphSvg [data-edge] { cursor: grab; }
+    #graphSvg .graph-edge-label { cursor: text; }
+    #graphSvg { position: absolute; left: 0; top: 0; z-index: 0; }
+    #graphNodes { position: relative; z-index: 1; pointer-events: none; }
+    .graph-node {
+      position: absolute;
+      box-sizing: border-box;
+      overflow: hidden;
+      border: 1px solid #d5deea;
+      border-radius: 10px;
+      background: #fff;
+      padding: 8px 22px 8px 10px;
+      cursor: grab;
+      user-select: none;
+      pointer-events: auto;
+    }
+    .graph-node.can-open { padding-left: 22px; }
+    .graph-twist {
+      position: absolute;
+      left: 8px;
+      top: 8px;
+      color: #5c6b82;
+      font-size: 12px;
+      line-height: 1;
+    }
+    .graph-node.selected { border-color: #2f5fbf; box-shadow: 0 0 0 2px rgba(47, 95, 191, 0.16); z-index: 2; }
+    .graph-node.dim { opacity: 0.22; filter: grayscale(1); }
+    .graph-node.category { background: #eef2f7; }
+    .graph-node.rule { background: #f4f7fc; border-color: #c5d4ef; }
+    .graph-node.basis {
+      background: #fff6e8;
+      border: 1.5px solid #c47b14;
+      z-index: 1;
+    }
+    .graph-node.basis .graph-kind { color: #8a5a10; font-weight: 700; }
+    .graph-node.basis .graph-note { color: #5c4314; }
+    .reg-basis {
+      margin: 0 0 10px;
+      padding: 8px 10px;
+      background: #fff6e8;
+      border: 1px solid #e4c48a;
+      border-left: 4px solid #c47b14;
+      border-radius: 8px;
+      font-size: 13px;
+      line-height: 1.55;
+      color: #3d2a10;
+    }
+    .reg-basis span {
+      display: inline-block;
+      margin-right: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #8a5a10;
+    }
+    .calc-note { font-size: 12px; color: var(--muted); }
+    .graph-node.formula { background: #f3f7f4; border-color: #c9ddd0; }
+    .graph-node.custom,
+    .graph-node.custom-step,
+    .graph-node.custom-param { border-style: dashed; }
+    .graph-node.custom-step { background: #f4f7fc; }
+    .graph-node.custom-param { background: #fbf8f1; border-color: #e4d7b8; }
+    .graph-port {
+      position: absolute;
+      right: 6px;
+      top: 50%;
+      width: 12px;
+      height: 12px;
+      margin-top: -6px;
+      padding: 0;
+      border: 2px solid #2f5fbf;
+      border-radius: 50%;
+      background: #fff;
+      cursor: crosshair;
+      z-index: 3;
+    }
+    .graph-kind { display: block; font-size: 11px; color: #667085; }
+    .graph-label { display: block; margin-top: 2px; font-size: 13px; font-weight: 650; line-height: 1.35; }
+    .graph-note {
+      display: block;
+      margin-top: 4px;
+      font-size: 12px;
+      font-weight: 400;
+      color: #667085;
+      line-height: 1.4;
+      white-space: pre-wrap;
+    }
+    .graph-inspector {
+      background: #fff;
+      border: 1px solid #e3e8f0;
+      border-radius: 12px;
+      padding: 14px;
+      overflow: auto;
+    }
+    .graph-inspector h3 { margin: 0; font-size: 15px; }
+    .graph-inspector p { margin: 6px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .graph-inspector label { display: block; margin: 12px 0 4px; font-size: 12px; color: var(--muted); }
+    .graph-inspector input, .graph-inspector textarea {
+      width: 100%;
+      box-sizing: border-box;
+      border: 1px solid #e3e8f0;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font: inherit;
+      font-size: 13px;
+    }
+    .graph-inspector textarea { min-height: 88px; resize: vertical; }
+    .graph-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+    .graph-edge-label { font-size: 11px; fill: #667085; paint-order: stroke; stroke: #fbfcfe; stroke-width: 4px; cursor: text; }
+    .edge-label-editor {
+      position: absolute;
+      z-index: 5;
+      min-width: 72px;
+      max-width: 180px;
+      transform: translate(-50%, -80%);
+      padding: 2px 6px;
+      border: 1px solid #2f5fbf;
+      border-radius: 6px;
+      background: #fff;
+      font: inherit;
+      font-size: 12px;
+      text-align: center;
+    }
+    .graph-edge-label.dim { fill: #c5ced8; }
     .kb-tools { padding: 12px 12px 0; }
     .kb-tools button, .rule-chat-top button {
       background: #fff;
@@ -2220,9 +4106,11 @@
     .row-no { color: var(--muted); font-size: 11px; }
     code { font-family: var(--mono); font-size: 11px; }
     @media (max-width: 960px) {
-      .workspace { flex-direction: column; }
-      .kb { width: auto; height: auto; position: static; border-left: none; border-top: 1px solid var(--border); }
-      #kbRules { min-height: 280px; }
+      .app-top { flex-direction: column; align-items: flex-start; }
+      .page-head { flex-direction: column; }
+      .graph-shell { grid-template-columns: 1fr; height: auto; }
+      .graph-tree { max-height: 280px; }
+      .graph-stage { height: 70vh; }
       .rule-modal-panel { width: min(420px, 100vw); }
       .weight-panel { width: min(860px, 100vw); }
       .map-grid { grid-template-columns: 1fr; }

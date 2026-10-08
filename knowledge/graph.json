@@ -1,0 +1,35 @@
+{
+  "positions": {
+    "cat:credit": {
+      "x": 22.0,
+      "y": 63.0
+    },
+    "formula:repo_credit": {
+      "x": 848.0,
+      "y": 36.0
+    },
+    "param:repo_credit:bank_short_months": {
+      "x": 190.0,
+      "y": 248.0
+    },
+    "step:repo_credit:0": {
+      "x": 399.0,
+      "y": 36.0
+    },
+    "step:repo_credit:1": {
+      "x": 624.0,
+      "y": 36.0
+    }
+  },
+  "nodes": [],
+  "edges": [
+    {
+      "id": "link:muyuxo9z",
+      "from": "param:repo_credit:usd_cnh",
+      "to": "rule:repo_credit",
+      "label": "相关"
+    }
+  ],
+  "routes": {},
+  "labels": {}
+}

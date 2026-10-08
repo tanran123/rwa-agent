@@ -55,7 +55,16 @@ def calc_repo_credit(row: dict, rules: dict | None = None) -> dict:
         "rwa": rwa,
         "capital": capital,
         "currency": "USD",
+        "weight": weight,
+        "rating": str(row.get("rating_sp") or "").strip(),
+        "approach": "external" if str(row.get("rating_sp") or "").strip() else "standardized",
+        "on_principal": pos,
+        "on_crm": pos,
+        "off_notional": 0.0,
+        "off_ce": 0.0,
+        "off_dre": 0.0,
         "summary": f"{why}。RWA = {pos:,.2f} × {_pct(weight)}",
+        "basis": why,
     }
 
 
@@ -116,7 +125,16 @@ def calc_ccr(row: dict, rules: dict | None = None) -> dict:
         "rwa": rwa,
         "capital": capital,
         "currency": "MOP",
+        "weight": weight,
+        "rating": str(row.get("rating_fitch") or "").strip(),
+        "approach": "external" if str(row.get("rating_fitch") or "").strip() else "standardized",
+        "on_principal": 0.0,
+        "on_crm": 0.0,
+        "off_notional": max(in_mop, out_mop),
+        "off_ce": 0.0,
+        "off_dre": cea,
         "summary": f"{why}。信用暴露 {cea:,.0f}，RWA {rwa:,.0f} 澳门元",
+        "basis": f"{ccf_why}。{why}",
     }
 
 
@@ -146,6 +164,7 @@ def calc_mr_repo(row: dict, rules: dict | None = None) -> dict:
         "capital": capital,
         "currency": "MOP",
         "summary": f"{factor_why}；{band} {_pct(gmr)}。资本 {capital:,.0f}，RWA {rwa:,.0f} 澳门元",
+        "basis": f"澳门金管局市场风险标准法。{factor_why}；{band}期限档 {_pct(gmr)}。RWA = 资本 × {cfg['rwa_multiplier']:g}。",
     }
 
 
@@ -178,6 +197,10 @@ def calc_mr_irs(row: dict, rules: dict | None = None) -> dict:
             f"浮动腿 {float_band}，固定腿 {fixed_band}。"
             f"按示例公式资本 {capital:,.0f}；两腿若落在 1 区与 3 区，期限法资本为较大一腿 {larger:,.0f}"
         ),
+        "basis": (
+            f"澳门金管局市场风险标准法期限档。浮动腿 {float_band}，固定腿 {fixed_band}。"
+            f"资本取两腿加权差额的绝对值再乘 {cfg['gap_factor']:g}。RWA = 资本 × {cfg['rwa_multiplier']:g}。"
+        ),
         "ladder_capital": larger,
     }
 
@@ -202,6 +225,7 @@ def calc_mr_fx(row: dict, rules: dict | None = None) -> dict:
         "nop": nop,
         "short": short,
         "summary": f"{'空头' if short else '多头'} {nop:,.0f} × {_pct(cfg['capital_ratio'])}，RWA {rwa:,.0f} 澳门元",
+        "basis": f"澳门金管局市场风险标准法外汇风险。单币种资本 = 净敞口 × {_pct(cfg['capital_ratio'])}，RWA = 净敞口。全行另取多头合计与空头合计的较大者。",
     }
 
 

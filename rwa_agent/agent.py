@@ -20,6 +20,7 @@ from rwa_agent.fields import (
     map_header_row,
     norm_header,
 )
+from rwa_agent.compare import aggregate_exposure, exposure_from_packs
 from rwa_agent.formulas import (
     calc_ccr,
     calc_mr_fx,
@@ -28,6 +29,7 @@ from rwa_agent.formulas import (
     calc_repo_credit,
     fx_portfolio,
 )
+from rwa_agent.reference import REGULATORY_BASIS
 from rwa_agent.rules import resolve_rules
 
 PREVIEW_ROWS = 40
@@ -86,6 +88,7 @@ def field_catalog() -> list[dict]:
                 "id": product,
                 "title": title,
                 "formula": PACK_FORMULA[product],
+                "basis": REGULATORY_BASIS[product],
                 "fields": fields,
             }
         )
@@ -137,6 +140,7 @@ def run_with_mappings(path: str | Path, specs: list[dict], rules: dict | None = 
         "pack_count": len(packs),
         "row_count": sum(pack.get("row_count", len(pack["rows"])) for pack in packs),
         "rwa_rows": rwa_rows,
+        "exposure": exposure_from_packs(packs),
     }
 
 
@@ -503,6 +507,7 @@ def _run_table(table: dict, rules: dict) -> dict:
         rows.append(_run_row(product, record, calc, rules))
     currency = next((row["currency"] for row in rows if row.get("currency")), None)
     ok_rows = [row for row in rows if row["status"] == "ok"]
+    exposure = aggregate_exposure(ok_rows)
     title = PACK_TITLE[product]
     type_values = table.get("type_values") or []
     if type_values:
@@ -520,6 +525,7 @@ def _run_table(table: dict, rules: dict) -> dict:
         "book": table["book"],
         "header_row": table["header_row"],
         "formula": PACK_FORMULA[product],
+        "basis": REGULATORY_BASIS[product],
         "currency": currency,
         "mapping": _mapping_view(table),
         "type_values": type_values,
@@ -529,6 +535,7 @@ def _run_table(table: dict, rules: dict) -> dict:
         "total_rwa": sum(row["rwa"] for row in ok_rows),
         "total_capital": sum(row["capital"] for row in ok_rows),
         "notes": notes,
+        "exposure": exposure,
         "_rwa_rows": [
             {
                 "sheet": table["sheet"],
@@ -551,6 +558,7 @@ def _run_row(product: str, record: dict, calc, rules: dict) -> dict:
     base = {
         "id": str(trade_id),
         "excel_row": record["_row"],
+        "product": product,
         "missing": [FIELD_LABEL.get(field, field) for field in missing],
     }
     if missing:
@@ -560,6 +568,7 @@ def _run_row(product: str, record: dict, calc, rules: dict) -> dict:
             capital=None,
             currency=None,
             summary="缺 " + "、".join(base["missing"]) + "，这一笔没有计算",
+            basis=REGULATORY_BASIS[product],
             steps=[],
         )
         return base
@@ -572,6 +581,7 @@ def _run_row(product: str, record: dict, calc, rules: dict) -> dict:
             capital=None,
             currency=None,
             summary=f"数值无法计算：{exc}",
+            basis=REGULATORY_BASIS[product],
             steps=[],
         )
         return base
@@ -582,6 +592,7 @@ def _run_row(product: str, record: dict, calc, rules: dict) -> dict:
             capital=None,
             currency=None,
             summary=result.get("message") or "无法计算",
+            basis=result.get("basis") or REGULATORY_BASIS[product],
             steps=result.get("steps") or [],
         )
         return base
@@ -591,6 +602,7 @@ def _run_row(product: str, record: dict, calc, rules: dict) -> dict:
         capital=result["capital"],
         currency=result["currency"],
         summary=result["summary"],
+        basis=result.get("basis") or REGULATORY_BASIS[product],
         steps=result["steps"],
     )
     if "ladder_capital" in result:
@@ -598,6 +610,9 @@ def _run_row(product: str, record: dict, calc, rules: dict) -> dict:
     if "nop" in result:
         base["nop"] = result["nop"]
         base["short"] = result["short"]
+    for key in ("weight", "approach", "rating", "on_principal", "on_crm", "off_notional", "off_ce", "off_dre"):
+        if key in result:
+            base[key] = result[key]
     return base
 
 
@@ -628,10 +643,10 @@ def _pack_notes(product: str, book: str | None) -> list[str]:
     if product == "repo_credit":
         where = "银行账簿" if book != "trading" else "交易账簿"
         notes.append(f"表被识别为{where}正回购，债券本体走发行人信用风险。")
-        notes.append("通告 025 其余 7 条需要次级债、担保人、原到期日或出资比例。模板里没有这些字段，对应特殊权重不启用。")
+        notes.append("次级债、担保人、原到期日或出资比例这些特殊权重，模板里没有对应字段，不启用。")
     elif product == "ccr_fx":
         notes.append("只读远端两腿。近端是否已结算没有进入公式。")
-        notes.append("银行对手按「银行-一般」和 Fitch 评级。通告第 5 条的 30% 需要原到期日，模板没有该字段，A 档仍用标准法 50%。")
+        notes.append("银行对手按「银行-一般」和 Fitch 评级。30% 这一档需要原到期日，模板没有该字段，A 档仍用标准法 50%。")
     elif product == "mr_repo":
         notes.append("交易账簿质押债。特定风险因子和期限档由发行人类别、剩余期限查参照表，不采用模板里填写的权重。")
         notes.append("同一债券若已在银行账簿计过发行人信用风险，这里不再相加。")

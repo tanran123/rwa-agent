@@ -75,6 +75,16 @@ def matched_type(issuer_type: object, residual_months: float | None, short_month
     return text
 
 
+# Pack-level regulatory source. Shown apart from the arithmetic.
+REGULATORY_BASIS = {
+    "repo_credit": "第011/2015-AMCM号公告第2点：澳门本地信用机构偿付能力比率不得低于8%，资本按 RWA 的8%计算。第015/B/2022-DSB/AMCM号通告信用风险第6段要求采用标准法，并遵守第028/B/2015-DSB/AMCM号通告随函的《信用风险回报填报说明》。这份通告公开文本只有函件，报表没有附上，写不出行号。",
+    "ccr_fx": "第015/B/2022-DSB/AMCM号通告信用风险第6段：对单个交易对手采用标准法，并遵守第028/B/2015-DSB/AMCM号通告随函的《信用风险回报填报说明》。折现轧差和附加因子在随函报表里。这份通告公开文本只有函件，报表没有附上，写不出行号。资本比例对应第011/2015-AMCM号公告第2点，不得低于8%。",
+    "mr_repo": "第015/B/2022-DSB/AMCM号通告市场风险第10段要求采用标准法，并遵守第028/B/2015-DSB/AMCM号通告随函的《市场风险回报填报说明》。特定风险和期限档在随函报表里。这份通告公开文本只有函件，报表没有附上，写不出行号。RWA 按资本的12.5倍，对应第011/2015-AMCM号公告第2点的8%。",
+    "mr_irs": "第015/B/2022-DSB/AMCM号通告市场风险第10段要求采用标准法，并遵守第028/B/2015-DSB/AMCM号通告随函的《市场风险回报填报说明》。两腿期限档和差额倍数在随函报表里。这份通告公开文本只有函件，报表没有附上，写不出行号。RWA 按资本的12.5倍，对应第011/2015-AMCM号公告第2点的8%。",
+    "mr_fx": "第015/B/2022-DSB/AMCM号通告市场风险第10段要求采用标准法，并遵守第028/B/2015-DSB/AMCM号通告随函的《市场风险回报填报说明》。单币种净敞口和多头、空头取较大一边在随函报表里。这份通告公开文本只有函件，报表没有附上，写不出行号。8%对应第011/2015-AMCM号公告第2点。",
+}
+
+
 def risk_weight(
     issuer_name: object,
     bucket: str,
@@ -83,7 +93,7 @@ def risk_weight(
 ) -> tuple[float | None, str]:
     name = str(zero_name or "").strip()
     if name and str(issuer_name or "").strip() == name:
-        return 0.0, f"通告 025 第1条：{name} 权重 0%"
+        return 0.0, f"发行人是{name}，风险权重 0%"
     weight = WEIGHTS.get((bucket, grade))
     if weight is None:
         return None, f"权重表没有「{bucket} × Grade {grade}」"
