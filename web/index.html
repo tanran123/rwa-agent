@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>市场风险 RWA</title>
-  <link rel="stylesheet" href="/shared.css?v=fold4" />
+  <title>RWA</title>
+  <link rel="stylesheet" href="/shared.css?v=calcbtn" />
 </head>
 <body>
   <div class="workspace">
@@ -12,8 +12,7 @@
       <div class="brand">
         <span class="brand-mark">RWA</span>
         <div class="brand-text">
-          <strong>市场风险 RWA</strong>
-          <span>澳门金管局 · 资本计量</span>
+          <strong>RWA</strong>
         </div>
       </div>
       <nav class="top-nav" aria-label="页面">
@@ -101,10 +100,13 @@
         <header class="page-head">
           <div>
             <h1>规则库</h1>
-            <p>左侧是知识库的层级。点一条，图谱上会打开对应的内容。</p>
+            <p>在知识库上右键可以添加类别。类别下面添加规则，规则上不能再添加规则。</p>
           </div>
           <div class="head-actions">
-            <button type="button" class="head-btn head-btn-primary" id="ruleChatOpen">规则对话</button>
+            <button type="button" class="head-btn head-btn-primary" id="ruleChatOpen">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 7.2A2.2 2.2 0 0 1 8.2 5h7.6A2.2 2.2 0 0 1 18 7.2v6.1a2.2 2.2 0 0 1-2.2 2.2H10l-3.2 2.6v-2.6H8.2A2.2 2.2 0 0 1 6 13.3V7.2Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+              规则对话
+            </button>
           </div>
         </header>
         <div class="banner" data-banner></div>
@@ -121,7 +123,7 @@
       <div class="rule-chat-top">
         <div>
           <strong id="ruleChatTitle">规则对话</strong>
-          <span id="ruleChatFocus">可以问任意一条规则</span>
+          <span id="ruleChatFocus">回答来自微信知识库</span>
         </div>
         <div class="rule-chat-actions">
           <button type="button" id="ruleChatFile">上传 Excel</button>
@@ -131,7 +133,7 @@
       </div>
       <div class="rule-chat-log" id="ruleChatLog"></div>
       <div class="rule-chat-compose">
-        <textarea id="ruleChatInput" rows="2" placeholder="例如：把正回购的资本比例改成 10%"></textarea>
+        <textarea id="ruleChatInput" rows="2" placeholder="向微信知识库提问，例如：正回购的资本怎么计"></textarea>
         <button type="button" id="ruleChatSend">发送</button>
       </div>
     </section>
@@ -147,6 +149,30 @@
         <button type="button" data-weight-close>关闭</button>
       </div>
       <div class="weight-body" id="weightBody"></div>
+    </section>
+  </div>
+
+  <div class="rule-modal" id="weixinDrawer" aria-hidden="true">
+    <div class="rule-modal-mask" data-weixin-close></div>
+    <section class="rule-modal-panel" role="dialog" aria-modal="true" aria-labelledby="weixinTitle">
+      <div class="rule-chat-top">
+        <div>
+          <strong id="weixinTitle">微信接口</strong>
+          <span>原子化接口的 AppID 和 AppSecret</span>
+        </div>
+        <button type="button" data-weixin-close>关闭</button>
+      </div>
+      <form class="weixin-form" id="weixinForm">
+        <p class="card-desc">AppID 和 Secret-Key 在 <a href="https://weknora.weixin.qq.com/platform/openapi" target="_blank" rel="noopener">微信知识引擎开放平台</a> 获取。Secret-Key 填在 AppSecret。签名规则见 <a href="https://developers.weixin.qq.com/doc/aispeech/knowledge/atomic_capability/atomic_interface.html" target="_blank" rel="noopener">原子化接口</a>。</p>
+        <label for="weixinAppId">AppID</label>
+        <input id="weixinAppId" name="appid" autocomplete="off" spellcheck="false" />
+        <label for="weixinAppSecret">AppSecret</label>
+        <input id="weixinAppSecret" name="secret" type="password" autocomplete="off" spellcheck="false" />
+        <div class="graph-actions">
+          <button type="submit" class="head-btn head-btn-primary" id="weixinSave">保存</button>
+        </div>
+        <p class="card-desc" id="weixinStatus"></p>
+      </form>
     </section>
   </div>
 
@@ -204,10 +230,54 @@
       }[ch]));
     }
 
+    function inlineMarkdown(text) {
+      return esc(text).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    }
+
+    function renderMarkdown(value) {
+      const lines = String(value ?? "").replace(/\r\n/g, "\n").split("\n");
+      let html = "";
+      let list = "";
+      let ordered = false;
+      function closeList() {
+        if (!list) return;
+        html += (ordered ? "<ol>" : "<ul>") + list + (ordered ? "</ol>" : "</ul>");
+        list = "";
+      }
+      lines.forEach((line) => {
+        const trimmed = line.trim();
+        if (!trimmed) {
+          closeList();
+          return;
+        }
+        const heading = trimmed.match(/^(#{1,3})\s+(.*)$/);
+        if (heading) {
+          closeList();
+          const tag = "h" + (heading[1].length + 2);
+          html += "<" + tag + ">" + inlineMarkdown(heading[2]) + "</" + tag + ">";
+          return;
+        }
+        const item = trimmed.match(/^([-*]|\d+\.)\s+(.*)$/);
+        if (item) {
+          const nextOrdered = item[1] !== "-" && item[1] !== "*";
+          if (list && nextOrdered !== ordered) closeList();
+          ordered = nextOrdered;
+          list += "<li>" + inlineMarkdown(item[2]) + "</li>";
+          return;
+        }
+        closeList();
+        html += "<p>" + inlineMarkdown(trimmed) + "</p>";
+      });
+      closeList();
+      return html;
+    }
+
     function money(amount, currency) {
-      if (amount == null || !currency) return "—";
+      if (amount == null) return "—";
+      const number = amount.toLocaleString("zh-CN", { maximumFractionDigits: 2 });
+      if (!currency) return number;
       const unit = currency === "USD" ? "美元" : "澳门元";
-      return amount.toLocaleString("zh-CN", { maximumFractionDigits: 2 }) + " " + unit;
+      return number + " " + unit;
     }
 
     function stepValue(value) {
@@ -227,8 +297,29 @@
       return (workbook.sheets || []).find((sheet) => sheet.name === name);
     }
 
+    function authoredPacks() {
+      return (graphConfig.rules || []).map((rule) => {
+        const fields = [];
+        const seen = {};
+        (rule.steps || []).forEach((step) => {
+          (step.fields || []).forEach((field) => {
+            if (!field || !field.id || seen[field.id]) return;
+            seen[field.id] = true;
+            fields.push({ id: field.id, label: field.label || "字段", required: false, table: field.table || "" });
+          });
+        });
+        return { id: rule.id, title: rule.title || "新规则", authored: true, fields: fields };
+      });
+    }
+
+    function methodChoices() {
+      return catalog.concat(authoredPacks());
+    }
+
     function packById(id) {
-      return catalog.find((pack) => pack.id === id) || catalog[0];
+      const found = methodChoices().find((pack) => pack.id === id);
+      if (found) return found;
+      return id ? null : (catalog[0] || null);
     }
 
     function looksLikeHeader(row) {
@@ -370,7 +461,7 @@
 
     function assignedProducts(block) {
       const ids = new Set(Object.values(block.assignments || {}).filter(Boolean));
-      return catalog.filter((pack) => ids.has(pack.id));
+      return methodChoices().filter((pack) => ids.has(pack.id));
     }
 
     function writingColumns(block) {
@@ -459,6 +550,14 @@
       return {};
     }
 
+    const STEP_PARAMS = {
+      repo_credit: [["usd_cnh"], ["bank_short_months", "zero_weight_name"]],
+      ccr_fx: [[], ["cut_short", "ccf_short", "cut_mid", "ccf_mid", "ccf_long"], []],
+      mr_repo: [["specific_gov", "specific_ig"], []],
+      mr_irs: [[], ["gap_factor"]],
+      mr_fx: [["capital_ratio"], []],
+    };
+
     const RULE_FIELDS = {
       repo_credit: [
         { id: "usd_cnh", label: "CNH 折美元除数", kind: "number" },
@@ -498,7 +597,7 @@
     let editingId = "";
     let ruleDraft = null;
     let weightCatalog = null;
-    let graphConfig = { positions: {}, nodes: [], edges: [], routes: {}, labels: {} };
+    let graphConfig = { positions: {}, nodes: [], edges: [], routes: {}, labels: {}, rules: [], categories: [], stepLogic: [] };
     let graphModel = { nodes: [], edges: [] };
     let graphSelected = "";
     let graphOpen = new Set();
@@ -506,6 +605,7 @@
     let graphZoom = 1;
     let graphDrag = null;
     let graphSaveTimer = 0;
+    let inspectorSaveTimer = 0;
     const GRAPH_SIZE = {
       category: { w: 128, h: 44 },
       rule: { w: 176, h: 72 },
@@ -514,6 +614,7 @@
       field: { w: 136, h: 48 },
       param: { w: 156, h: 54 },
       formula: { w: 220, h: 90 },
+      calc: { w: 220, h: 78 },
       custom: { w: 176, h: 74 },
       "custom-step": { w: 176, h: 74 },
       "custom-param": { w: 156, h: 64 },
@@ -525,7 +626,8 @@
       step: "步骤",
       field: "字段",
       param: "参数",
-      formula: "公式",
+      formula: "结果公式",
+      calc: "计算",
       custom: "知识点",
       "custom-step": "步骤",
       "custom-param": "参数",
@@ -533,6 +635,62 @@
 
     function isFreeKind(kind) {
       return kind === "custom" || kind === "custom-step" || kind === "custom-param";
+    }
+
+    function authoredRule(id) {
+      return (graphConfig.rules || []).find((rule) => rule.id === id) || null;
+    }
+
+    function splitNodeId(id) {
+      const kind = String(id || "").split(":")[0];
+      if (kind === "rule") return { kind: kind, pack: String(id).slice(kind.length + 1), tail: "" };
+      if (kind === "step" || kind === "field" || kind === "param" || kind === "calc" || kind === "formula") {
+        const rest = String(id).slice(kind.length + 1);
+        if (rest.indexOf("user:") === 0) {
+          const parts = rest.split(":");
+          return { kind: kind, pack: parts[0] + ":" + parts[1], tail: parts.slice(2).join(":") };
+        }
+        const cut = rest.indexOf(":");
+        return { kind: kind, pack: cut < 0 ? rest : rest.slice(0, cut), tail: cut < 0 ? "" : rest.slice(cut + 1) };
+      }
+      return { kind: kind, pack: "", tail: "" };
+    }
+
+    function isLibraryCategory(id) {
+      return id === "cat:credit" || id === "cat:market" || String(id || "").indexOf("cat:user:") === 0;
+    }
+
+    function categoryNodeId(key) {
+      if (key === "market") return "cat:market";
+      if (!key || key === "credit") return "cat:credit";
+      return String(key).indexOf("cat:") === 0 ? String(key) : "cat:" + key;
+    }
+
+    function categoryKey(id) {
+      if (id === "cat:market") return "market";
+      if (id === "cat:credit") return "credit";
+      return String(id || "").indexOf("cat:") === 0 ? String(id).slice(4) : "credit";
+    }
+
+    function categoryLabel(id) {
+      if (id === "cat:market") return "市场风险";
+      if (id === "cat:credit") return "信用风险";
+      const found = (graphConfig.categories || []).find((item) => item.id === id);
+      return (found && found.label) || "新类别";
+    }
+
+    function categoryIdForPack(pack) {
+      const authored = authoredRule(pack);
+      if (authored) return categoryNodeId(authored.category);
+      return String(pack).indexOf("mr_") === 0 ? "cat:market" : "cat:credit";
+    }
+
+    function graphScope() {
+      const id = graphSelected || "";
+      if (isLibraryCategory(id)) return { category: id, rule: "" };
+      const parsed = splitNodeId(id);
+      if (!parsed.pack) return { category: "", rule: "" };
+      return { category: categoryIdForPack(parsed.pack), rule: "rule:" + parsed.pack };
     }
 
     async function loadStoredRules() {
@@ -546,9 +704,12 @@
       const response = await fetch("/api/rules/graph");
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "读取图谱失败");
-      graphConfig = data.graph || { positions: {}, nodes: [], edges: [], routes: {}, labels: {} };
+      graphConfig = data.graph || { positions: {}, nodes: [], edges: [], routes: {}, labels: {}, rules: [], categories: [] };
       graphConfig.routes = graphConfig.routes || {};
       graphConfig.labels = graphConfig.labels || {};
+      graphConfig.rules = graphConfig.rules || [];
+      graphConfig.categories = graphConfig.categories || [];
+      graphConfig.stepLogic = graphConfig.stepLogic || [];
     }
 
     async function persistRule(id) {
@@ -612,7 +773,303 @@
       return Array.isArray(line) ? line.join(" ") : String(line || "");
     }
 
+    const FORMULA_OPS = ["×", "÷", "+", "−", "与", "取较大"];
+
+    function normalizeFormulaOp(op) {
+      const text = String(op || "").trim();
+      if (text === "*" || text === "x" || text === "X" || text === "×") return "×";
+      if (text === "/" || text === "÷") return "÷";
+      if (text === "-" || text === "–" || text === "−") return "−";
+      if (text === "+" || text === "＋") return "+";
+      if (text === "与" || text === "取较大") return text;
+      return "×";
+    }
+
+    function parseFormulaText(raw) {
+      const text = String(raw || "").trim();
+      if (!text) return { terms: [""], ops: [], result: "" };
+      let body = text;
+      let result = "";
+      const eq = text.lastIndexOf("=");
+      if (eq >= 0) {
+        body = text.slice(0, eq).trim();
+        result = text.slice(eq + 1).trim();
+      }
+      const bits = body.split(/\s*(×|\*|÷|\/|\+|＋|−|–|-|与|取较大)\s*/).map((part) => part.trim()).filter((part) => part !== "");
+      const terms = [];
+      const ops = [];
+      bits.forEach((part, index) => {
+        if (index % 2 === 0) terms.push(part);
+        else ops.push(normalizeFormulaOp(part));
+      });
+      const termsKept = terms.length ? terms.slice(0, 6) : [""];
+      const between = ops.slice(0, Math.max(0, termsKept.length - 1));
+      const resultOp = ops.length >= termsKept.length ? ops[termsKept.length - 1] : "";
+      return { terms: termsKept, ops: between, resultOp: resultOp, result: result };
+    }
+
+    function parseFormulaLine(line) {
+      if (!Array.isArray(line)) return parseFormulaText(line);
+      const eq = line.indexOf("=");
+      const left = eq >= 0 ? line.slice(0, eq) : (line.length > 1 ? line.slice(0, -1) : line);
+      const result = eq >= 0 ? line.slice(eq + 1).join("") : (line.length > 1 ? String(line[line.length - 1] || "") : "");
+      const terms = [];
+      const ops = [];
+      left.forEach((part, index) => {
+        if (index % 2 === 1) {
+          ops.push(normalizeFormulaOp(part));
+          return;
+        }
+        const piece = parseFormulaText(part);
+        piece.terms.forEach((term, termIndex) => {
+          if (termIndex) ops.push(piece.ops[termIndex - 1] || "×");
+          terms.push(term);
+        });
+      });
+      const termsKept = terms.length ? terms.slice(0, 6) : [""];
+      const between = ops.slice(0, Math.max(0, termsKept.length - 1));
+      const resultOp = ops.length >= termsKept.length ? ops[termsKept.length - 1] : "";
+      return { terms: termsKept, ops: between, resultOp: resultOp, result: result.trim() };
+    }
+
+    function formulaLineText(row) {
+      const parts = [];
+      row.terms.forEach((term, index) => {
+        if (index) parts.push(row.ops[index - 1] || "×");
+        parts.push(String(term || "").trim());
+      });
+      if (row.resultOp) parts.push(row.resultOp);
+      if (String(row.result || "").trim()) parts.push("=", String(row.result).trim());
+      return parts.join(" ");
+    }
+
+    function stepFormulaLines(pack, index) {
+      return configuredLines((readStepLogic(pack, index).formula) || []);
+    }
+
+    function stepResultName(pack, index) {
+      const formula = stepFormulaLines(pack, index);
+      const lines = formula.length ? formula : stepCalcLines(pack, index);
+      if (!lines.length) return "";
+      const parsed = parseFormulaLine(lines[lines.length - 1]);
+      if (parsed.result) return parsed.result;
+      const step = (ruleView(pack).steps || [])[index];
+      return (step && step.title) || "";
+    }
+
+    function stepResultNames(packId) {
+      const names = [];
+      (ruleView(packId).steps || []).forEach((step, index) => {
+        const name = stepResultName(packId, index);
+        if (name && names.indexOf(name) < 0) names.push(name);
+      });
+      return names;
+    }
+
+    function stepCalcGroups(pack, index) {
+      const logic = readStepLogic(pack, index);
+      const params = (logic.params || []).map((param) => param.label).filter(Boolean);
+      if (!params.length) {
+        const ids = (STEP_PARAMS[pack] || [])[index] || [];
+        ids.forEach((id) => {
+          const field = (RULE_FIELDS[pack] || []).find((item) => item.id === id);
+          if (field && params.indexOf(field.label) < 0) params.push(field.label);
+        });
+      }
+      const step = (ruleView(pack).steps || [])[index];
+      const packMeta = (typeof catalog !== "undefined" ? catalog : []).find((item) => item.id === pack);
+      const labels = packMeta ? Object.fromEntries(packMeta.fields.map((field) => [field.id, field.label])) : {};
+      const fields = [];
+      ((step && step.fields) || []).forEach((id) => {
+        if (typeof id !== "string") return;
+        const label = labels[id] || "";
+        if (label && fields.indexOf(label) < 0) fields.push(label);
+      });
+      addedStepFields(pack, index).forEach((field) => {
+        if (field.label && fields.indexOf(field.label) < 0) fields.push(field.label);
+      });
+      return { params: params.slice(0, 24), fields: fields.slice(0, 24) };
+    }
+
+    function stepFormulaGroups(pack, index) {
+      const groups = stepCalcGroups(pack, index);
+      const calcs = [];
+      const calcLines = stepCalcLines(pack, index);
+      if (calcLines.length) {
+        const parsed = parseFormulaLine(calcLines[calcLines.length - 1]);
+        if (parsed.result && calcs.indexOf(parsed.result) < 0) calcs.push(parsed.result);
+      }
+      const earlier = [];
+      for (let cursor = 0; cursor < index; cursor += 1) {
+        const name = stepResultName(pack, cursor);
+        if (name && earlier.indexOf(name) < 0) earlier.push(name);
+      }
+      return { fields: groups.fields, params: groups.params, calcs: calcs, earlier: earlier };
+    }
+
+    function ruleFormulaGroups(pack) {
+      const fields = [];
+      (ruleView(pack).steps || []).forEach((step, index) => {
+        stepCalcGroups(pack, index).fields.forEach((label) => {
+          if (label && fields.indexOf(label) < 0) fields.push(label);
+        });
+      });
+      const values = stepResultNames(pack).filter((name) => fields.indexOf(name) < 0);
+      return { fields: fields.slice(0, 24), values: values.slice(0, 24) };
+    }
+
+    function activeFormulaNames(rows) {
+      const parsed = splitNodeId(graphSelected);
+      if (parsed.kind === "calc") return stepCalcGroups(parsed.pack, Number(parsed.tail));
+      if (parsed.kind === "formula" && /^\d+$/.test(parsed.tail)) return stepFormulaGroups(parsed.pack, Number(parsed.tail));
+      if (parsed.kind === "formula") {
+        const groups = ruleFormulaGroups(parsed.pack);
+        (rows || []).forEach((row) => {
+          (row.terms || []).forEach((term) => {
+            if (term && groups.fields.indexOf(term) < 0 && groups.values.indexOf(term) < 0) groups.values.push(term);
+          });
+          if (row.result && groups.values.indexOf(row.result) < 0 && groups.fields.indexOf(row.result) < 0) groups.values.push(row.result);
+        });
+        return groups;
+      }
+      const names = stepResultNames(parsed.pack);
+      (rows || []).forEach((row) => {
+        if (row.result && names.indexOf(row.result) < 0) names.push(row.result);
+      });
+      return names.slice(0, 24);
+    }
+
+    function termSelectHtml(term, names, pick) {
+      const grouped = names && !Array.isArray(names);
+      const params = grouped ? (names.params || []) : (pick === "value" ? names || [] : []);
+      const fields = grouped ? (names.fields || []) : [];
+      const calcs = grouped ? (names.calcs || []) : [];
+      const earlier = grouped ? (names.earlier || []) : [];
+      const values = grouped ? (names.values || []) : [];
+      const flat = grouped ? [] : (names || []).slice();
+      if (!grouped && term && flat.indexOf(term) < 0) flat.unshift(term);
+      const option = (name) => "<option value=\"" + esc(name) + "\"" + (name === term ? " selected" : "") + ">" + esc(name) + "</option>";
+      const known = params.indexOf(term) >= 0 || fields.indexOf(term) >= 0 || calcs.indexOf(term) >= 0 || earlier.indexOf(term) >= 0 || values.indexOf(term) >= 0 || flat.indexOf(term) >= 0;
+      const empty = pick === "value" ? "字段或步骤的值" : pick === "step" ? "选择一项" : "字段或参数";
+      let html = "<select data-term aria-label=\"计算项\"><option value=\"\">" + empty + "</option>";
+      if (term && !known) html += option(term);
+      if (fields.length) html += "<optgroup label=\"字段\">" + fields.map(option).join("") + "</optgroup>";
+      if (params.length) html += "<optgroup label=\"参数\">" + params.map(option).join("") + "</optgroup>";
+      if (calcs.length) html += "<optgroup label=\"计算\">" + calcs.map(option).join("") + "</optgroup>";
+      if (earlier.length) html += "<optgroup label=\"前面步骤的值\">" + earlier.map(option).join("") + "</optgroup>";
+      if (values.length) html += "<optgroup label=\"步骤的值\">" + values.map(option).join("") + "</optgroup>";
+      if (flat.length) html += flat.map(option).join("");
+      return html + "</select>";
+    }
+
+    function formulaBuilderHtml(rows, names, pick) {
+      const list = pick === "param" || pick === "value" || pick === "step" ? "" : (names || []).map((name) => "<option value=\"" + esc(name) + "\"></option>").join("");
+      const body = rows.map((row, index) => {
+        const terms = row.terms && row.terms.length ? row.terms : [""];
+        const fields = terms.map((term, termIndex) => {
+          const op = termIndex === 0 ? "" : "<select data-op aria-label=\"符号\">" + FORMULA_OPS.map((item) =>
+            "<option value=\"" + item + "\"" + ((row.ops[termIndex - 1] || "×") === item ? " selected" : "") + ">" + item + "</option>"
+          ).join("") + "</select>";
+          const picked = pick === "param" || pick === "value" || pick === "step";
+          const input = picked
+            ? termSelectHtml(term, names, pick)
+            : "<input data-term list=\"formulaNames\" value=\"" + esc(term) + "\" placeholder=\"名称\" aria-label=\"计算项\">";
+          return "<span class=\"formula-piece\">" + op + input + "</span>";
+        }).join("");
+        return "<div class=\"formula-line\" data-line=\"" + index + "\"><span class=\"formula-index\">" + (index + 1) + "</span>"
+          + fields
+          + (row.resultOp ? "<select data-result-op aria-label=\"结果前的符号\">" + FORMULA_OPS.map((item) =>
+            "<option value=\"" + item + "\"" + (row.resultOp === item ? " selected" : "") + ">" + item + "</option>"
+          ).join("") + "</select>" : "")
+          + "<span class=\"formula-eq\">=</span><input data-result list=\"formulaNames\" value=\"" + esc(row.result || "") + "\" placeholder=\"" + (pick === "value" ? "结果" : "步骤的值") + "\" aria-label=\"" + (pick === "value" ? "结果" : "步骤的值") + "\">"
+          + "<button type=\"button\" class=\"text-btn\" data-formula=\"add-term\" data-line=\"" + index + "\">加一项</button>"
+          + (terms.length > 1 ? "<button type=\"button\" class=\"text-btn\" data-formula=\"remove-term\" data-line=\"" + index + "\">去掉一项</button>" : "")
+          + (rows.length > 1 ? "<button type=\"button\" class=\"text-btn\" data-formula=\"remove-line\" data-line=\"" + index + "\">删除这行</button>" : "")
+          + "</div>";
+      }).join("");
+      return "<div id=\"formulaBuilder\"><datalist id=\"formulaNames\">" + list + "</datalist>" + body
+        + (rows.length < 4 ? "<button type=\"button\" class=\"text-btn\" data-formula=\"add-line\">再加一行</button>" : "")
+        + "</div>";
+    }
+
+    function readFormulaRows() {
+      return Array.from(document.querySelectorAll("#formulaBuilder .formula-line")).map((row) => ({
+        terms: Array.from(row.querySelectorAll("[data-term]")).map((input) => input.value.trim()).slice(0, 6),
+        ops: Array.from(row.querySelectorAll("[data-op]")).map((input) => normalizeFormulaOp(input.value)),
+        resultOp: row.querySelector("[data-result-op]") ? normalizeFormulaOp(row.querySelector("[data-result-op]").value) : "",
+        result: ((row.querySelector("[data-result]") || {}).value || "").trim(),
+      }));
+    }
+
+    function collectFormulaLines(partial) {
+      const rows = readFormulaRows();
+      if (!rows.length) return partial ? { lines: [] } : { error: "至少保留一行公式。" };
+      const lines = [];
+      for (const row of rows) {
+        const started = row.terms.some((term) => term) || row.result;
+        if (!started) {
+          if (partial) continue;
+          return { error: "每一项和结果都要填写。" };
+        }
+        if (!partial && (row.terms.some((term) => !term) || !row.result)) return { error: "每一项和结果都要填写。" };
+        const text = formulaLineText(row);
+        if (!text.trim()) continue;
+        if (text.length > 120) return { error: "这一行公式太长。" };
+        lines.push(text);
+      }
+      if (!partial && !lines.length) return { error: "至少保留一行公式。" };
+      return { lines: lines.slice(0, 4) };
+    }
+
+    function editFormulaRows(action, index) {
+      const rows = readFormulaRows();
+      if (!rows.length) rows.push({ terms: ["", ""], ops: ["×"], result: "" });
+      if (action === "add-line") {
+        if (rows.length >= 4) {
+          setBanner("最多四行公式。", "err");
+          return;
+        }
+        rows.push({ terms: ["", ""], ops: ["×"], result: "" });
+      } else if (action === "remove-line") {
+        if (rows.length <= 1) return;
+        rows.splice(index, 1);
+      } else if (action === "add-term") {
+        const row = rows[index];
+        if (!row || row.terms.length >= 6) {
+          setBanner("一行最多 6 项。", "err");
+          return;
+        }
+        row.terms.push("");
+        row.ops.push("×");
+      } else if (action === "remove-term") {
+        const row = rows[index];
+        if (!row || row.terms.length <= 1) return;
+        row.terms.pop();
+        row.ops.pop();
+      }
+      const host = document.getElementById("formulaBuilder");
+      const pack = splitNodeId(graphSelected).pack;
+      const parsed = splitNodeId(graphSelected);
+      const pick = parsed.kind === "calc" ? "param" : (parsed.kind === "formula" && /^\d+$/.test(parsed.tail) ? "step" : "value");
+      if (host) host.outerHTML = formulaBuilderHtml(rows, activeFormulaNames(rows), pick);
+    }
+
     function ruleView(packId) {
+      const authored = authoredRule(packId);
+      if (authored) {
+        return {
+          title: authored.title,
+          lines: authored.lines.slice(),
+          steps: authored.steps.map((step) => ({
+            title: step.title,
+            line: step.line,
+            fields: [],
+            params: step.params || [],
+            lines: step.lines || [],
+          })),
+          params: Object.fromEntries(authored.params.map((param) => [param.id, param.value])),
+        };
+      }
       const base = FORMULA_VIEW[packId] || { lines: [], steps: [] };
       const saved = ruleEdits[packId] || {};
       const params = Object.assign({}, DEFAULT_PARAMS[packId] || {}, saved.params || {});
@@ -715,7 +1172,7 @@
       if (focusLabel) {
         const current = viewedPack();
         const currentView = current ? ruleView(current.id) : null;
-        focusLabel.textContent = current ? "当前：" + (currentView.title || current.title) : "可以问任意一条规则";
+        focusLabel.textContent = current ? "当前：" + (currentView.title || current.title) : "回答来自微信知识库";
       }
       paintRuleGraph();
     }
@@ -751,45 +1208,44 @@
             });
             prev = id;
           });
+          view.steps.forEach((step, index) => pushStepPieces({ nodes: nodes, edges: edges }, pack.id, index, "step:" + pack.id + ":" + index, false));
           const formulaId = "formula:" + pack.id;
+          const formulaLines = view.lines.map(lineText);
           nodes.push({
-            id: formulaId, kind: "formula", pack: pack.id, label: "公式",
-            note: view.lines.map(lineText).join("\n"),
+            id: formulaId, kind: "formula", pack: pack.id, label: formulaLines[0] || "结果公式",
+            note: formulaLines.slice(1).join("\n"),
             x: 400 + view.steps.length * 224, y: top,
           });
-          edges.push({ id: "built:" + prev + ":" + formulaId, from: prev, to: formulaId, label: "得到", builtin: true });
-          const fieldIds = [];
+          edges.push({ id: "built:" + prev + ":" + formulaId, from: prev, to: formulaId, label: "结果", builtin: true });
+          const fieldLabels = Object.fromEntries((pack.fields || []).map((field) => [field.id, field.label]));
           view.steps.forEach((step, index) => {
             (step.fields || []).forEach((fieldId) => {
-              if (!fieldIds.includes(fieldId)) fieldIds.push(fieldId);
+              const id = "field:" + pack.id + ":" + index + ":" + fieldId;
+              nodes.push({
+                id: id, kind: "field", pack: pack.id, field: fieldId, index: index,
+                label: fieldLabels[fieldId] || fieldId,
+                x: 400, y: top + 132,
+              });
               edges.push({
                 id: "built:use:" + pack.id + ":" + index + ":" + fieldId,
                 from: "step:" + pack.id + ":" + index,
-                to: "field:" + pack.id + ":" + fieldId,
+                to: id,
                 label: "使用", builtin: true,
               });
             });
           });
-          const fieldLabels = Object.fromEntries((pack.fields || []).map((field) => [field.id, field.label]));
-          fieldIds.forEach((fieldId, index) => {
-            nodes.push({
-              id: "field:" + pack.id + ":" + fieldId,
-              kind: "field", pack: pack.id, field: fieldId,
-              label: fieldLabels[fieldId] || fieldId,
-              x: 400 + (index % 5) * 152,
-              y: top + 132 + Math.floor(index / 5) * 60,
-            });
-          });
           (RULE_FIELDS[pack.id] || []).forEach((field, index) => {
             const id = "param:" + pack.id + ":" + field.id;
+            const stepIndex = (STEP_PARAMS[pack.id] || []).findIndex((ids) => ids.indexOf(field.id) >= 0);
             nodes.push({
               id: id, kind: "param", pack: pack.id, param: field.id,
               label: field.label, note: formatParam(field, view.params[field.id]),
               x: 190, y: top + 88 + index * 62,
             });
-            edges.push({ id: "built:" + ruleId + ":" + id, from: ruleId, to: id, label: "参数", builtin: true });
+            const from = stepIndex >= 0 ? "step:" + pack.id + ":" + stepIndex : ruleId;
+            edges.push({ id: "built:" + from + ":" + id, from: from, to: id, label: "参数", builtin: true });
           });
-          const fieldRows = Math.ceil(fieldIds.length / 5);
+          const fieldRows = Math.max(0, ...view.steps.map((step) => (step.fields || []).length));
           const paramRows = (RULE_FIELDS[pack.id] || []).length;
           top += Math.max(188, 100 + paramRows * 62, 148 + fieldRows * 60);
         });
@@ -798,8 +1254,227 @@
       return { nodes: nodes, edges: edges };
     }
 
+    function configuredLines(lines) {
+      return (lines || []).map((line) => String(line || "").trim()).filter((line) => line && line !== "待填写的计算公式" && line !== "待填写");
+    }
+
+    function resolveGraphNode(id) {
+      const found = graphModel.nodes.find((item) => item.id === id);
+      if (found) return found;
+      const parsed = splitNodeId(id || "");
+      if (parsed.kind === "calc") {
+        const index = Number(parsed.tail);
+        if (!Number.isInteger(index)) return null;
+        return { id: id, kind: "calc", pack: parsed.pack, index: index, authored: !!authoredRule(parsed.pack) };
+      }
+      if (parsed.kind === "formula" && parsed.pack) {
+        if (/^\d+$/.test(parsed.tail)) {
+          return { id: id, kind: "formula", pack: parsed.pack, index: Number(parsed.tail), authored: !!authoredRule(parsed.pack), label: "结果公式", note: "" };
+        }
+        return { id: id, kind: "formula", pack: parsed.pack, authored: !!authoredRule(parsed.pack), label: "结果公式", note: "" };
+      }
+      return null;
+    }
+
+    function readStepLogic(pack, index) {
+      const authored = authoredRule(pack);
+      if (authored) {
+        const step = (authored.steps || [])[index] || {};
+        return { params: step.params || [], lines: step.lines || [], formula: step.formula || [] };
+      }
+      const item = (graphConfig.stepLogic || []).find((entry) => entry.pack === pack && entry.index === index);
+      return { params: (item && item.params) || [], lines: (item && item.lines) || [], formula: (item && item.formula) || [] };
+    }
+
+    function ensureStepLogic(pack, index) {
+      const authored = authoredRule(pack);
+      if (authored) {
+        const step = authored.steps[index];
+        if (!step) return null;
+        if (!Array.isArray(step.params)) step.params = [];
+        if (!Array.isArray(step.lines)) step.lines = [];
+        if (!Array.isArray(step.fields)) step.fields = [];
+        if (!Array.isArray(step.formula)) step.formula = [];
+        return step;
+      }
+      if (!Array.isArray(graphConfig.stepLogic)) graphConfig.stepLogic = [];
+      let item = graphConfig.stepLogic.find((entry) => entry.pack === pack && entry.index === index);
+      if (!item) {
+        item = { pack: pack, index: index, params: [], lines: [], fields: [], formula: [] };
+        graphConfig.stepLogic.push(item);
+      }
+      if (!Array.isArray(item.fields)) item.fields = [];
+      if (!Array.isArray(item.formula)) item.formula = [];
+      return item;
+    }
+
+    function fieldTableLabel(tableId) {
+      if (!tableId) return "";
+      const table = tableChoices().find((item) => item.id === tableId);
+      return table ? table.label : "";
+    }
+
+    function tableChoices() {
+      const loaded = weightCatalog && weightCatalog.tables;
+      if (loaded && loaded.length) return loaded;
+      return [
+        { id: "standard", label: "标准法权重" },
+        { id: "assets", label: "资产类别" },
+        { id: "ratings", label: "外部评级" },
+        { id: "ccf", label: "表外转换系数" },
+      ];
+    }
+
+    function paramShown(param) {
+      if (param.kind === "table") {
+        const table = tableChoices().find((item) => item.id === param.value);
+        return table ? table.label : "未选表";
+      }
+      if (!param.value) return "未填";
+      return param.kind === "percent" && param.value.slice(-1) !== "%" ? param.value + "%" : param.value;
+    }
+
+    function paramValueHtml(kind, value) {
+      if (kind === "table") {
+        const options = tableChoices().map((item) => "<option value=\"" + esc(item.id) + "\"" + (item.id === value ? " selected" : "") + ">" + esc(item.label) + "</option>").join("");
+        return "<label>对应的表</label><select id=\"graphValue\">" + options + "</select>";
+      }
+      return "<label>值" + (kind === "percent" ? "（%）" : "") + "</label><input id=\"graphValue\" value=\"" + esc(value || "") + "\">";
+    }
+
+    function weightPreviewHtml(id) {
+      const table = (weightCatalog && weightCatalog.tables || []).find((item) => item.id === id);
+      if (!table || !table.columns) return "<p>权重表还没有载入。刷新页面后再选。</p>";
+      return "<p>" + esc(table.note || "") + "</p>" + weightTable(table.columns, table.rows || []);
+    }
+
+    function paramEditorHtml(param) {
+      const kind = param.kind === "percent" || param.kind === "text" || param.kind === "table" ? param.kind : "number";
+      return "<label>类型</label><select id=\"graphKind\">"
+        + "<option value=\"number\"" + (kind === "number" ? " selected" : "") + ">数值</option>"
+        + "<option value=\"percent\"" + (kind === "percent" ? " selected" : "") + ">百分比</option>"
+        + "<option value=\"text\"" + (kind === "text" ? " selected" : "") + ">文字</option>"
+        + "<option value=\"table\"" + (kind === "table" ? " selected" : "") + ">权重表</option>"
+        + "</select><div id=\"graphValueWrap\">" + paramValueHtml(kind, param.value) + "</div>"
+        + "<div id=\"graphTablePreview\">" + (kind === "table" ? weightPreviewHtml(param.value || "standard") : "") + "</div>";
+    }
+
+    function readParamDraft() {
+      const kindEl = document.getElementById("graphKind");
+      const valueEl = document.getElementById("graphValue");
+      const kind = kindEl && (kindEl.value === "percent" || kindEl.value === "text" || kindEl.value === "table") ? kindEl.value : "number";
+      let value = (valueEl ? valueEl.value : "").trim().slice(0, 80);
+      if (kind === "table" && !tableChoices().some((item) => item.id === value)) value = "";
+      return { kind: kind, value: value };
+    }
+
+    function stepCalcLines(pack, index) {
+      const custom = configuredLines(readStepLogic(pack, index).lines);
+      if (custom.length) return custom;
+      if (authoredRule(pack)) return [];
+      const step = (ruleView(pack).steps || [])[index];
+      const line = step && String(step.line || "").trim();
+      if (!line || line === "写下这一步怎么算") return [];
+      return [line];
+    }
+
+    function pushStepPieces(bucket, pack, index, stepId, authored) {
+      const logic = readStepLogic(pack, index);
+      const lines = stepCalcLines(pack, index);
+      if (lines.length) {
+        const calcId = "calc:" + pack + ":" + index;
+        const valueName = stepResultName(pack, index);
+        const formulaLine = lines.find((line) => String(line).indexOf("=") >= 0);
+        bucket.nodes.push({
+          id: calcId, kind: "calc", pack: pack, index: index, authored: !!authored,
+          label: formulaLine || valueName || "计算",
+          note: formulaLine && valueName ? "值：" + valueName : "本步骤的值",
+          x: 430, y: 120,
+        });
+        bucket.edges.push({ id: "calc:" + pack + ":" + index + ":edge", from: stepId, to: calcId, label: "计算", builtin: true });
+      }
+      addedStepFields(pack, index).forEach((field) => {
+        const id = "field:" + pack + ":" + index + ":" + field.id;
+        bucket.nodes.push({
+          id: id, kind: "field", pack: pack, field: field.id, index: index, added: true, authored: !!authored,
+          label: field.label, note: field.table ? "与" + fieldTableLabel(field.table) + "映射" : "", x: 430, y: 160,
+        });
+        bucket.edges.push({ id: "usefield:" + id, from: stepId, to: id, label: "使用", builtin: true });
+      });
+      logic.params.forEach((param) => {
+        const id = "param:" + pack + ":s" + index + ":" + param.id;
+        bucket.nodes.push({
+          id: id, kind: "param", pack: pack, param: param.id, stepIndex: index, authored: !!authored,
+          label: param.label, note: paramShown(param), x: 430, y: 200,
+        });
+        bucket.edges.push({ id: "stepparam:" + pack + ":" + index + ":" + param.id, from: stepId, to: id, label: "参数", builtin: true });
+      });
+    }
+
+    function appendAuthoredRules(model) {
+      (graphConfig.rules || []).forEach((rule) => {
+        const catId = categoryNodeId(rule.category);
+        if (!model.nodes.some((node) => node.id === catId)) {
+          model.nodes.push({
+            id: catId,
+            kind: "category",
+            label: categoryLabel(catId),
+            x: 28,
+            y: 36,
+          });
+        }
+        const ruleId = "rule:" + rule.id;
+        model.nodes.push({
+          id: ruleId, kind: "rule", pack: rule.id, authored: true, label: rule.title, x: 190, y: 36,
+        });
+        model.edges.push({ id: "auth:" + catId + ":" + rule.id, from: catId, to: ruleId, label: "包含", builtin: true });
+        let prev = ruleId;
+        rule.steps.forEach((step, index) => {
+          const id = "step:" + rule.id + ":" + index;
+          model.nodes.push({
+            id: id, kind: "step", pack: rule.id, index: index, authored: true,
+            label: step.title, note: step.line, x: 430, y: 36,
+          });
+          model.edges.push({
+            id: "auth:" + prev + ":" + index, from: prev, to: id,
+            label: index === 0 ? "第一步" : "然后", builtin: true,
+          });
+          prev = id;
+        });
+        rule.steps.forEach((step, index) => pushStepPieces(model, rule.id, index, "step:" + rule.id + ":" + index, true));
+        const formulaLines = configuredLines(rule.lines);
+        if (formulaLines.length || rule.showFormula) {
+          const formulaId = "formula:" + rule.id;
+          model.nodes.push({
+            id: formulaId, kind: "formula", pack: rule.id, authored: true, label: formulaLines[0] || "结果公式",
+            note: formulaLines.slice(1).join("\n"), x: 430, y: 36,
+          });
+          model.edges.push({ id: "auth:" + prev + ":formula", from: prev, to: formulaId, label: "结果", builtin: true });
+        }
+        rule.params.forEach((param) => {
+          const id = "param:" + rule.id + ":" + param.id;
+          const shown = paramShown(param);
+          model.nodes.push({
+            id: id, kind: "param", pack: rule.id, param: param.id, authored: true,
+            label: param.label, note: shown, x: 190, y: 120,
+          });
+          model.edges.push({ id: "auth:" + ruleId + ":" + param.id, from: ruleId, to: id, label: "参数", builtin: true });
+        });
+      });
+    }
+
+    function ensureCategoryNodes(model) {
+      (graphConfig.categories || []).forEach((cat) => {
+        const node = model.nodes.find((item) => item.id === cat.id);
+        if (node) node.label = cat.label || "新类别";
+        else model.nodes.push({ id: cat.id, kind: "category", label: cat.label || "新类别", x: 28, y: 36 });
+      });
+    }
+
     function composeGraph() {
       const builtin = catalog.length ? builtinGraph() : { nodes: [], edges: [] };
+      appendAuthoredRules(builtin);
+      ensureCategoryNodes(builtin);
       const custom = (graphConfig.nodes || []).map((node) => ({
         id: node.id,
         kind: node.role === "step" ? "custom-step" : node.role === "param" ? "custom-param" : "custom",
@@ -844,7 +1519,7 @@
           rule.hidden = false;
           rule.x = 200;
           rule.y = y;
-          const open = graphOpen.has(rule.id);
+          const open = graphScope().rule === rule.id;
           const first = model.edges.find((edge) => edge.from === rule.id && edge.label === "第一步");
           const steps = [];
           let cursor = first ? nodeOf(first.to) : null;
@@ -854,39 +1529,65 @@
             cursor = next ? nodeOf(next.to) : null;
           }
           const last = steps[steps.length - 1];
-          const formulaEdge = last && model.edges.find((edge) => edge.from === last.id && edge.label === "得到");
+          const formulaEdge = last && model.edges.find((edge) => edge.from === last.id && edge.label === "结果");
           const formula = formulaEdge ? nodeOf(formulaEdge.to) : null;
           const params = linked(rule.id, "参数");
           if (!open) {
-            steps.forEach((step) => { step.hidden = true; fieldsOf(step).forEach((field) => { field.hidden = true; }); });
+            steps.forEach((step) => {
+              step.hidden = true;
+              fieldsOf(step).forEach((field) => { field.hidden = true; });
+              linked(step.id, "参数").forEach((param) => { param.hidden = true; });
+              linked(step.id, "计算").forEach((calc) => { calc.hidden = true; });
+              linked(step.id, "公式").forEach((formula) => { formula.hidden = true; });
+            });
             if (formula) formula.hidden = true;
             params.forEach((param) => { param.hidden = true; });
             y += 84;
             return;
           }
           let below = 0;
+          let cursorX = 430;
           steps.forEach((step) => {
-            fieldsOf(step).forEach((field) => { field.hidden = true; });
-          });
-          steps.forEach((step, index) => {
-            step.hidden = false;
-            step.x = 430 + index * 236;
-            step.y = y;
             const fields = fieldsOf(step);
-            if (graphOpen.has(step.id)) {
-              const stepHeight = nodeBox(step).h;
-              const pitch = nodeBox({ kind: "field", label: "字段", note: "" }).h + 16;
-              fields.forEach((field, fieldIndex) => {
-                field.hidden = false;
-                field.x = step.x;
-                field.y = step.y + stepHeight + 36 + fieldIndex * pitch;
-              });
-              below = Math.max(below, stepHeight + 36 + fields.length * pitch);
+            fields.forEach((field) => { field.hidden = true; });
+            step.hidden = false;
+            step.x = cursorX;
+            step.y = y;
+            const paramsHere = linked(step.id, "参数");
+            const calcNode = linked(step.id, "计算")[0];
+            const stepFormula = linked(step.id, "公式")[0];
+            let stack = step.y + nodeBox(step).h + 16;
+            fields.forEach((field) => {
+              field.hidden = false;
+              field.x = step.x;
+              field.y = stack;
+              stack += nodeBox(field).h + 12;
+            });
+            paramsHere.forEach((param) => {
+              param.hidden = false;
+              param.x = step.x;
+              param.y = stack;
+              stack += nodeBox(param).h + 12;
+            });
+            if (calcNode) {
+              calcNode.hidden = false;
+              calcNode.x = step.x;
+              calcNode.y = stack;
+              stack += nodeBox(calcNode).h + 12;
             }
+            if (stepFormula) {
+              stepFormula.hidden = false;
+              stepFormula.x = step.x;
+              stepFormula.y = stack;
+              stack += nodeBox(stepFormula).h + 12;
+            }
+            const width = Math.max(nodeBox(step).w, calcNode ? nodeBox(calcNode).w : 0, stepFormula ? nodeBox(stepFormula).w : 0, ...fields.map((field) => nodeBox(field).w), ...paramsHere.map((param) => nodeBox(param).w));
+            cursorX += width + 56;
+            below = Math.max(below, stack - y);
           });
           if (formula) {
             formula.hidden = false;
-            formula.x = 430 + steps.length * 236;
+            formula.x = cursorX;
             formula.y = y;
           }
           let paramY = y + nodeBox(rule).h + 16;
@@ -903,16 +1604,27 @@
         category.y = top + Math.max(0, (y - top) / 2 - 22);
         y += 24;
       });
+      model.nodes.forEach((node) => {
+        if (isFreeKind(node.kind)) node.hidden = node.id !== graphSelected;
+      });
+      const visible = model.nodes.filter((node) => !node.hidden);
+      if (!visible.length) return;
+      const minX = Math.min.apply(null, visible.map((node) => node.x));
+      const minY = Math.min.apply(null, visible.map((node) => node.y));
+      const dx = minX > 24 ? minX - 24 : 0;
+      const dy = minY > 28 ? minY - 28 : 0;
+      if (!dx && !dy) return;
+      visible.forEach((node) => {
+        node.x -= dx;
+        node.y -= dy;
+      });
     }
 
     function ensureGraphShell() {
       if (document.getElementById("graphStage")) return;
       kbRulesEl.innerHTML = "<div class=\"graph-shell\">"
         + "<div class=\"graph-toolbar\">"
-        + "<button type=\"button\" class=\"head-btn\" id=\"graphAddNode\">添加知识点</button>"
-        + "<button type=\"button\" class=\"head-btn\" id=\"graphAddStep\">添加步骤</button>"
-        + "<button type=\"button\" class=\"head-btn\" id=\"graphAddParam\">添加参数</button>"
-        + "<span id=\"graphHint\">点连线上的字就能改。按住节点右侧的圆点，拖到另一个节点上，可以连一条新关系。</span>"
+        + "<span id=\"graphHint\">在知识库上右键可以添加类别。类别上添加规则，规则上不能再添加规则。</span>"
         + "<div class=\"graph-zoom\">"
         + "<button type=\"button\" class=\"head-btn\" id=\"graphZoomOut\">缩小</button>"
         + "<button type=\"button\" class=\"head-btn\" id=\"graphZoomLabel\">100%</button>"
@@ -923,9 +1635,6 @@
         + "<div class=\"graph-stage\" id=\"graphStage\"><div id=\"graphWorld\"><div id=\"graphScale\"><svg id=\"graphSvg\"></svg><div id=\"graphNodes\"></div><div id=\"graphBends\"></div></div></div></div>"
         + "<aside class=\"graph-inspector\" id=\"graphInspector\"></aside>"
         + "</div>";
-      document.getElementById("graphAddNode").addEventListener("click", () => addGraphNode("knowledge"));
-      document.getElementById("graphAddStep").addEventListener("click", () => addGraphNode("step"));
-      document.getElementById("graphAddParam").addEventListener("click", () => addGraphNode("param"));
       document.getElementById("graphZoomIn").addEventListener("click", () => setGraphZoom(graphZoom * 1.2));
       document.getElementById("graphZoomOut").addEventListener("click", () => setGraphZoom(graphZoom / 1.2));
       document.getElementById("graphZoomLabel").addEventListener("click", () => setGraphZoom(1));
@@ -941,15 +1650,90 @@
       });
       stage.addEventListener("click", onGraphEdgeClick);
       stage.addEventListener("wheel", onGraphWheel, { passive: false });
+      document.getElementById("graphInspector").addEventListener("change", (event) => {
+        if (event.target.id === "graphKind") {
+          const wrap = document.getElementById("graphValueWrap");
+          const preview = document.getElementById("graphTablePreview");
+          if (!wrap) return;
+          const kind = event.target.value;
+          wrap.innerHTML = paramValueHtml(kind, kind === "table" ? "standard" : "");
+          if (preview) preview.innerHTML = kind === "table" ? weightPreviewHtml("standard") : "";
+        }
+        if (event.target.id === "graphValue" && document.getElementById("graphKind") && document.getElementById("graphKind").value === "table") {
+          const preview = document.getElementById("graphTablePreview");
+          if (preview) preview.innerHTML = weightPreviewHtml(event.target.value);
+        }
+        if (event.target.id === "graphTable") {
+          const preview = document.getElementById("graphTablePreview");
+          if (preview) preview.innerHTML = event.target.value ? weightPreviewHtml(event.target.value) : "";
+        }
+        scheduleInspectorSave();
+      });
+      document.getElementById("graphInspector").addEventListener("input", scheduleInspectorSave);
+      document.getElementById("graphInspector").addEventListener("focusout", (event) => {
+        if (event.target.id !== "graphLabel") return;
+        const node = resolveGraphNode(graphSelected);
+        if (!node || node.kind !== "rule" || !node.authored) return;
+        const rule = authoredRule(node.pack);
+        if (!rule || rule.basis) return;
+        requestRuleBasis(rule.id, event.target.value);
+      });
       document.getElementById("graphInspector").addEventListener("click", (event) => {
+        const formulaAction = event.target.closest("[data-formula]");
+        if (formulaAction) {
+          editFormulaRows(formulaAction.dataset.formula, Number(formulaAction.dataset.line));
+          return;
+        }
         if (event.target.id === "graphSave") saveGraphForm();
         if (event.target.id === "graphDelete") deleteGraphSelection();
         if (event.target.id === "graphStraighten") straightenGraphEdge();
+        if (event.target.id === "graphAddRule") addAuthoredRuleFromForm();
+        if (event.target.id === "graphAddStep") addAuthoredChild("step");
+        if (event.target.id === "graphAddParam") addAuthoredChild("param");
+        if (event.target.id === "graphAddStepParam" || event.target.id === "graphAddStepCalc") {
+          const current = graphModel.nodes.find((item) => item.id === graphSelected);
+          if (!current || !Number.isInteger(current.index)) return;
+          if (event.target.id === "graphAddStepParam") addStepParam(current.pack, current.index);
+          else {
+            selectGraphTarget("calc:" + current.pack + ":" + current.index);
+            focusGraphEditor();
+          }
+        }
+        if (event.target.id === "graphAddFormula") {
+          const current = graphModel.nodes.find((item) => item.id === graphSelected);
+          if (current && current.pack) {
+            selectGraphTarget("formula:" + current.pack);
+            focusGraphEditor();
+          }
+        }
+      });
+      document.getElementById("graphStage").addEventListener("contextmenu", onGraphContextMenu);
+      document.getElementById("graphTree").addEventListener("contextmenu", onGraphContextMenu);
+      const menu = document.createElement("div");
+      menu.id = "graphMenu";
+      menu.className = "graph-menu";
+      menu.hidden = true;
+      menu.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-menu]");
+        if (!button) return;
+        const target = menu.dataset.target || "";
+        closeGraphMenu();
+        runGraphMenu(target, button.dataset.menu);
+      });
+      document.body.appendChild(menu);
+      document.addEventListener("pointerdown", (event) => {
+        if (event.target.closest("#graphMenu")) return;
+        closeGraphMenu();
+      });
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") closeGraphMenu();
       });
       document.getElementById("graphInspector").addEventListener("keydown", (event) => {
-        if (event.key === "Enter" && event.target.id === "graphLabel") {
+        if (event.key !== "Enter" || event.target.id !== "graphLabel" || event.shiftKey) return;
+        const current = resolveGraphNode(graphSelected);
+        if (current && current.kind === "category" && !(graphConfig.categories || []).some((item) => item.id === current.id)) {
           event.preventDefault();
-          saveGraphForm();
+          addAuthoredRuleFromForm();
         }
       });
     }
@@ -961,7 +1745,8 @@
       const keepInspector = typing && typing.contains(document.activeElement);
       graphModel = composeGraph();
       if (graphSelected && !graphModel.nodes.some((node) => node.id === graphSelected) && !graphModel.edges.some((edge) => edge.id === graphSelected)) {
-        graphSelected = "";
+        const parsed = splitNodeId(graphSelected);
+        if (parsed.kind !== "calc" && parsed.kind !== "formula") graphSelected = "";
       }
       let width = 960;
       let height = 640;
@@ -991,7 +1776,7 @@
       paintKnowledgeTree();
       const hint = document.getElementById("graphHint");
       if (hint) {
-        hint.textContent = "点连线上的字就能改。按住节点右侧的圆点，拖到另一个节点上，可以连一条新关系。";
+        hint.textContent = "每一步算出自己的结果。最后的结果公式只用这些结果来计算。";
       }
     }
 
@@ -1005,22 +1790,17 @@
       ];
       const branches = groups.map(([catId, label, match]) => {
         const packs = catalog.filter(match);
-        if (!packs.length) return "";
-        return treeRow(catId, label, "类别", 0, true) + (treeOpen.has(catId) ? packs.map(treeRuleBranch).join("") : "");
+        const authored = (graphConfig.rules || []).filter((rule) => categoryNodeId(rule.category) === catId);
+        if (!packs.length && !authored.length) return "";
+        const rows = packs.map(treeRuleBranch).join("") + authored.map((rule) => treeRuleBranch({ id: rule.id, title: rule.title, fields: [] })).join("");
+        return treeRow(catId, label, "类别", 0, true) + (treeOpen.has(catId) ? rows : "");
       }).join("");
-      const customs = graphConfig.nodes || [];
-      const groupsOf = [
-        ["knowledge", "自建知识点", "知识点"],
-        ["step", "自建步骤", "步骤"],
-        ["param", "自建参数", "参数"],
-      ];
-      const customBranch = groupsOf.map(([role, title, kind]) => {
-        const rows = customs.filter((node) => (node.role || "knowledge") === role);
-        if (!rows.length) return "";
-        const groupId = "tree:custom:" + role;
-        return treeRow(groupId, title, kind, 0, true) + (treeOpen.has(groupId) ? rows.map((node) => treeRow(node.id, node.label, kind, 1, false)).join("") : "");
+      const customCats = (graphConfig.categories || []).map((cat) => {
+        const authored = (graphConfig.rules || []).filter((rule) => categoryNodeId(rule.category) === cat.id);
+        const rows = authored.map((rule) => treeRuleBranch({ id: rule.id, title: rule.title, fields: [] })).join("");
+        return treeRow(cat.id, cat.label || "新类别", "类别", 0, true) + (treeOpen.has(cat.id) ? rows : "");
       }).join("");
-      host.innerHTML = "<div class=\"tree-title\">知识库</div>" + branches + customBranch;
+      host.innerHTML = "<div class=\"tree-title\" id=\"graphTreeTitle\">知识库</div>" + branches + customCats;
     }
 
     function treeRuleBranch(pack) {
@@ -1036,15 +1816,33 @@
         steps.forEach((step, index) => {
           const stepId = "step:" + pack.id + ":" + index;
           const fields = step.fields || [];
-          html += treeRow(stepId, step.title, "步骤", 3, fields.length > 0);
-          if (fields.length && treeOpen.has(stepId)) {
-            fields.forEach((fieldId) => {
-              html += treeRow("field:" + pack.id + ":" + fieldId, labels[fieldId] || fieldId, "字段", 4, false);
+          const logic = readStepLogic(pack.id, index);
+          html += treeRow(stepId, step.title, "步骤", 3, true);
+          if (!treeOpen.has(stepId)) return;
+          fields.forEach((fieldId) => {
+            if (typeof fieldId !== "string") return;
+            html += treeRow("field:" + pack.id + ":" + index + ":" + fieldId, labels[fieldId] || fieldId, "字段", 4, false);
+          });
+          addedStepFields(pack.id, index).forEach((field) => {
+            html += treeRow("field:" + pack.id + ":" + index + ":" + field.id, field.label, "字段", 4, false);
+          });
+          logic.params.forEach((param) => {
+            html += treeRow("param:" + pack.id + ":s" + index + ":" + param.id, param.label, "参数", 4, false);
+          });
+          if (!authoredRule(pack.id)) {
+            ((STEP_PARAMS[pack.id] || [])[index] || []).forEach((paramId) => {
+              const field = (RULE_FIELDS[pack.id] || []).find((item) => item.id === paramId);
+              if (field) html += treeRow("param:" + pack.id + ":" + paramId, field.label, "参数", 4, false);
             });
           }
+          if (stepCalcLines(pack.id, index).length) html += treeRow("calc:" + pack.id + ":" + index, "计算", "计算", 4, false);
         });
       }
-      const params = RULE_FIELDS[pack.id] || [];
+      const authored = authoredRule(pack.id);
+      const placed = authored ? [] : (STEP_PARAMS[pack.id] || []).reduce((all, ids) => all.concat(ids), []);
+      const params = authored
+        ? authored.params.map((param) => ({ id: param.id, label: param.label }))
+        : (RULE_FIELDS[pack.id] || []).filter((field) => placed.indexOf(field.id) < 0);
       if (params.length) {
         const paramGroup = "tree:params:" + pack.id;
         html += treeRow(paramGroup, "参数", "参数", 2, true);
@@ -1054,7 +1852,8 @@
           });
         }
       }
-      html += treeRow("formula:" + pack.id, "公式", "公式", 2, false);
+      const formulaLines = authored ? configuredLines(authored.lines) : configuredLines((view.lines || []).map(lineText));
+      if (formulaLines.length || (authored && authored.showFormula) || !authored) html += treeRow("formula:" + pack.id, "结果公式", "结果", 2, false);
       return html;
     }
 
@@ -1068,20 +1867,25 @@
     }
 
     function keepTreeOpen(id) {
-      if (id.indexOf("tree:custom:") === 0 || id.indexOf("custom:") === 0) {
-        const node = (graphConfig.nodes || []).find((item) => item.id === id);
-        treeOpen.add("tree:custom:" + ((node && node.role) || "knowledge"));
-        return;
-      }
-      const kind = id.split(":")[0];
-      const pack = id.split(":")[1] || "";
+      const parsed = splitNodeId(id);
+      const kind = parsed.kind;
+      const pack = parsed.pack;
       if (!pack || kind === "cat" || kind === "tree") return;
-      treeOpen.add(pack.indexOf("mr_") === 0 ? "cat:market" : "cat:credit");
+      treeOpen.add(categoryIdForPack(pack));
       if (kind !== "rule") treeOpen.add("rule:" + pack);
-      if (kind === "step" || kind === "field") treeOpen.add("tree:steps:" + pack);
+      if (kind === "step" || kind === "field" || kind === "calc") treeOpen.add("tree:steps:" + pack);
+      if (kind === "calc") treeOpen.add("step:" + pack + ":" + parsed.tail);
+      if (kind === "formula" && /^\d+$/.test(parsed.tail)) {
+        treeOpen.add("tree:steps:" + pack);
+        treeOpen.add("step:" + pack + ":" + parsed.tail);
+      }
+      if (kind === "param" && parsed.tail.indexOf("s") === 0) {
+        treeOpen.add("tree:steps:" + pack);
+        treeOpen.add("step:" + pack + ":" + parsed.tail.split(":")[0].slice(1));
+      }
       if (kind === "field") {
-        const fieldId = id.split(":").slice(2).join(":");
-        const index = (ruleView(pack).steps || []).findIndex((step) => (step.fields || []).indexOf(fieldId) >= 0);
+        const bits = String(parsed.tail).split(":");
+        const index = /^\d+$/.test(bits[0]) ? Number(bits[0]) : (ruleView(pack).steps || []).findIndex((step) => (step.fields || []).indexOf(parsed.tail) >= 0);
         if (index >= 0) treeOpen.add("step:" + pack + ":" + index);
       }
       if (kind === "param") treeOpen.add("tree:params:" + pack);
@@ -1107,8 +1911,14 @@
     }
 
     function openGraphFromTree(id) {
-      const kind = id.split(":")[0];
-      const pack = id.split(":")[1] || "";
+      const parsed = splitNodeId(id);
+      const kind = parsed.kind;
+      const pack = parsed.pack;
+      if (kind === "rule" && graphSelected === id) {
+        graphSelected = categoryIdForPack(pack);
+        paintRuleGraph();
+        return;
+      }
       keepTreeOpen(id);
       if (kind === "rule") {
         graphOpen.add(id);
@@ -1120,11 +1930,12 @@
       }
       if (kind === "field") {
         graphOpen.add("rule:" + pack);
-        const fieldId = id.split(":").slice(2).join(":");
-        const index = (ruleView(pack).steps || []).findIndex((step) => (step.fields || []).indexOf(fieldId) >= 0);
+        const bits = String(parsed.tail).split(":");
+        const index = /^\d+$/.test(bits[0]) ? Number(bits[0]) : -1;
         if (index >= 0) graphOpen.add("step:" + pack + ":" + index);
       }
       if (kind === "param" || kind === "formula") graphOpen.add("rule:" + pack);
+      if (kind === "formula" && /^\d+$/.test(parsed.tail)) graphOpen.add("step:" + pack + ":" + parsed.tail);
       graphSelected = id;
       paintRuleGraph();
       const stage = document.getElementById("graphStage");
@@ -1133,6 +1944,212 @@
       const box = nodeBox(node);
       stage.scrollLeft = Math.max(0, (node.x + box.w / 2) * graphZoom - stage.clientWidth / 2);
       stage.scrollTop = Math.max(0, (node.y + box.h / 2) * graphZoom - stage.clientHeight / 2);
+    }
+
+    function closeGraphMenu() {
+      const menu = document.getElementById("graphMenu");
+      if (menu) menu.hidden = true;
+    }
+
+    function graphMenuItems(id) {
+      const packOfGroup = (prefix) => id.indexOf(prefix) === 0 ? id.slice(prefix.length) : "";
+      if (id === "library") return { title: "知识库", items: [{ act: "add-category", label: "添加类别" }] };
+      if (isLibraryCategory(id)) {
+        const items = [];
+        if (String(id).indexOf("cat:user:") === 0) items.push({ act: "edit", label: "修改" });
+        items.push({ act: "add-rule", label: "添加规则" });
+        if (String(id).indexOf("cat:user:") === 0) items.push({ act: "delete", label: "删除" });
+        return { title: "类别", items: items };
+      }
+      const stepPack = packOfGroup("tree:steps:");
+      if (stepPack && authoredRule(stepPack)) return { title: "步骤", items: [{ act: "add-step", label: "添加步骤" }] };
+      const paramPack = packOfGroup("tree:params:");
+      if (paramPack && authoredRule(paramPack)) return { title: "参数", items: [{ act: "add-param", label: "添加参数" }] };
+      const edge = graphModel.edges.find((item) => item.id === id);
+      if (edge) {
+        const items = [{ act: "edit", label: "修改" }, { act: "straighten", label: "恢复直线" }];
+        if (!edge.builtin) items.push({ act: "delete", label: "删除关系" });
+        return { title: "关系", items: items };
+      }
+      const node = graphModel.nodes.find((item) => item.id === id);
+      if (node && node.kind === "field" && node.added) return { title: "字段", items: [{ act: "delete", label: "删除字段" }] };
+      if (!node || node.kind === "field" || node.kind === "basis") return { title: "", items: [] };
+      if (node.kind === "category") return { title: "类别", items: [{ act: "add-rule", label: "添加规则" }] };
+      if (node.kind === "rule") {
+        const items = [{ act: "edit", label: "修改" }];
+        if (node.authored) items.push({ act: "add-param", label: "添加参数" });
+        if (!node.authored) items.push({ act: "reset", label: "恢复默认" });
+        if (node.authored) items.push({ act: "delete", label: "删除规则" });
+        return { title: "规则", items: items };
+      }
+      if (node.kind === "formula") {
+        if (Number.isInteger(node.index)) {
+          return { title: "结果公式", items: [{ act: "edit", label: "修改" }, { act: "add-step-formula", label: "添加结果公式" }] };
+        }
+        return { title: "结果公式", items: [{ act: "edit", label: "修改" }] };
+      }
+      if (node.kind === "param") {
+        if (Number.isInteger(node.stepIndex)) {
+          return { title: "参数", items: [{ act: "add-step-param", label: "添加参数" }, { act: "delete", label: "删除参数" }] };
+        }
+        const items = [{ act: "edit", label: "修改" }];
+        if (node.authored) items.push({ act: "add-param", label: "添加参数" }, { act: "delete", label: "删除参数" });
+        return { title: "参数", items: items };
+      }
+      if (node.kind === "calc") {
+        return {
+          title: "计算",
+          items: [
+            { act: "add-step-param", label: "添加参数" },
+            { act: "add-step-calc", label: "添加计算" },
+          ],
+        };
+      }
+      const items = [{ act: "edit", label: "修改" }];
+      if (node.kind === "step") {
+        const stepItems = [];
+        if (node.authored) stepItems.push({ act: "add-step", label: "添加步骤" });
+        stepItems.push(
+          { act: "add-step-field", label: "添加字段" },
+          { act: "add-step-param", label: "添加参数" },
+          { act: "add-step-calc", label: "添加计算" },
+        );
+        if (node.index === (ruleView(node.pack).steps || []).length - 1) stepItems.push({ act: "add-step-formula", label: "添加结果公式" });
+        if (node.authored) stepItems.push({ act: "delete", label: "删除步骤" });
+        return { title: "步骤", items: stepItems };
+      }
+      if (isFreeKind(node.kind)) items.push({ act: "delete", label: "删除" });
+      return { title: node.kind === "step" ? "步骤" : "", items: items };
+    }
+
+    function onGraphContextMenu(event) {
+      const nodeEl = event.target.closest("[data-node]");
+      const treeEl = event.target.closest("[data-tree]");
+      const edgeEl = event.target.closest("[data-edge]");
+      let id = (nodeEl && nodeEl.dataset.node) || (treeEl && treeEl.dataset.tree) || (edgeEl && edgeEl.dataset.edge) || "";
+      if (!id && (event.target.closest("#graphTreeTitle") || event.currentTarget.id === "graphTree")) id = "library";
+      const spec = graphMenuItems(id);
+      if (!spec.items.length) return;
+      event.preventDefault();
+      const menu = document.getElementById("graphMenu");
+      if (!menu) return;
+      menu.dataset.target = id;
+      menu.innerHTML = (spec.title ? "<div class=\"graph-menu-level\">" + esc(spec.title) + "</div>" : "")
+        + spec.items.map((item) => "<button type=\"button\" data-menu=\"" + item.act + "\"" + (item.act === "delete" ? " class=\"danger\"" : "") + ">" + esc(item.label) + "</button>").join("");
+      menu.hidden = false;
+      menu.style.left = event.clientX + "px";
+      menu.style.top = event.clientY + "px";
+      const box = menu.getBoundingClientRect();
+      if (box.right > window.innerWidth - 8) menu.style.left = Math.max(8, event.clientX - box.width) + "px";
+      if (box.bottom > window.innerHeight - 8) menu.style.top = Math.max(8, event.clientY - box.height) + "px";
+    }
+
+    function selectGraphTarget(id) {
+      if (isLibraryCategory(id)) {
+        graphSelected = id;
+        treeOpen.add(id);
+        paintRuleGraph();
+        return;
+      }
+      keepTreeOpen(id);
+      const parsed = splitNodeId(id);
+      if (parsed.kind === "rule" || parsed.kind === "step" || parsed.kind === "param" || parsed.kind === "formula" || parsed.kind === "calc") {
+        graphOpen.add("rule:" + parsed.pack);
+      }
+      graphSelected = id;
+      paintRuleGraph();
+      const stage = document.getElementById("graphStage");
+      const node = graphModel.nodes.find((item) => item.id === id);
+      if (!stage || !node || node.hidden) return;
+      const box = nodeBox(node);
+      stage.scrollLeft = Math.max(0, (node.x + box.w / 2) * graphZoom - stage.clientWidth / 2);
+      stage.scrollTop = Math.max(0, (node.y + box.h / 2) * graphZoom - stage.clientHeight / 2);
+    }
+
+    function focusGraphEditor() {
+      const input = document.getElementById("graphLabel") || document.querySelector("#formulaBuilder [data-term]");
+      if (!input) return;
+      input.focus();
+      if (input.select) input.select();
+    }
+
+    function runGraphMenu(id, act) {
+      if (act === "edit") {
+        selectGraphTarget(id);
+        focusGraphEditor();
+        return;
+      }
+      if (act === "add-category") {
+        addCategory();
+        focusGraphEditor();
+        return;
+      }
+      if (act === "add-rule") {
+        const target = graphModel.nodes.find((item) => item.id === id);
+        if (target && target.kind === "rule") return;
+        graphSelected = isLibraryCategory(id) ? id : "";
+        if (!graphSelected) return;
+        addAuthoredRuleFromForm();
+        focusGraphEditor();
+        return;
+      }
+      if (act === "add-formula") {
+        const pack = splitNodeId(id).pack;
+        if (!pack) return;
+        selectGraphTarget("formula:" + pack);
+        focusGraphEditor();
+        return;
+      }
+      if (act === "add-step-formula") {
+        const parsed = splitNodeId(id);
+        const index = parsed.kind === "step" ? Number(parsed.tail) : Number(String(parsed.tail).split(":")[0]);
+        const steps = ruleView(parsed.pack).steps || [];
+        if (index !== steps.length - 1) return;
+        const rule = authoredRule(parsed.pack);
+        if (rule) rule.showFormula = true;
+        selectGraphTarget("formula:" + parsed.pack);
+        focusGraphEditor();
+        if (rule) flushGraphSave().catch((error) => setBanner(error.message || "写入图谱失败", "err"));
+        return;
+      }
+      if (act === "add-step-param" || act === "add-step-calc" || act === "add-step-field") {
+        const parsed = splitNodeId(id);
+        const index = parsed.kind === "step" || parsed.kind === "calc" || (parsed.kind === "formula" && /^\d+$/.test(parsed.tail))
+          ? Number(parsed.tail)
+          : Number(String(parsed.tail).split(":")[0].slice(1));
+        if (act === "add-step-param") addStepParam(parsed.pack, index);
+        else if (act === "add-step-field") addStepField(parsed.pack, index);
+        else {
+          selectGraphTarget("calc:" + parsed.pack + ":" + index);
+          focusGraphEditor();
+        }
+        return;
+      }
+      if (act === "add-step" || act === "add-param") {
+        const pack = id.indexOf("tree:steps:") === 0 ? id.slice("tree:steps:".length) : id.indexOf("tree:params:") === 0 ? id.slice("tree:params:".length) : splitNodeId(id).pack;
+        graphSelected = "rule:" + pack;
+        addAuthoredChild(act === "add-step" ? "step" : "param");
+        focusGraphEditor();
+        return;
+      }
+      if (act === "straighten") {
+        graphSelected = id;
+        straightenGraphEdge();
+        return;
+      }
+      if (act === "reset") {
+        const pack = splitNodeId(id).pack;
+        if (pack) resetRule(pack);
+        return;
+      }
+      if (act === "delete") {
+        if (String(id).indexOf("cat:user:") === 0) {
+          deleteCategory(id);
+          return;
+        }
+        graphSelected = id;
+        deleteGraphSelection();
+      }
     }
 
     function applyGraphZoom() {
@@ -1244,8 +2261,9 @@
       const focus = graphFocusIds();
       const selected = node.id === graphSelected ? " selected" : "";
       const dim = focus && !focus.has(node.id) ? " dim" : "";
-      const expandable = node.kind === "rule" || (node.kind === "step" && graphModel.edges.some((edge) => edge.from === node.id && edge.label === "使用"));
-      const twist = expandable ? "<span class=\"graph-twist\">" + (graphOpen.has(node.id) ? "▾" : "▸") + "</span>" : "";
+      const expandable = node.kind === "rule";
+      const opened = node.kind === "rule" ? graphScope().rule === node.id : graphOpen.has(node.id);
+      const twist = expandable ? "<span class=\"graph-twist\">" + (opened ? "▾" : "▸") + "</span>" : "";
       const note = node.note ? "<span class=\"graph-note\">" + esc(node.note) + "</span>" : "";
       return "<div class=\"graph-node " + node.kind + (expandable ? " can-open" : "") + selected + dim + "\" data-node=\"" + esc(node.id) + "\" style=\"left:"
         + node.x + "px;top:" + node.y + "px;width:" + size.w + "px;height:" + size.h + "px\">"
@@ -1457,6 +2475,61 @@
       }).join("")).join("");
     }
 
+    const basisAsked = new Set();
+    const basisLoading = new Set();
+
+    function authoredBasisHtml(rule) {
+      if (!rule) return "";
+      if (rule.basis) return "<div class=\"reg-basis\"><span>监管依据</span>" + esc(rule.basis) + "</div>";
+      if (basisLoading.has(rule.id)) return "<div class=\"reg-basis\"><span>监管依据</span>正在从知识库查找。</div>";
+      return "";
+    }
+
+    function showAuthoredBasis(ruleId, text) {
+      const host = document.getElementById("graphInspector");
+      const node = resolveGraphNode(graphSelected);
+      if (!host || !node || node.kind !== "rule" || node.pack !== ruleId) return;
+      let box = host.querySelector(".reg-basis");
+      if (!box) {
+        box = document.createElement("div");
+        box.className = "reg-basis";
+        host.insertBefore(box, host.firstChild);
+      }
+      box.innerHTML = "<span>监管依据</span>" + esc(text);
+    }
+
+    async function requestRuleBasis(ruleId, title) {
+      const name = (title || "").trim().slice(0, 40);
+      if (!name || name === "新规则" || basisAsked.has(ruleId) || basisLoading.has(ruleId)) return;
+      const rule = authoredRule(ruleId);
+      if (!rule || rule.basis) return;
+      basisAsked.add(ruleId);
+      basisLoading.add(ruleId);
+      showAuthoredBasis(ruleId, "正在从知识库查找。");
+      try {
+        const response = await fetch("/api/rules/basis", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: name }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "知识库没有返回监管依据");
+        const current = authoredRule(ruleId);
+        if (!current) return;
+        current.basis = String(data.basis || "").slice(0, 500);
+        await flushGraphSave();
+        showAuthoredBasis(ruleId, current.basis || "知识库里没有找到相关内容。");
+        const saved = authoredRule(ruleId);
+        if (saved && saved.basis) showAuthoredBasis(ruleId, saved.basis);
+      } catch (error) {
+        basisAsked.delete(ruleId);
+        showAuthoredBasis(ruleId, error.message || "知识库没有返回监管依据");
+        setBanner(error.message || "知识库没有返回监管依据", "err");
+      } finally {
+        basisLoading.delete(ruleId);
+      }
+    }
+
     function basisHtml(packId) {
       const basis = (catalog.find((item) => item.id === packId) || {}).basis || "";
       if (!basis) return "";
@@ -1466,24 +2539,28 @@
     function renderGraphInspector() {
       const host = document.getElementById("graphInspector");
       if (!host) return;
-      const node = graphModel.nodes.find((item) => item.id === graphSelected);
+      const node = resolveGraphNode(graphSelected);
       const edge = graphModel.edges.find((item) => item.id === graphSelected);
       if (!node && !edge) {
-        host.innerHTML = "<h3>知识图谱</h3><p>类别下面是规则。点开一条规则，才出现它的步骤、参数和公式；点开一个步骤，才出现这个步骤用到的字段。</p>";
+        host.innerHTML = "<h3>知识库</h3><p>在左侧「知识库」上右键，可以添加类别。类别下面添加规则，规则上不能再添加规则。</p>";
         return;
       }
       if (edge) {
         const caption = edgeCaption(edge);
-        host.innerHTML = "<h3>关系</h3><p>连线上的字可以改。清空后保存，会回到原来的字。</p>"
-          + "<label>连线上的字</label><input id=\"graphLabel\" value=\"" + esc(caption) + "\">"
-          + "<div class=\"graph-actions\">"
-          + "<button type=\"button\" class=\"head-btn head-btn-primary\" id=\"graphSave\">保存</button>"
-          + (edge.builtin ? "" : "<button type=\"button\" class=\"head-btn\" id=\"graphDelete\">删除关系</button>")
-          + "<button type=\"button\" class=\"head-btn\" id=\"graphStraighten\">恢复直线</button></div>";
+        host.innerHTML = "<h3>关系</h3><p>连线上的字改完会直接保存。清空后会回到原来的字。删除和恢复直线在右键。</p>"
+          + "<label>连线上的字</label><input id=\"graphLabel\" value=\"" + esc(caption) + "\">";
         return;
       }
       if (node.kind === "category") {
-        host.innerHTML = "<h3>" + esc(node.label) + "</h3><p>这一类下面挂着对应的计算规则。</p>";
+        const custom = (graphConfig.categories || []).find((item) => item.id === node.id);
+        if (custom) {
+          host.innerHTML = "<h3>类别</h3><p>名称改完会直接保存。添加规则和删除在右键。</p>"
+            + "<label>名称</label><input id=\"graphLabel\" value=\"" + esc(custom.label) + "\">";
+          return;
+        }
+        host.innerHTML = "<h3>" + esc(node.label) + "</h3>"
+          + "<p>写出规则名称，然后在这个类别上右键，选择添加规则。</p>"
+          + "<label>规则名称</label><input id=\"graphLabel\" placeholder=\"例如：债券信用风险\">";
         return;
       }
       if (node.kind === "basis") {
@@ -1492,6 +2569,17 @@
         return;
       }
       if (node.kind === "field") {
+        if (node.added) {
+          const field = addedStepFields(node.pack, node.index).find((item) => item.id === node.field) || { label: node.label, table: "" };
+          const options = ["<option value=\"\">不映射</option>"].concat(tableChoices().map((item) =>
+            "<option value=\"" + esc(item.id) + "\"" + (item.id === field.table ? " selected" : "") + ">" + esc(item.label) + "</option>"
+          )).join("");
+          host.innerHTML = "<h3>字段</h3><p>这个字段是给前面选表头用的。映射权重表可以不选。改完会直接保存。删除在右键。</p>"
+            + "<label>名称</label><input id=\"graphLabel\" value=\"" + esc(node.label) + "\">"
+            + "<label>映射权重表</label><select id=\"graphTable\">" + options + "</select>"
+            + "<div id=\"graphTablePreview\">" + (field.table ? weightPreviewHtml(field.table) : "") + "</div>";
+          return;
+        }
         host.innerHTML = "<h3>" + esc(node.label) + "</h3><p>计算时从上传表的表头里选这一列。</p>"
           + "<div class=\"graph-actions\"><button type=\"button\" class=\"head-btn head-btn-primary\" data-jump=\"" + esc(node.field) + "\">去计算</button></div>";
         return;
@@ -1500,15 +2588,21 @@
         const title = GRAPH_KIND[node.kind] || "知识点";
         host.innerHTML = "<h3>" + esc(title) + "</h3>"
           + "<label>名称</label><input id=\"graphLabel\" value=\"" + esc(node.label) + "\">"
-          + "<label>说明</label><textarea id=\"graphNote\">" + esc(node.note || "") + "</textarea>"
-          + "<div class=\"graph-actions\"><button type=\"button\" class=\"head-btn head-btn-primary\" id=\"graphSave\">保存</button><button type=\"button\" class=\"head-btn\" id=\"graphDelete\">删除</button></div>";
+          + "<label>说明</label><textarea id=\"graphNote\">" + esc(node.note || "") + "</textarea>";
         return;
       }
       if (node.kind === "rule") {
+        if (node.authored) {
+          const where = categoryLabel(categoryIdForPack(node.pack));
+          const rule = authoredRule(node.pack);
+          host.innerHTML = authoredBasisHtml(rule)
+            + "<h3>规则</h3><p>挂在" + where + "下面。名称改完会直接保存。添加参数和删除规则在右键。结果公式在最后一个步骤上右键添加，加完会出现在这一步后面。</p>"
+            + "<label>名称</label><input id=\"graphLabel\" value=\"" + esc(node.label) + "\">";
+          return;
+        }
         host.innerHTML = basisHtml(node.pack)
-          + "<h3>规则</h3><label>名称</label><input id=\"graphLabel\" value=\"" + esc(node.label) + "\">"
-          + "<div class=\"graph-actions\"><button type=\"button\" class=\"head-btn head-btn-primary\" id=\"graphSave\">保存</button>"
-          + "<button type=\"button\" class=\"head-btn\" data-act=\"reset\" data-rule=\"" + esc(node.pack) + "\">恢复默认</button></div>";
+          + "<h3>规则</h3><p>名称改完会直接保存。恢复默认在右键。结果公式在最后一个步骤上右键添加。</p>"
+          + "<label>名称</label><input id=\"graphLabel\" value=\"" + esc(node.label) + "\">";
         return;
       }
       if (node.kind === "step") {
@@ -1522,12 +2616,43 @@
           return "<button type=\"button\" class=\"kb-field\" data-jump=\"" + esc(id) + "\"><span class=\"kb-field-name\">" + esc(field.label) + "</span></button>";
         }).join("");
         const suggest = block && block.suggested && (step.fields || []).some((id) => block.suggested[id]);
-        host.innerHTML = basisHtml(node.pack) + "<h3>步骤</h3><label>标题</label><input id=\"graphLabel\" value=\"" + esc(node.label) + "\">"
+        const lastStep = node.index === (ruleView(node.pack).steps || []).length - 1;
+        const formulaHint = lastStep ? "结果公式只能在这最后一步上右键添加，加完会出现在后面。" : "";
+        host.innerHTML = basisHtml(node.pack) + "<h3>步骤</h3><p>标题和说明改完会直接保存。" + (node.authored ? "添加步骤、添加字段、添加参数、添加计算" + (lastStep ? "、添加结果公式" : "") + "和删除步骤" : "添加字段、添加参数、添加计算" + (lastStep ? "和添加结果公式" : "")) + "在这一步上右键。" + formulaHint + "</p>"
+          + "<label>标题</label><input id=\"graphLabel\" value=\"" + esc(node.label) + "\">"
           + "<label>说明</label><textarea id=\"graphNote\">" + esc(node.note || "") + "</textarea>"
           + "<div class=\"kb-fields\">" + chips + "</div>"
-          + "<div class=\"graph-actions\"><button type=\"button\" class=\"head-btn head-btn-primary\" id=\"graphSave\">保存</button>"
-          + (suggest ? "<button type=\"button\" class=\"head-btn\" id=\"applyAll\">应用识别到的列</button>" : "")
-          + "</div>";
+          + (suggest ? "<div class=\"graph-actions\"><button type=\"button\" class=\"head-btn\" id=\"applyAll\">应用识别到的列</button></div>" : "");
+        return;
+      }
+      if (node.kind === "calc") {
+        const logic = readStepLogic(node.pack, node.index);
+        const custom = configuredLines(logic.lines);
+        const rows = custom.map(parseFormulaLine);
+        const names = stepCalcGroups(node.pack, node.index);
+        const handed = stepResultName(node.pack, node.index);
+        const ready = names.params.length || names.fields.length;
+        const intro = ready
+          ? "计算可以用这一步的字段和参数。算出的结果就是本步骤的值，后面的结果公式要用它。"
+          : "先给这一步加上字段或参数，再用它们算出本步骤的值。";
+        const starter = rows.length ? rows : [{ terms: [""], ops: [], result: handed || "" }];
+        host.innerHTML = "<h3>计算</h3><p>" + esc(intro) + "</p>"
+          + (ready ? formulaBuilderHtml(starter, names, "param") : "");
+        return;
+      }
+      if (node.kind === "param" && Number.isInteger(node.stepIndex)) {
+        const logic = readStepLogic(node.pack, node.stepIndex);
+        const param = (logic.params || []).find((item) => item.id === node.param) || { label: node.label, kind: "number", value: "" };
+        host.innerHTML = "<h3>参数</h3><p>改完会直接保存。删除这个参数在右键。权重不要填一个数，类型选「权重表」。</p>"
+          + "<label>名称</label><input id=\"graphLabel\" value=\"" + esc(param.label) + "\">"
+          + paramEditorHtml(param);
+        return;
+      }
+      if (node.kind === "param" && node.authored) {
+        const rule = authoredRule(node.pack);
+        const param = (rule && rule.params || []).find((item) => item.id === node.param) || { label: node.label, kind: "number", value: "" };
+        host.innerHTML = "<h3>参数</h3><label>名称</label><input id=\"graphLabel\" value=\"" + esc(param.label) + "\">"
+          + paramEditorHtml(param);
         return;
       }
       if (node.kind === "param") {
@@ -1535,12 +2660,23 @@
         const shown = field ? paramInputValue(field, ruleView(node.pack).params[node.param]) : "";
         host.innerHTML = basisHtml(node.pack) + "<h3>" + esc(node.label) + "</h3>"
           + "<label>数值" + (field && field.kind === "percent" ? "（%）" : "") + "</label>"
-          + "<input id=\"graphLabel\" value=\"" + esc(shown) + "\">"
-          + "<div class=\"graph-actions\"><button type=\"button\" class=\"head-btn head-btn-primary\" id=\"graphSave\">保存</button></div>";
+          + "<input id=\"graphLabel\" value=\"" + esc(shown) + "\">";
         return;
       }
-      host.innerHTML = basisHtml(node.pack) + "<h3>公式</h3><label>一行一条</label><textarea id=\"graphNote\">" + esc(node.note || "") + "</textarea>"
-        + "<div class=\"graph-actions\"><button type=\"button\" class=\"head-btn head-btn-primary\" id=\"graphSave\">保存</button></div>";
+      if (node.kind === "formula" && Number.isInteger(node.index)) {
+        const lines = stepFormulaLines(node.pack, node.index);
+        const rows = lines.map(parseFormulaLine);
+        const names = stepFormulaGroups(node.pack, node.index);
+        const ready = names.fields.length || names.params.length || names.calcs.length || names.earlier.length;
+        const starter = rows.length ? rows : [{ terms: [""], ops: [], result: "" }];
+        host.innerHTML = "<h3>结果公式</h3><p>这一步的结果公式可以用字段、参数、计算结果，以及前面步骤的值。算出的值就是这一步的值，后面的规则结果公式要用它。</p>"
+          + (ready || rows.length ? formulaBuilderHtml(starter, names, "step") : "<p>先给这一步加上字段、参数或计算。</p>");
+        return;
+      }
+      const formulaRows = configuredLines(ruleView(node.pack).lines || []).map(parseFormulaLine);
+      const names = ruleFormulaGroups(node.pack);
+      host.innerHTML = basisHtml(node.pack) + "<h3>结果公式</h3><p>每一项可以用字段，也可以用前面步骤的值。步骤下面算出的结果，就是那一步的值。</p>"
+        + formulaBuilderHtml(formulaRows.length ? formulaRows : [{ terms: [""], ops: [], result: "" }], names, "value");
     }
 
     function addGraphNode(role) {
@@ -1750,6 +2886,11 @@
         paintRuleGraph();
         return;
       }
+      if (node && node.kind === "rule" && graphSelected === id) {
+        graphSelected = categoryIdForPack(node.pack);
+        paintRuleGraph();
+        return;
+      }
       toggleGraphLevel(node);
       graphSelected = id;
       paintRuleGraph();
@@ -1800,13 +2941,16 @@
       const response = await fetch("/api/rules/graph", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ graph: { positions: graphConfig.positions, nodes: graphConfig.nodes, edges: graphConfig.edges, routes: graphConfig.routes || {}, labels: graphConfig.labels || {} } }),
+        body: JSON.stringify({ graph: { positions: graphConfig.positions, nodes: graphConfig.nodes, edges: graphConfig.edges, routes: graphConfig.routes || {}, labels: graphConfig.labels || {}, rules: graphConfig.rules || [], categories: graphConfig.categories || [], stepLogic: graphConfig.stepLogic || [] } }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "写入图谱失败");
       graphConfig = data.graph;
       graphConfig.routes = graphConfig.routes || {};
       graphConfig.labels = graphConfig.labels || {};
+      graphConfig.rules = graphConfig.rules || [];
+      graphConfig.categories = graphConfig.categories || [];
+      graphConfig.stepLogic = graphConfig.stepLogic || [];
     }
 
     function straightenGraphEdge() {
@@ -1816,8 +2960,16 @@
       flushGraphSave().catch((error) => setBanner(error.message || "写入图谱失败", "err"));
     }
 
-    async function saveGraphForm() {
-      const node = graphModel.nodes.find((item) => item.id === graphSelected);
+    function scheduleInspectorSave() {
+      clearTimeout(inspectorSaveTimer);
+      inspectorSaveTimer = setTimeout(() => {
+        saveGraphForm({ quiet: true });
+      }, 400);
+    }
+
+    async function saveGraphForm(options) {
+      const quiet = !!(options && options.quiet);
+      const node = resolveGraphNode(graphSelected);
       const edge = graphModel.edges.find((item) => item.id === graphSelected);
       try {
         if (edge) {
@@ -1825,10 +2977,44 @@
           if (!applyEdgeCaption(edge, input ? input.value : "")) return;
           await flushGraphSave();
           paintRuleGraph();
-          setBanner("连线上的字已保存。", "ok");
+          if (!quiet) setBanner("连线上的字已保存。", "ok");
           return;
         }
         if (!node) return;
+        if (node.kind === "field" && node.added) {
+          const fields = ensureStepFields(node.pack, node.index);
+          const field = fields && fields.find((item) => item.id === node.field);
+          if (!field) return;
+          field.label = (document.getElementById("graphLabel").value || "字段").trim().slice(0, 40) || "字段";
+          const tableEl = document.getElementById("graphTable");
+          const table = tableEl && tableChoices().some((item) => item.id === tableEl.value) ? tableEl.value : "";
+          field.table = table;
+          await flushGraphSave();
+          paintRuleGraph();
+          if (!quiet) setBanner("已保存到这一步。", "ok");
+          return;
+        }
+        if (node.kind === "formula" && Number.isInteger(node.index)) {
+          await saveStepFormula(node, quiet);
+          return;
+        }
+        if (node.kind === "calc" || (node.kind === "param" && Number.isInteger(node.stepIndex))) {
+          await saveStepPiece(node, quiet);
+          return;
+        }
+        if (node.kind === "category") {
+          const item = (graphConfig.categories || []).find((entry) => entry.id === node.id);
+          if (!item) return;
+          item.label = (document.getElementById("graphLabel").value || "新类别").trim().slice(0, 40) || "新类别";
+          await flushGraphSave();
+          paintRuleGraph();
+          if (!quiet) setBanner("类别已保存。", "ok");
+          return;
+        }
+        if (node.authored) {
+          await saveAuthored(node, quiet);
+          return;
+        }
         if (isFreeKind(node.kind)) {
           const item = graphConfig.nodes.find((entry) => entry.id === node.id);
           if (!item) return;
@@ -1837,7 +3023,7 @@
           item.note = (document.getElementById("graphNote").value || "").trim().slice(0, 200);
           await flushGraphSave();
           paintRuleGraph();
-          setBanner(fallback + "已保存。", "ok");
+          if (!quiet) setBanner(fallback + "已保存。", "ok");
           return;
         }
         const view = ruleView(node.pack);
@@ -1858,35 +3044,291 @@
             fields: current.fields,
           };
         } else if (node.kind === "formula") {
-          const lines = document.getElementById("graphNote").value.split("\n").map((line) => line.trim()).filter(Boolean);
-          if (!lines.length) {
-            setBanner("至少保留一行公式。", "err");
+          const collected = collectFormulaLines(false);
+          if (collected.error) {
+            if (!quiet) setBanner(collected.error, "err");
             return;
           }
-          patch.lines = lines;
+          patch.lines = collected.lines;
         } else if (node.kind === "param") {
           const field = (RULE_FIELDS[node.pack] || []).find((item) => item.id === node.param);
           const parsed = parseParam(field, document.getElementById("graphLabel").value);
           if (parsed.error) {
-            setBanner(parsed.error, "err");
+            if (!quiet) setBanner(parsed.error, "err");
             return;
           }
           patch.params[node.param] = parsed.value;
           if (node.pack === "ccr_fx" && patch.params.cut_mid < patch.params.cut_short) {
-            setBanner("中期限上限要大于短期限上限。", "err");
+            if (!quiet) setBanner("中期限上限要大于短期限上限。", "err");
             return;
           }
         }
         ruleEdits[node.pack] = patch;
         await persistRule(node.pack);
         paintRuleGraph();
-        setBanner("规则已写入。下次计算会先读这份文件。", "ok");
+        if (!quiet) setBanner("规则已写入。下次计算会先读这份文件。", "ok");
       } catch (error) {
         setBanner(error.message || "保存失败", "err");
       }
     }
 
+    async function saveStepPiece(node, quiet) {
+      const index = node.kind === "calc" ? node.index : node.stepIndex;
+      const step = ensureStepLogic(node.pack, index);
+      if (!step) return;
+      if (node.kind === "calc") {
+        const collected = collectFormulaLines(quiet);
+        if (collected.error) {
+          if (!quiet) setBanner(collected.error, "err");
+          return;
+        }
+        if (quiet && !collected.lines.length) return;
+        step.lines = collected.lines;
+      } else {
+        const param = (step.params || []).find((item) => item.id === node.param);
+        if (!param) return;
+        const draft = readParamDraft();
+        param.label = (document.getElementById("graphLabel").value || "参数").trim().slice(0, 40) || "参数";
+        param.kind = draft.kind;
+        param.value = draft.value;
+      }
+      await flushGraphSave();
+      paintRuleGraph();
+      if (!quiet) setBanner("已保存到这一步。", "ok");
+    }
+
+    function addedStepFields(pack, index) {
+      const authored = authoredRule(pack);
+      if (authored) {
+        const step = (authored.steps || [])[index];
+        return (step && step.fields) || [];
+      }
+      const item = (graphConfig.stepLogic || []).find((entry) => entry.pack === pack && entry.index === index);
+      return (item && item.fields) || [];
+    }
+
+    function ensureStepFields(pack, index) {
+      const step = ensureStepLogic(pack, index);
+      if (!step) return null;
+      if (!Array.isArray(step.fields)) step.fields = [];
+      return step.fields;
+    }
+
+    function addStepField(pack, index) {
+      const fields = ensureStepFields(pack, index);
+      if (!fields) return;
+      if (fields.length >= 8) {
+        setBanner("一个步骤最多 8 个自加字段。", "err");
+        return;
+      }
+      const fieldId = "f" + Date.now().toString(36).slice(-6);
+      fields.push({ id: fieldId, label: "新字段" });
+      graphSelected = "field:" + pack + ":" + index + ":" + fieldId;
+      treeOpen.add("rule:" + pack);
+      treeOpen.add("tree:steps:" + pack);
+      treeOpen.add("step:" + pack + ":" + index);
+      treeOpen.add(categoryIdForPack(pack));
+      paintRuleGraph();
+      flushGraphSave().then(() => focusGraphEditor()).catch((error) => setBanner(error.message || "写入图谱失败", "err"));
+    }
+
+    async function saveStepFormula(node, quiet) {
+      const step = ensureStepLogic(node.pack, node.index);
+      if (!step) return;
+      const collected = collectFormulaLines(!!quiet);
+      if (collected.error) {
+        if (!quiet) setBanner(collected.error, "err");
+        return;
+      }
+      if (quiet && !collected.lines.length) return;
+      step.formula = collected.lines;
+      await flushGraphSave();
+      paintRuleGraph();
+      if (!quiet) setBanner("已保存到这一步。", "ok");
+    }
+
+    function addStepParam(pack, index) {
+      const step = ensureStepLogic(pack, index);
+      if (!step) return;
+      if (step.params.length >= 8) {
+        setBanner("一个步骤最多 8 个参数。", "err");
+        return;
+      }
+      const paramId = "p" + Date.now().toString(36).slice(-6);
+      step.params.push({ id: paramId, label: "新参数", kind: "number", value: "" });
+      graphSelected = "param:" + pack + ":s" + index + ":" + paramId;
+      treeOpen.add("rule:" + pack);
+      treeOpen.add("tree:steps:" + pack);
+      treeOpen.add("step:" + pack + ":" + index);
+      treeOpen.add(categoryIdForPack(pack));
+      paintRuleGraph();
+      flushGraphSave().then(() => focusGraphEditor()).catch((error) => setBanner(error.message || "写入图谱失败", "err"));
+    }
+
+    async function saveAuthored(node, quiet) {
+      const rule = authoredRule(node.pack);
+      if (!rule) return;
+      if (node.kind === "rule") {
+        rule.title = (document.getElementById("graphLabel").value || "新规则").trim().slice(0, 40) || "新规则";
+      } else if (node.kind === "step") {
+        const step = rule.steps[node.index];
+        if (!step) return;
+        step.title = (document.getElementById("graphLabel").value || "步骤").trim().slice(0, 40) || "步骤";
+        step.line = (document.getElementById("graphNote").value || "").trim().slice(0, 200);
+      } else if (node.kind === "formula") {
+        const collected = collectFormulaLines(quiet);
+        if (collected.error) {
+          if (!quiet) setBanner(collected.error, "err");
+          return;
+        }
+        if (quiet && !collected.lines.length) return;
+        rule.lines = collected.lines;
+        rule.showFormula = true;
+      } else if (node.kind === "param") {
+        const param = rule.params.find((item) => item.id === node.param);
+        if (!param) return;
+        const draft = readParamDraft();
+        param.label = (document.getElementById("graphLabel").value || "参数").trim().slice(0, 40) || "参数";
+        param.kind = draft.kind;
+        param.value = draft.value;
+      }
+      await flushGraphSave();
+      paintRuleGraph();
+      if (!quiet) setBanner("已保存到这条规则。", "ok");
+    }
+
+    function addAuthoredRuleFromForm() {
+      const node = graphModel.nodes.find((item) => item.id === graphSelected);
+      if (!node || node.kind !== "category") return;
+      if ((graphConfig.rules || []).length >= 24) {
+        setBanner("自建规则最多 24 条。", "err");
+        return;
+      }
+      const custom = (graphConfig.categories || []).some((item) => item.id === node.id);
+      const input = document.getElementById("graphLabel");
+      const title = (!custom && input ? input.value : "新规则").trim().slice(0, 40) || "新规则";
+      const category = categoryKey(node.id);
+      const rule = {
+        id: "user:" + Date.now().toString(36),
+        category: category,
+        title: title,
+        lines: [],
+        steps: [{ title: "第一步", line: "写下这一步怎么算" }],
+        params: [],
+      };
+      rule.basis = "";
+      graphConfig.rules = (graphConfig.rules || []).concat([rule]);
+      graphSelected = "rule:" + rule.id;
+      treeOpen.add(node.id);
+      treeOpen.add(graphSelected);
+      treeOpen.add("tree:steps:" + rule.id);
+      paintRuleGraph();
+      const ruleId = rule.id;
+      flushGraphSave()
+        .then(() => requestRuleBasis(ruleId, title))
+        .catch((error) => setBanner(error.message || "写入图谱失败", "err"));
+    }
+
+    function addAuthoredChild(kind) {
+      const node = graphModel.nodes.find((item) => item.id === graphSelected);
+      const rule = node && authoredRule(node.pack);
+      if (!rule) return;
+      if (kind === "step") {
+        if (rule.steps.length >= 6) {
+          setBanner("一条规则最多 6 个步骤。", "err");
+          return;
+        }
+        rule.steps.push({ title: "新步骤", line: "", fields: [] });
+        graphSelected = "step:" + rule.id + ":" + (rule.steps.length - 1);
+        treeOpen.add("tree:steps:" + rule.id);
+      } else {
+        if (rule.params.length >= 8) {
+          setBanner("一条规则最多 8 个参数。", "err");
+          return;
+        }
+        const paramId = "p" + Date.now().toString(36).slice(-6);
+        rule.params.push({ id: paramId, label: "新参数", kind: "number", value: "" });
+        graphSelected = "param:" + rule.id + ":" + paramId;
+        treeOpen.add("tree:params:" + rule.id);
+      }
+      treeOpen.add("rule:" + rule.id);
+      treeOpen.add(categoryIdForPack(rule.id));
+      paintRuleGraph();
+      flushGraphSave().catch((error) => setBanner(error.message || "写入图谱失败", "err"));
+    }
+
+    function addCategory() {
+      if ((graphConfig.categories || []).length >= 12) {
+        setBanner("自建类别最多 12 个。", "err");
+        return;
+      }
+      const id = "cat:user:" + Date.now().toString(36);
+      graphConfig.categories = (graphConfig.categories || []).concat([{ id: id, label: "新类别" }]);
+      graphSelected = id;
+      treeOpen.add(id);
+      paintRuleGraph();
+      flushGraphSave().catch((error) => setBanner(error.message || "写入图谱失败", "err"));
+    }
+
+    function deleteCategory(id) {
+      if (String(id).indexOf("cat:user:") !== 0) return;
+      const key = categoryKey(id);
+      graphConfig.categories = (graphConfig.categories || []).filter((item) => item.id !== id);
+      graphConfig.rules = (graphConfig.rules || []).filter((rule) => rule.category !== key);
+      graphSelected = "";
+      treeOpen.delete(id);
+      paintRuleGraph();
+      flushGraphSave().catch((error) => setBanner(error.message || "写入图谱失败", "err"));
+    }
+
     function deleteGraphSelection() {
+      if (String(graphSelected).indexOf("cat:user:") === 0) {
+        deleteCategory(graphSelected);
+        return;
+      }
+      const node = graphModel.nodes.find((item) => item.id === graphSelected);
+      if (node && node.kind === "field" && node.added) {
+        const fields = ensureStepFields(node.pack, node.index);
+        if (!fields) return;
+        const next = fields.filter((item) => item.id !== node.field);
+        fields.length = 0;
+        next.forEach((item) => fields.push(item));
+        graphSelected = "step:" + node.pack + ":" + node.index;
+        paintRuleGraph();
+        flushGraphSave().catch((error) => setBanner(error.message || "写入图谱失败", "err"));
+        return;
+      }
+      if (node && node.kind === "param" && Number.isInteger(node.stepIndex)) {
+        const step = ensureStepLogic(node.pack, node.stepIndex);
+        if (!step) return;
+        step.params = step.params.filter((item) => item.id !== node.param);
+        graphSelected = "step:" + node.pack + ":" + node.stepIndex;
+        paintRuleGraph();
+        flushGraphSave().catch((error) => setBanner(error.message || "写入图谱失败", "err"));
+        return;
+      }
+      if (node && node.authored && node.kind !== "formula" && node.kind !== "calc") {
+        const rule = authoredRule(node.pack);
+        if (!rule) return;
+        if (node.kind === "rule") {
+          const category = categoryIdForPack(rule.id);
+          graphConfig.rules = (graphConfig.rules || []).filter((item) => item.id !== rule.id);
+          graphSelected = category;
+        } else if (node.kind === "step") {
+          if (rule.steps.length <= 1) {
+            setBanner("至少保留一个步骤。", "err");
+            return;
+          }
+          rule.steps.splice(node.index, 1);
+          graphSelected = "rule:" + rule.id;
+        } else if (node.kind === "param") {
+          rule.params = rule.params.filter((item) => item.id !== node.param);
+          graphSelected = "rule:" + rule.id;
+        }
+        paintRuleGraph();
+        flushGraphSave().catch((error) => setBanner(error.message || "写入图谱失败", "err"));
+        return;
+      }
       if (graphSelected.indexOf("custom:") === 0) {
         graphConfig.nodes = (graphConfig.nodes || []).filter((node) => node.id !== graphSelected);
         graphConfig.edges = (graphConfig.edges || []).filter((edge) => edge.from !== graphSelected && edge.to !== graphSelected);
@@ -1914,17 +3356,35 @@
         + "<button type=\"button\" class=\"btn show\" id=\"calcBtn\">按当前映射计算</button>";
     }
 
+    function mappingFields(pack) {
+      const extra = [];
+      const seen = {};
+      (pack.fields || []).forEach((field) => { seen[field.id] = true; });
+      (graphConfig.stepLogic || []).forEach((item) => {
+        if (!item || item.pack !== pack.id) return;
+        (item.fields || []).forEach((field) => {
+          if (!field || !field.id || seen[field.id]) return;
+          seen[field.id] = true;
+          extra.push({ id: field.id, label: field.label || "字段", required: false, table: field.table || "" });
+        });
+      });
+      return (pack.fields || []).concat(extra);
+    }
+
     function fieldRowsHtml(block, pack, columnMap, productId) {
       const columns = columnChoices(block.sheet, block.headerRow);
-      return pack.fields.map((field) => {
+      return mappingFields(pack).map((field) => {
         const selected = (columnMap && columnMap[field.id]) || "";
         const options = ["<option value=\"\">选择表头</option>"].concat(columns.map(([letter, text]) =>
           "<option value=\"" + esc(letter) + "\"" + (letter === selected ? " selected" : "") + ">"
           + esc(text) + "</option>"
         )).join("");
         const productAttr = productId ? " data-product=\"" + esc(productId) + "\"" : "";
+        const tableName = field.table ? fieldTableLabel(field.table) : "";
+        const mapped = tableName ? " <span class=\"opt\">与" + esc(tableName) + "映射</span>" : "";
         return "<tr data-row-field=\"" + esc(field.id) + "\"" + productAttr + "><td>" + esc(field.label)
-          + (field.required ? " <span class=\"req\">必填</span>" : " <span class=\"opt\">选填</span>")
+          + (field.required ? " <span class=\"req\">必填</span>" : (tableName ? "" : " <span class=\"opt\">选填</span>"))
+          + mapped
           + "</td><td><select data-field=\"" + esc(field.id) + "\"" + productAttr + ">" + options + "</select></td>"
           + "<td class=\"sample\">" + esc(sampleText(block.sheet, block.headerRow, selected)) + "</td></tr>";
       }).join("");
@@ -1952,7 +3412,7 @@
       if (block.typeColumn) {
         const chosen = typeCols.find((col) => col.column === block.typeColumn);
         const values = chosen ? chosen.values : [];
-        const methodOptions = (current) => ["<option value=\"\">暂不计算</option>"].concat(catalog.map((item) =>
+        const methodOptions = (current) => ["<option value=\"\">暂不计算</option>"].concat(methodChoices().map((item) =>
           "<option value=\"" + esc(item.id) + "\"" + (item.id === current ? " selected" : "") + ">" + esc(item.title) + "</option>"
         )).join("");
         const typeRows = values.map((item, valueIndex) =>
@@ -1968,9 +3428,11 @@
           const active = pack.id === block.activeProduct ? " active-detail" : "";
           return "<section class=\"detail-block" + active + "\" data-detail=\"" + esc(pack.id) + "\">"
             + "<div class=\"map-head\"><h3 class=\"section-label\">明细 · " + esc(pack.title) + "</h3>"
-            + "<button type=\"button\" class=\"text-btn\" data-remap=\"" + esc(pack.id) + "\">重新生成默认映射</button></div>"
+            + (pack.authored ? "" : "<button type=\"button\" class=\"text-btn\" data-remap=\"" + esc(pack.id) + "\">重新生成默认映射</button>") + "</div>"
             + "<div class=\"table-wrap show\"><table class=\"data\"><thead><tr><th>需要的字段</th><th>表头</th><th>列中的示例</th></tr></thead><tbody>"
-            + fieldRowsHtml(block, pack, map, pack.id) + "</tbody></table></div></section>";
+            + fieldRowsHtml(block, pack, map, pack.id) + "</tbody></table></div>"
+            + (pack.authored && !(pack.fields || []).length ? "<p class=\"card-desc\">这条规则还没有字段。在规则库的步骤上右键添加字段，这里就能选表头。</p>" : "")
+            + "</section>";
         }).join("");
         const noted = chosen && headerKey(chosen.header) === "bisproductcategory";
         if (block.mapping) {
@@ -1986,10 +3448,12 @@
         }
       } else {
         const pack = packById(block.product);
-        const packOptions = catalog.map((item) =>
+        const packOptions = methodChoices().map((item) =>
           "<option value=\"" + esc(item.id) + "\"" + (item.id === block.product ? " selected" : "") + ">" + esc(item.title) + "</option>"
         ).join("");
+        const emptyRule = pack && pack.authored && !(pack.fields || []).length;
         body = "<div class=\"map-grid single\"><label>计算方式<select data-role=\"product\">" + packOptions + "</select></label></div>"
+          + (emptyRule ? "<p class=\"card-desc\">这条规则还没有字段。在规则库的步骤上右键添加字段，这里就能选表头。</p>" : "")
           + "<h3 class=\"section-label\">明细</h3>"
           + "<div class=\"table-wrap show\"><table class=\"data\"><thead><tr><th>需要的字段</th><th>表头</th><th>列中的示例</th></tr></thead><tbody>"
           + fieldRowsHtml(block, pack, block.columns, "") + "</tbody></table></div>";
@@ -2010,7 +3474,8 @@
       const download = data.download_url
         ? "<a class=\"btn show\" id=\"downloadRwa\" href=\"" + esc(data.download_url) + "\" download=\"" + esc(data.download_name || "计算RWA.xlsx") + "\">下载 Excel，计算 RWA 在每行后面</a>"
         : "";
-      packsEl.innerHTML = download + (data.packs || []).map((pack) => {
+      const next = "<button type=\"button\" class=\"btn show\" id=\"toReturn\">下一步：上传监管结果</button>";
+      packsEl.innerHTML = download + next + (data.packs || []).map((pack) => {
         const rows = (pack.rows || []).map((row) => {
           const tag = row.status === "ok"
             ? "<span class=\"tag ok\">已计算</span>"
@@ -2215,8 +3680,11 @@
       const showTotals = data.show_totals !== false;
       const blocks = data.blocks || [];
       if (underlyingEl) {
+        const same = data.sheet_underlying
+          ? (data.hint || "明细统计来自上传表的 Per CYB Underlying Data。")
+          : "与监管结果同一口径。";
         underlyingEl.innerHTML = "<h3 class=\"grid-title\">明细统计</h3><p class=\"card-desc\">" + esc(unit)
-          + "与监管结果同一口径。</p>"
+          + esc(same) + "</p>"
           + blocks.map((block) => blockCaption(block)
             + columnTable(block.rows, columns, "underlying", block.totals, showTotals)
             + outsideNote(block)).join("");
@@ -2351,6 +3819,10 @@
       const button = event.target.closest("[data-guide]");
       if (!button || button.disabled) return;
       showGuide(Number(button.getAttribute("data-guide")));
+    });
+
+    document.getElementById("stepCalc").addEventListener("click", (event) => {
+      if (event.target.closest("#toReturn")) showGuide(2);
     });
 
     function clearComparison() {
@@ -2493,7 +3965,7 @@
         block.product = event.target.value;
         const keep = {};
         const pack = packById(block.product);
-        for (const field of pack.fields) {
+        for (const field of mappingFields(pack)) {
           if (block.columns[field.id]) keep[field.id] = block.columns[field.id];
         }
         block.columns = keep;
@@ -2601,7 +4073,7 @@
       const ids = forceProduct
         ? [forceProduct]
         : (block.typeColumn ? assignedProducts(block).map((pack) => pack.id) : [block.product]);
-      const pending = ids.filter((id) => id && (forceProduct || !hasMapping(block, id)));
+      const pending = ids.filter((id) => id && !authoredRule(id) && (forceProduct || !hasMapping(block, id)));
       if (!pending.length) return false;
       const token = ++mapToken;
       const titles = pending.map((id) => {
@@ -2686,7 +4158,7 @@
         });
         renderKnowledge();
       }
-      if (event.target.id === "calcBtn") calculate();
+      if (event.target.closest("#calcBtn")) calculate();
     });
 
     function missingRequired() {
@@ -2781,8 +4253,21 @@
       }
     }
 
+    function setCalcBusy(on) {
+      const button = document.getElementById("calcBtn");
+      if (!button) return;
+      button.disabled = on;
+      button.classList.toggle("is-busy", on);
+      if (on) button.innerHTML = "<span class=\"spin\"></span><span>正在按你的映射计算…</span>";
+      else button.textContent = "按当前映射计算";
+    }
+
     async function calculate() {
-      if (busy || !uploadId) return;
+      if (busy) return;
+      if (!uploadId) {
+        setBanner("请先上传明细。", "err");
+        return;
+      }
       try {
         await loadStoredRules();
         renderKnowledge();
@@ -2804,7 +4289,7 @@
         return;
       }
       busy = true;
-      setBanner("正在按你的映射计算…", "wait");
+      setCalcBusy(true);
       let calculated = false;
       try {
         const response = await fetch("/api/calculate", {
@@ -2829,6 +4314,7 @@
         setBanner(error.message || "计算失败", "err");
       } finally {
         busy = false;
+        setCalcBusy(false);
       }
       if (calculated && regulatoryFile) await submitCompare(regulatoryFile);
     }
@@ -3073,8 +4559,11 @@
         } else if (message.applied) {
           extra = "<p class=\"chat-done\">已写入规则库</p>";
         }
-        return "<div class=\"chat-bubble " + role + (message.pending ? " wait" : "") + "\"><p>"
-          + esc(message.content) + "</p>" + extra + "</div>";
+        const body = role === "assistant" && !message.pending
+          ? "<div class=\"md\">" + renderMarkdown(message.content) + "</div>"
+          : "<p>" + esc(message.content) + "</p>";
+        return "<div class=\"chat-bubble " + role + (message.pending ? " wait" : "") + "\">"
+          + body + extra + "</div>";
       }).join("");
       log.scrollTop = log.scrollHeight;
     }
@@ -3321,6 +4810,10 @@
     }
 
     document.addEventListener("click", (event) => {
+      if (event.target.closest("[data-open-weixin]")) {
+        openWeixinDrawer();
+        return;
+      }
       if (event.target.closest("[data-open-weights]")) {
         openWeightDrawer();
         return;
@@ -3332,12 +4825,65 @@
     });
     window.addEventListener("hashchange", () => showView(viewFromHash()));
     showView(viewFromHash());
+
+    const weixinDrawer = document.getElementById("weixinDrawer");
+    function openWeixinDrawer() {
+      weixinDrawer.classList.add("open");
+      weixinDrawer.setAttribute("aria-hidden", "false");
+      loadWeixinForm();
+    }
+    function closeWeixinDrawer() {
+      weixinDrawer.classList.remove("open");
+      weixinDrawer.setAttribute("aria-hidden", "true");
+    }
+    async function loadWeixinForm() {
+      const status = document.getElementById("weixinStatus");
+      try {
+        const response = await fetch("/api/weixin");
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "读取接口配置失败");
+        document.getElementById("weixinAppId").value = data.appid || "";
+        const secret = document.getElementById("weixinAppSecret");
+        secret.value = "";
+        secret.placeholder = data.secret_set ? "已保存，留空则不修改" : "填写 AppSecret";
+        status.textContent = data.secret_set ? "AppSecret 已保存在本机。" : "还没有保存 AppSecret。";
+      } catch (error) {
+        status.textContent = error.message || "读取接口配置失败";
+      }
+    }
+    document.getElementById("weixinForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const status = document.getElementById("weixinStatus");
+      status.textContent = "正在保存…";
+      try {
+        const response = await fetch("/api/weixin", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            appid: document.getElementById("weixinAppId").value,
+            secret: document.getElementById("weixinAppSecret").value,
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "保存失败");
+        document.getElementById("weixinAppSecret").value = "";
+        document.getElementById("weixinAppSecret").placeholder = data.secret_set ? "已保存，留空则不修改" : "填写 AppSecret";
+        status.textContent = "已保存。";
+      } catch (error) {
+        status.textContent = error.message || "保存失败";
+      }
+    });
+    weixinDrawer.addEventListener("click", (event) => {
+      if (event.target.closest("[data-weixin-close]")) closeWeixinDrawer();
+    });
+
     weightDrawer.addEventListener("click", (event) => {
       if (event.target.closest("[data-weight-close]")) closeWeightDrawer();
     });
     document.addEventListener("keydown", (event) => {
       if (event.key !== "Escape") return;
-      if (weightDrawer.classList.contains("open")) closeWeightDrawer();
+      if (weixinDrawer.classList.contains("open")) closeWeixinDrawer();
+      else if (weightDrawer.classList.contains("open")) closeWeightDrawer();
       else if (ruleModal.classList.contains("open")) closeRuleChat();
     });
     ruleModal.addEventListener("click", (event) => {
@@ -3436,6 +4982,9 @@
     .head-actions { display: flex; gap: 8px; flex: none; }
     .head-btn {
       flex: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
       background: #fff;
       color: #1c2434;
       border: 1px solid #e3e8f0;
@@ -3446,6 +4995,7 @@
       font-weight: 600;
       cursor: pointer;
     }
+    .head-btn svg { width: 16px; height: 16px; flex: none; }
     .head-btn:hover { border-color: #2f5fbf; color: #2f5fbf; }
     .head-btn-primary { background: #2f5fbf; color: #fff; border-color: #2f5fbf; }
     .head-btn-primary:hover { background: #274f9e; color: #fff; }
@@ -3650,7 +5200,7 @@
     .graph-inspector h3 { margin: 0; font-size: 15px; }
     .graph-inspector p { margin: 6px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
     .graph-inspector label { display: block; margin: 12px 0 4px; font-size: 12px; color: var(--muted); }
-    .graph-inspector input, .graph-inspector textarea {
+    .graph-inspector input, .graph-inspector textarea, .graph-inspector select {
       width: 100%;
       box-sizing: border-box;
       border: 1px solid #e3e8f0;
@@ -3661,6 +5211,53 @@
     }
     .graph-inspector textarea { min-height: 88px; resize: vertical; }
     .graph-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+    .graph-menu {
+      position: fixed;
+      z-index: 40;
+      min-width: 148px;
+      margin: 0;
+      padding: 4px;
+      background: #fff;
+      border: 1px solid #e3e8f0;
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+    }
+    .graph-menu button {
+      display: block;
+      width: 100%;
+      border: none;
+      background: transparent;
+      color: #1c2434;
+      font: inherit;
+      font-size: 13px;
+      text-align: left;
+      border-radius: 6px;
+      padding: 8px 10px;
+      cursor: pointer;
+    }
+    .graph-menu button:hover { background: #eef2f7; }
+    .graph-menu button.danger { color: #b42318; }
+    .graph-menu-level {
+      padding: 6px 10px 4px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #8b97a8;
+    }
+    .formula-line {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+      margin: 8px 0;
+      padding: 8px;
+      background: #f6f8fb;
+      border-radius: 8px;
+    }
+    .formula-piece { display: inline-flex; align-items: center; gap: 6px; }
+    .formula-line input { width: auto; flex: 1 1 88px; min-width: 88px; max-width: 160px; }
+    .formula-line select { width: auto; min-width: 64px; padding-right: 4px; }
+    .formula-index, .formula-eq { color: #667085; font-size: 12px; font-weight: 700; }
+    .formula-line .text-btn { padding: 0; font-size: 12px; }
     .graph-edge-label { font-size: 11px; fill: #667085; paint-order: stroke; stroke: #fbfcfe; stroke-width: 4px; cursor: text; }
     .edge-label-editor {
       position: absolute;
@@ -3714,6 +5311,22 @@
       transition: opacity 0.22s ease;
     }
     .rule-modal.open .rule-modal-mask { opacity: 1; }
+    .weixin-form { padding: 4px 16px 24px; }
+    .weixin-form label { display: block; margin: 14px 0 6px; font-size: 13px; }
+    .weixin-form input,
+    .weixin-form textarea,
+    .weixin-form select {
+      width: 100%;
+      box-sizing: border-box;
+      border: 1px solid #e3e8f0;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font: inherit;
+      font-size: 14px;
+      background: #fff;
+    }
+    .weixin-form textarea { min-height: 72px; resize: vertical; }
+    .weknora-ref { margin-top: 8px; color: var(--muted); font-size: 12px; }
     .rule-modal-panel {
       position: absolute;
       top: 0;
@@ -3775,6 +5388,15 @@
       padding: 8px 10px;
     }
     .chat-bubble p { margin: 0; font-size: 13px; line-height: 1.5; white-space: pre-wrap; }
+    .md p { margin: 0 0 8px; font-size: 13px; line-height: 1.6; white-space: normal; }
+    .md p:last-child { margin-bottom: 0; }
+    .md h3, .md h4, .md h5 { margin: 12px 0 6px; line-height: 1.4; }
+    .md h3 { font-size: 16px; }
+    .md h4 { font-size: 15px; }
+    .md h5 { font-size: 14px; }
+    .md ul, .md ol { margin: 0 0 8px; padding-left: 1.2em; }
+    .md li { margin: 3px 0; font-size: 13px; line-height: 1.55; }
+    .weknora-answer { margin-top: 14px; font-size: 14px; line-height: 1.6; }
     .chat-bubble.user { align-self: flex-end; background: #eaf0fa; border-color: #d3e0f4; }
     .chat-bubble.assistant { align-self: flex-start; }
     .chat-bubble.wait { color: #2f5fbf; background: #f4f7fc; }

@@ -22,14 +22,52 @@
     }
   },
   "nodes": [],
-  "edges": [
+  "edges": [],
+  "routes": {},
+  "labels": {},
+  "rules": [
     {
-      "id": "link:muyuxo9z",
-      "from": "param:repo_credit:usd_cnh",
-      "to": "rule:repo_credit",
-      "label": "相关"
+      "id": "user:muyyi7py",
+      "category": "credit",
+      "title": "贷款",
+      "basis": "",
+      "showFormula": true,
+      "lines": [
+        "权重字段 × ead = RWS"
+      ],
+      "steps": [
+        {
+          "title": "第一步",
+          "line": "确定权重",
+          "params": [],
+          "lines": [],
+          "fields": [
+            {
+              "id": "fz01oev",
+              "label": "权重字段",
+              "table": "ratings"
+            }
+          ],
+          "formula": []
+        },
+        {
+          "title": "EAD",
+          "line": "",
+          "params": [],
+          "lines": [],
+          "fields": [
+            {
+              "id": "fz04l59",
+              "label": "ead",
+              "table": ""
+            }
+          ],
+          "formula": []
+        }
+      ],
+      "params": []
     }
   ],
-  "routes": {},
-  "labels": {}
+  "categories": [],
+  "stepLogic": []
 }

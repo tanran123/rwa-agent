@@ -378,6 +378,19 @@ table.data tr:last-child td {
   display: block;
 }
 
+.btn.show.is-busy {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: wait;
+}
+
+.btn.is-busy .spin {
+  border-color: rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+}
+
 .btn:hover {
   background: #1d4ed8;
 }

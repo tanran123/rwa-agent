@@ -260,20 +260,42 @@ def _section_of(text: str) -> str | None:
 
 def _read_grid(ws, limit: int = 80) -> list[tuple]:
     rows = []
-    for row in ws.iter_rows(max_row=limit, max_col=16, values_only=True):
+    for row in ws.iter_rows(max_row=limit, max_col=24, values_only=True):
         rows.append(tuple(row))
     return rows
+
+
+def _column_of(grid: list[tuple], text: str) -> int | None:
+    for row in grid:
+        for index, cell in enumerate(row):
+            if isinstance(cell, str) and text in cell:
+                return index
+    return None
+
+
+def _six_amounts(row: tuple, start: int | None) -> list[float] | None:
+    if start is None:
+        return None
+    amounts = []
+    for index in range(start, start + 6):
+        raw = row[index] if len(row) > index else None
+        if isinstance(raw, str) and raw.startswith("="):
+            return None
+        number = _number(raw)
+        amounts.append(0.0 if number is None else number)
+    return amounts
 
 
 def _parse_return_block(grid: list[tuple]) -> tuple[list[dict], bool]:
     section = None
     got_standardized = False
     parsed = []
-    saw_template = False
+    return_at = _column_of(grid, "Per Banking Return")
+    underlying_at = _column_of(grid, "Per CYB Underlying Data")
+    weight_at = return_at - 1 if return_at else 1
+    amount_at = return_at if return_at is not None else 2
+    saw_template = return_at is not None
     for row in grid:
-        for cell in row:
-            if isinstance(cell, str) and "Per Banking Return" in cell:
-                saw_template = True
         label = row[0] if row else None
         if isinstance(label, str):
             if label.startswith("Sum of") or label.startswith("Conclusion"):
@@ -284,27 +306,22 @@ def _parse_return_block(grid: list[tuple]) -> tuple[list[dict], bool]:
                 continue
         if section is None:
             continue
-        weight = _weight(row[1] if len(row) > 1 else None)
+        weight = _weight(row[weight_at] if len(row) > weight_at else None)
         if weight is None:
             if got_standardized:
                 break
             continue
-        amounts = []
-        skip = False
-        for index in range(2, 8):
-            raw = row[index] if len(row) > index else None
-            if isinstance(raw, str) and raw.startswith("="):
-                skip = True
-                break
-            number = _number(raw)
-            amounts.append(0.0 if number is None else number)
-        if skip:
+        amounts = _six_amounts(row, amount_at)
+        if amounts is None:
             continue
         if section == "standardized":
             got_standardized = True
         item = _empty(section, weight)
         for measure, amount in zip(MEASURES, amounts):
             item[measure] = amount
+        sheet = _six_amounts(row, underlying_at)
+        if sheet is not None:
+            item["sheet_underlying"] = {measure: amount for measure, amount in zip(MEASURES, sheet)}
         parsed.append(item)
     return parsed, saw_template
 
@@ -372,7 +389,7 @@ def _parse_header_table(grid: list[tuple]) -> list[dict]:
 
 
 def parse_regulatory(path: str | Path) -> dict:
-    book = load_workbook(path, read_only=True, data_only=False)
+    book = load_workbook(path, read_only=True, data_only=True)
     try:
         best: list[dict] | None = None
         scale = 1
@@ -429,13 +446,31 @@ def _totals(rows: list[dict], side: str) -> dict:
     return total
 
 
+def _uses_sheet_underlying(rows: list[dict]) -> bool:
+    for row in rows:
+        raw = row.get("sheet_underlying") or {}
+        if any(abs(float(raw.get(measure) or 0)) > 1e-9 for measure in MEASURES):
+            return True
+    return False
+
+
+_SHEET_HINT = (
+    "明细统计读的是这张表的「Per CYB Underlying Data」。"
+    "表内本金和 CRM 后本金取 item 5、表内 ASS 的 EAD_PRE_CCF，按原风险权重加总后除以 1000。"
+    "表外名义、违约风险暴露按表上公式从 principal、NOMINAL、EAD_PRE_CCF 取值。"
+    "风险加权资产 =（CRM 后本金 + 信用等值 + 违约风险暴露）× 权重。"
+)
+
+
 def build_comparison(exposure: dict, regulatory: dict) -> dict:
     scale = int(regulatory.get("scale") or 1)
+    reg_rows = regulatory.get("rows") or []
+    use_sheet = _uses_sheet_underlying(reg_rows)
     reg_index = {}
-    for row in regulatory.get("rows") or []:
+    for row in reg_rows:
         reg_index[_key(row["approach"], row["weight"])] = row
     parts = exposure.get("currencies") or []
-    if not parts:
+    if use_sheet or not parts:
         parts = [{"currency": "—", "rows": [], "outside_rwa": 0.0}]
     blocks = []
     for part in parts:
@@ -447,7 +482,11 @@ def build_comparison(exposure: dict, regulatory: dict) -> dict:
         compared = []
         for approach, weight in _sort_keys(keys):
             full = und_index.get((approach, weight)) or _empty(approach, weight)
-            underlying = {measure: _present(full[measure], scale, measure) for measure in MEASURES}
+            if use_sheet:
+                raw = (reg_index.get((approach, weight)) or {}).get("sheet_underlying") or {}
+                underlying = {measure: float(raw.get(measure) or 0) for measure in MEASURES}
+            else:
+                underlying = {measure: _present(full[measure], scale, measure) for measure in MEASURES}
             regulatory_row = _measures(reg_index.get((approach, weight)) or _empty(approach, weight))
             compared.append(
                 {
@@ -480,6 +519,7 @@ def build_comparison(exposure: dict, regulatory: dict) -> dict:
         "title": "银行暴露",
         "columns": BANK_COLUMNS,
         "show_totals": True,
+        "sheet_underlying": use_sheet,
         "blocks": blocks,
     }
 
@@ -1018,7 +1058,7 @@ def compare_module(module: str, exposure: dict, path: str | Path) -> dict:
     if module == "bank":
         regulatory = parse_regulatory(path)
         result = build_comparison(exposure, regulatory)
-        result["hint"] = _MODULE_BY_ID["bank"]["return_hint"]
+        result["hint"] = _SHEET_HINT if result.get("sheet_underlying") else _MODULE_BY_ID["bank"]["return_hint"]
         return result
     table = _module_table(path, module)
     if module == "retail":

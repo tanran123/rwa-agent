@@ -37,10 +37,13 @@ from flask import Flask, jsonify, request, send_file, send_from_directory
 from rwa_agent.agent import field_catalog, inspect_workbook, list_type_columns, run_with_mappings, write_rwa_workbook
 from rwa_agent.compare import compare_module, module_catalog, write_comparison
 from rwa_agent.library import calculation_rules, ensure_library, load_library, reset_rule, save_rule
+from rwa_agent.rule_calc import run_authored
 from rwa_agent.rule_graph import load_graph, save_graph
 from rwa_agent.mapper import suggest_mappings
-from rwa_agent.rule_chat import discuss_rules
+from rwa_agent.rule_chat import discuss_rules, lookup_basis
 from rwa_agent.rule_learn import learn_from_excel
+from rwa_agent.weknora import ask as weknora_ask
+from rwa_agent.weknora import list_bases as weknora_bases
 from rwa_agent.weight_tables import ingest_weight_workbook, weight_catalog
 
 ensure_library()
@@ -88,6 +91,69 @@ def index():
 @app.get("/health")
 def health():
     return jsonify({"status": "ok", "service": "rwa"})
+
+
+def _weixin_env_path() -> Path:
+    return APP_DIR / ".env"
+
+
+def _upsert_env(updates: dict[str, str], path: Path | None = None) -> None:
+    path = path or _weixin_env_path()
+    lines = path.read_text(encoding="utf-8").splitlines() if path.is_file() else []
+    seen: set[str] = set()
+    written: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            written.append(line)
+            continue
+        key = stripped.split("=", 1)[0].strip()
+        if key in updates:
+            written.append(f"{key}={updates[key]}")
+            seen.add(key)
+        else:
+            written.append(line)
+    for key, value in updates.items():
+        if key not in seen:
+            written.append(f"{key}={value}")
+    path.write_text("\n".join(written) + "\n", encoding="utf-8")
+    for key, value in updates.items():
+        os.environ[key] = value
+
+
+def _credential(value: object, limit: int) -> str:
+    text = str(value or "").strip()
+    if any(char in text for char in "\r\n"):
+        raise ValueError("不能包含换行")
+    if len(text) > limit:
+        raise ValueError("内容过长")
+    return text
+
+
+@app.get("/api/weixin")
+def weixin_get():
+    appid = os.environ.get("WEIXIN_APPID", "").strip()
+    secret = os.environ.get("WEIXIN_APPSECRET", "").strip()
+    return jsonify({"appid": appid, "secret_set": bool(secret)})
+
+
+@app.put("/api/weixin")
+def weixin_save():
+    data = request.get_json(silent=True) or {}
+    try:
+        appid = _credential(data.get("appid"), 64)
+        secret = _credential(data.get("secret"), 128)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    if not appid:
+        return jsonify({"error": "请填写 AppID"}), 400
+    updates = {"WEIXIN_APPID": appid}
+    if secret:
+        updates["WEIXIN_APPSECRET"] = secret
+    elif not os.environ.get("WEIXIN_APPSECRET", "").strip():
+        return jsonify({"error": "请填写 AppSecret"}), 400
+    _upsert_env(updates)
+    return jsonify({"appid": appid, "secret_set": bool(os.environ.get("WEIXIN_APPSECRET", "").strip())})
 
 
 @app.get("/api/fields")
@@ -241,6 +307,38 @@ def rules_learn():
     return jsonify(result)
 
 
+@app.get("/api/weknora/bases")
+def weknora_list():
+    try:
+        return jsonify({"bases": weknora_bases()})
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 502
+
+
+@app.post("/api/weknora/ask")
+def weknora_query():
+    data = request.get_json(silent=True) or {}
+    try:
+        result = weknora_ask(str(data.get("query") or ""), str(data.get("knowledge_base_id") or ""))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 502
+    return jsonify(result)
+
+
+@app.post("/api/rules/basis")
+def rules_basis():
+    data = request.get_json(silent=True) or {}
+    try:
+        basis = lookup_basis(data.get("title"))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    return jsonify({"basis": basis})
+
+
 @app.post("/api/rules/chat")
 def rules_chat():
     data = request.get_json(silent=True) or {}
@@ -268,13 +366,38 @@ def calculate():
     specs = data.get("tables")
     if not isinstance(specs, list) or not specs:
         return jsonify({"error": "请至少添加一张计算表并对应表头"}), 400
+    graph = load_graph()
+    known = {item["id"] for item in graph.get("rules") or [] if isinstance(item, dict)}
+    builtin = [spec for spec in specs if str(spec.get("product") or "") not in known]
+    authored = [spec for spec in specs if str(spec.get("product") or "") in known]
     try:
-        result = run_with_mappings(stored[0], specs, calculation_rules())
+        packs = []
+        rows = []
+        narrative = []
+        exposure = {"currencies": []}
+        if builtin:
+            builtin_result = run_with_mappings(stored[0], builtin, calculation_rules())
+            packs.extend(builtin_result.get("packs") or [])
+            rows.extend(builtin_result.pop("rwa_rows", []))
+            narrative.append(builtin_result.get("narrative") or "")
+            exposure = builtin_result.get("exposure") or exposure
+        if authored:
+            authored_result = run_authored(stored[0], authored, graph)
+            packs.extend(authored_result["packs"])
+            rows.extend(authored_result["rwa_rows"])
+            narrative.append("自建规则按结果公式计算。")
+        result = {
+            "mapping_source": "用户映射",
+            "narrative": " ".join(part for part in narrative if part).strip(),
+            "packs": packs,
+            "pack_count": len(packs),
+            "row_count": sum(pack.get("row_count", len(pack.get("rows") or [])) for pack in packs),
+            "exposure": exposure,
+        }
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except Exception as e:
         return jsonify({"error": f"处理失败: {e}"}), 500
-    rows = result.pop("rwa_rows", [])
     original = stored[2] if len(stored) > 2 else "结果.xlsx"
     out_path = _result_path(stored[1], original)
     try:

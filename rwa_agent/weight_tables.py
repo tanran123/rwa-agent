@@ -159,9 +159,9 @@ _CCF_LABELS = {code: label for label, code, _value in _CCF}
 
 def weight_catalog() -> dict:
     store = _load_store()
-    if store is None:
-        return _catalog_from_seed()
-    return _catalog_from_store(store)
+    catalog = _catalog_from_seed() if store is None else _catalog_from_store(store)
+    catalog["tables"] = _selectable_tables(catalog)
+    return catalog
 
 
 def ingest_weight_workbook(path: str | Path, filename: str = "") -> dict:
@@ -240,6 +240,65 @@ def render_weight_markdown() -> str:
 
 def write_weight_markdown(path: Path) -> None:
     path.write_text(render_weight_markdown(), encoding="utf-8")
+
+
+_STANDARD_BUCKETS = ("主权", "PSE", "银行-一般", "银行-短期(≤3月)", "企业/非银")
+_STANDARD_GRADES = ("1", "2", "3", "4", "5", "6", "未评级")
+_TABLE_IDS = ("standard", "assets", "ratings", "ccf")
+
+
+def _standard_table() -> dict:
+    from rwa_agent.reference import WEIGHTS
+
+    rows = []
+    for bucket in _STANDARD_BUCKETS:
+        rows.append([
+            bucket,
+            *[
+                "—" if WEIGHTS.get((bucket, grade)) is None else _pct(WEIGHTS[(bucket, grade)])
+                for grade in _STANDARD_GRADES
+            ],
+        ])
+    return {
+        "id": "standard",
+        "label": "标准法权重",
+        "note": "按对手类别和评级等级查风险权重。信用风险计算用的就是这张表。",
+        "columns": ["对手类别", *_STANDARD_GRADES],
+        "rows": rows,
+    }
+
+
+def _selectable_tables(catalog: dict) -> list[dict]:
+    return [
+        _standard_table(),
+        {
+            "id": "assets",
+            "label": "资产类别",
+            "note": "已经读过的工作簿里，每一类资产出现最多的权重。",
+            "columns": ["类别", "常用权重", "其他", "已分析笔数"],
+            "rows": [
+                [item["label"], item["display"], item.get("others_display") or "—", str(item.get("count") or "")]
+                for item in catalog["assets"]
+            ],
+        },
+        {
+            "id": "ratings",
+            "label": "外部评级",
+            "note": "按资产类别和外部评级列出标准法参考权重。",
+            "columns": ["类别", "评级", "参考权重"],
+            "rows": [
+                [item["label"], item["rating"], item.get("reference_display") or "—"]
+                for item in catalog["ratings"]
+            ],
+        },
+        {
+            "id": "ccf",
+            "label": "表外转换系数",
+            "note": "表外项目先乘这个系数，再去乘风险权重。",
+            "columns": ["项目", "转换系数"],
+            "rows": [[item["label"], item["display"]] for item in catalog["ccf"]],
+        },
+    ]
 
 
 def _catalog_from_seed() -> dict:

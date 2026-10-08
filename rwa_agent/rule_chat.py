@@ -1,11 +1,11 @@
-"""Talk about the rules library. Parameter changes are returned for the user to confirm."""
+"""Talk about the rules library by asking the WeKnora knowledge bases."""
 
 from __future__ import annotations
 
-import json
+import re
 
-from rwa_agent.mapper import _complete, _extract_json
 from rwa_agent.rules import DEFAULT_PACK_RULES, resolve_rules
+from rwa_agent.weknora import ask_libraries, chat_libraries
 
 _PERCENT = {
     "capital_ratio",
@@ -17,23 +17,55 @@ _PERCENT = {
 }
 
 
+_OFF_LIBRARY = ("并非来自知识库", "没有检索到", "一般金融知识", "基于一般")
+
+
+def lookup_basis(title: object) -> str:
+    name = str(title or "").strip()[:40]
+    if not name or name == "新规则":
+        raise ValueError("请先写下规则名称")
+    query = (
+        f"规则名称是「{name}」。请只根据知识库原文，用一段话写出这条规则的监管依据，"
+        "包括相关公告或通告的编号、条款和计量要求。知识库里没有的编号不要写。"
+        "没有检索到就说明没找到。不要补充知识库以外的内容，不要写并非来自知识库。"
+    )
+    result = ask_libraries(query)
+    answer = result["answer"]
+    if not result["references"] and any(phrase in answer for phrase in ("没有检索到", "没有找到", "无法提供")):
+        return "知识库里没有找到相关内容。"
+    return _basis_paragraph(answer)
+
+
+def _basis_paragraph(answer: str) -> str:
+    text = _library_only(answer)
+    if text == "知识库里没有找到相关内容。":
+        return text
+    paragraph = re.sub(r"\s+", " ", text).strip()
+    return paragraph[:500]
+
+
 def discuss_rules(messages: object, rules: object, focus: object) -> dict:
     cleaned = _messages(messages)
-    snapshot = _snapshot(rules)
-    focus_id = focus if isinstance(focus, str) and focus in DEFAULT_PACK_RULES else ""
-    raw = _complete(
-        _system(),
-        json.dumps({"focus": focus_id, "rules": snapshot, "messages": cleaned}, ensure_ascii=False),
-    )
-    try:
-        parsed = _extract_json(raw)
-    except (RuntimeError, json.JSONDecodeError):
-        raise RuntimeError("模型没有返回可用的回复") from None
-    if not isinstance(parsed, dict):
-        raise RuntimeError("模型没有返回可用的回复")
-    reply = str(parsed.get("reply") or "").strip()[:800] or "我没有形成可用的回复。"
-    updates = _updates(parsed.get("updates"))
-    return {"reply": reply, "updates": updates or None}
+    question = next(item["content"] for item in reversed(cleaned) if item["role"] == "user")
+    title = _focus_title(rules, focus)
+    query = f"关于{title}：{question}" if title else question
+    query += "。只根据知识库原文回答。没有检索到就说明没找到，不要补充知识库以外的内容，不要写并非来自知识库。"
+    result = chat_libraries(query)
+    reply = _library_only(result["answer"])
+    sources = [item["title"] for item in result["references"] if item.get("title")]
+    if sources and reply != "知识库里没有找到相关内容。":
+        reply = reply + "\n\n依据：" + "、".join(sources[:4])
+    return {"reply": reply[:4000], "updates": None}
+
+
+def _library_only(answer: str) -> str:
+    kept = []
+    for block in re.split(r"\n\s*\n", answer.strip()):
+        if any(phrase in block for phrase in _OFF_LIBRARY):
+            break
+        kept.append(block)
+    text = "\n\n".join(part for part in kept if part.strip()).strip()
+    return text or "知识库里没有找到相关内容。"
 
 
 def _messages(messages: object) -> list[dict]:
@@ -55,46 +87,13 @@ def _messages(messages: object) -> list[dict]:
     return cleaned
 
 
-def _snapshot(rules: object) -> list[dict]:
-    if not isinstance(rules, list):
-        return []
-    found = []
-    for item in rules[:8]:
-        if not isinstance(item, dict):
-            continue
-        pack = str(item.get("id") or "")
-        if pack not in DEFAULT_PACK_RULES:
-            continue
-        lines = item.get("lines") if isinstance(item.get("lines"), list) else []
-        steps = item.get("steps") if isinstance(item.get("steps"), list) else []
-        params = item.get("params") if isinstance(item.get("params"), list) else []
-        found.append(
-            {
-                "id": pack,
-                "title": str(item.get("title") or "")[:40],
-                "lines": [str(line)[:120] for line in lines[:4]],
-                "steps": [
-                    {
-                        "title": str(step.get("title") or "")[:40],
-                        "line": str(step.get("line") or "")[:200],
-                    }
-                    for step in steps[:6]
-                    if isinstance(step, dict)
-                ],
-                "params": [
-                    {
-                        "id": str(param.get("id") or ""),
-                        "label": str(param.get("label") or "")[:40],
-                        "kind": str(param.get("kind") or ""),
-                        "value": param.get("value"),
-                        "display": str(param.get("display") or "")[:40],
-                    }
-                    for param in params[:12]
-                    if isinstance(param, dict)
-                ],
-            }
-        )
-    return found
+def _focus_title(rules: object, focus: object) -> str:
+    if not isinstance(focus, str) or not focus or not isinstance(rules, list):
+        return ""
+    for item in rules:
+        if isinstance(item, dict) and str(item.get("id") or "") == focus:
+            return str(item.get("title") or "").strip()[:40]
+    return ""
 
 
 def _updates(raw: object) -> dict:
@@ -160,17 +159,3 @@ def _clean_params(pack: str, params: object) -> dict | None:
     except ValueError:
         return None
     return {key: resolved[pack][key] for key in coerced}
-
-
-def _system() -> str:
-    return (
-        "你是资本规则库的对话助手。只根据给出的规则回答，用中文，先说结论。"
-        "只输出一个 JSON 对象，不要写 Markdown。"
-        "格式是 {\"reply\":\"给用户看的话\",\"updates\":null}。"
-        "用户只是在问规则时，updates 必须是 null。"
-        "用户明确要求修改时，updates 写成 {\"规则id\":{\"params\":{\"参数id\":数值}}}。"
-        "也可以改 title、lines、steps。lines 是字符串数组，steps 是 {\"title\",\"line\"} 数组，按原顺序，不要增删步骤。"
-        "百分比参数用小数：8% 写成 0.08，10% 写成 0.10。倍数和月数用原数字。"
-        "只能改当前规则里已经列出的参数。评级权重表和期限档不能改；用户要改这些时，在 reply 里说明，updates 不要带这些内容。"
-        "不要编造新的规则 id，不要改字段映射。"
-    )

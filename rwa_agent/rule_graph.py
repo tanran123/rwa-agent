@@ -9,6 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1] / "knowledge"
 GRAPH_PATH = ROOT / "graph.json"
 _ID = re.compile(r"^[a-z][a-z0-9_:-]{0,80}$")
+_USER_CAT = re.compile(r"^user:[a-z0-9]{1,24}$")
 _ROUTE = re.compile(r"^[a-z][a-z0-9_:-]{0,120}$")
 
 
@@ -34,7 +35,7 @@ def save_graph(payload: object) -> dict:
 
 
 def _empty() -> dict:
-    return {"positions": {}, "nodes": [], "edges": [], "routes": {}, "labels": {}}
+    return {"positions": {}, "nodes": [], "edges": [], "routes": {}, "labels": {}, "rules": [], "categories": [], "stepLogic": []}
 
 
 def _clean(raw: dict) -> dict:
@@ -91,7 +92,128 @@ def _clean(raw: dict) -> dict:
                 "label": str(item.get("label") or "相关").strip()[:40] or "相关",
             }
         )
-    return {"positions": positions, "nodes": nodes, "edges": edges, "routes": _routes(raw), "labels": _labels(raw)}
+    return {
+        "positions": positions,
+        "nodes": nodes,
+        "edges": edges,
+        "routes": _routes(raw),
+        "labels": _labels(raw),
+        "rules": _rules(raw),
+        "categories": _categories(raw),
+        "stepLogic": _step_logic(raw),
+    }
+
+
+def _categories(raw: dict) -> list[dict]:
+    found = []
+    seen = set()
+    incoming = raw.get("categories") if isinstance(raw.get("categories"), list) else []
+    for item in incoming[:12]:
+        if not isinstance(item, dict):
+            continue
+        cat_id = str(item.get("id") or "")
+        if not cat_id.startswith("cat:user:") or not _ID.match(cat_id) or cat_id in seen:
+            continue
+        key = cat_id[4:]
+        if not _USER_CAT.match(key):
+            continue
+        seen.add(cat_id)
+        found.append({"id": cat_id, "label": str(item.get("label") or "新类别").strip()[:40] or "新类别"})
+    return found
+
+
+def _param_list(raw: object) -> list[dict]:
+    params = []
+    seen = set()
+    incoming = raw if isinstance(raw, list) else []
+    for param in incoming:
+        if not isinstance(param, dict):
+            continue
+        param_id = str(param.get("id") or "")
+        if not re.fullmatch(r"p[a-z0-9]{1,12}", param_id) or param_id in seen:
+            continue
+        seen.add(param_id)
+        kind = str(param.get("kind") or "number")
+        if kind not in {"number", "percent", "text", "table"}:
+            kind = "number"
+        value = str(param.get("value") or "").strip()[:80]
+        if kind == "table" and value not in {"standard", "assets", "ratings", "ccf"}:
+            value = ""
+        params.append(
+            {
+                "id": param_id,
+                "label": str(param.get("label") or "参数").strip()[:40] or "参数",
+                "kind": kind,
+                "value": value,
+            }
+        )
+        if len(params) == 8:
+            break
+    return params
+
+
+def _field_list(raw: object) -> list[dict]:
+    fields = []
+    seen = set()
+    incoming = raw if isinstance(raw, list) else []
+    for field in incoming:
+        if not isinstance(field, dict):
+            continue
+        field_id = str(field.get("id") or "")
+        if not re.fullmatch(r"f[a-z0-9]{1,12}", field_id) or field_id in seen:
+            continue
+        seen.add(field_id)
+        table = str(field.get("table") or "").strip()
+        if table not in {"standard", "assets", "ratings", "ccf"}:
+            table = ""
+        fields.append({
+            "id": field_id,
+            "label": str(field.get("label") or "字段").strip()[:40] or "字段",
+            "table": table,
+        })
+        if len(fields) == 8:
+            break
+    return fields
+
+
+def _line_list(raw: object) -> list[str]:
+    lines = []
+    incoming = raw if isinstance(raw, list) else []
+    for line in incoming:
+        text = str(line or "").strip()[:120]
+        if text:
+            lines.append(text)
+        if len(lines) == 4:
+            break
+    return lines
+
+
+def _step_logic(raw: dict) -> list[dict]:
+    found = []
+    seen = set()
+    incoming = raw.get("stepLogic") if isinstance(raw.get("stepLogic"), list) else []
+    pack_id = re.compile(r"^[a-z][a-z0-9_]{1,40}$")
+    for item in incoming[:40]:
+        if not isinstance(item, dict):
+            continue
+        pack = str(item.get("pack") or "")
+        try:
+            index = int(item.get("index"))
+        except (TypeError, ValueError):
+            continue
+        key = pack + ":" + str(index)
+        if not pack_id.match(pack) or index < 0 or index > 5 or key in seen:
+            continue
+        seen.add(key)
+        found.append({
+            "pack": pack,
+            "index": index,
+            "params": _param_list(item.get("params")),
+            "lines": _line_list(item.get("lines")),
+            "fields": _field_list(item.get("fields")),
+            "formula": _line_list(item.get("formula")),
+        })
+    return found
 
 
 def _labels(raw: dict) -> dict:
@@ -104,6 +226,61 @@ def _labels(raw: dict) -> dict:
         if text:
             labels[key] = text
     return labels
+
+
+def _rules(raw: dict) -> list[dict]:
+    rules = []
+    incoming = raw.get("rules") if isinstance(raw.get("rules"), list) else []
+    seen = set()
+    for item in incoming[:24]:
+        if not isinstance(item, dict):
+            continue
+        rule_id = str(item.get("id") or "")
+        if not rule_id.startswith("user:") or not _ID.match(rule_id) or rule_id in seen:
+            continue
+        seen.add(rule_id)
+        category = str(item.get("category") or "")
+        if category not in {"credit", "market"} and not _USER_CAT.match(category):
+            category = "credit"
+        title = str(item.get("title") or "新规则").strip()[:40] or "新规则"
+        basis = str(item.get("basis") or "").strip()[:500]
+        lines = []
+        for line in item.get("lines") if isinstance(item.get("lines"), list) else []:
+            text = str(line or "").strip()[:120]
+            if text:
+                lines.append(text)
+            if len(lines) == 4:
+                break
+        steps = []
+        for step in item.get("steps") if isinstance(item.get("steps"), list) else []:
+            if not isinstance(step, dict):
+                continue
+            steps.append(
+                {
+                    "title": str(step.get("title") or "步骤").strip()[:40] or "步骤",
+                    "line": str(step.get("line") or "").strip()[:200],
+                    "params": _param_list(step.get("params")),
+                    "lines": _line_list(step.get("lines")),
+                    "fields": _field_list(step.get("fields")),
+                    "formula": _line_list(step.get("formula")),
+                }
+            )
+            if len(steps) == 6:
+                break
+        params = _param_list(item.get("params"))
+        rules.append(
+            {
+                "id": rule_id,
+                "category": category,
+                "title": title,
+                "basis": basis,
+                "showFormula": item.get("showFormula") is True,
+                "lines": lines or ["待填写的计算公式"],
+                "steps": steps or [{"title": "第一步", "line": ""}],
+                "params": params,
+            }
+        )
+    return rules
 
 
 def _routes(raw: dict) -> dict:
