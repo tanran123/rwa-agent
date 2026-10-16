@@ -33,7 +33,7 @@ def _load_local_env() -> None:
 
 _load_local_env()
 
-from flask import Flask, jsonify, request, send_file, send_from_directory
+from flask import Flask, jsonify, request, send_file
 
 from rwa_agent.agent import field_catalog, inspect_workbook, list_type_columns, run_with_mappings, write_rwa_workbook
 from rwa_agent.compare import compare_module, module_catalog, write_comparison
@@ -53,10 +53,9 @@ from rwa_agent.weight_tables import ingest_weight_workbook, weight_catalog
 
 ensure_library()
 
-WEB_DIR = APP_DIR / "web"
 MAX_UPLOAD_MB = 120
 
-app = Flask(__name__, static_folder=str(WEB_DIR), static_url_path="")
+app = Flask(__name__, static_folder=None)
 app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_MB * 1024 * 1024
 
 # upload_id -> (workbook path, work dir, original filename)
@@ -87,16 +86,10 @@ def _result_path(work_dir: Path, filename: str) -> Path:
 
 
 @app.get("/")
-def index():
-    response = send_from_directory(WEB_DIR, "index.html")
-    response.headers["Cache-Control"] = "no-store"
-    return response
-
-
 @app.get("/rwa-prototype")
 @app.get("/RWA原型.html")
-def rwa_prototype():
-    response = send_file(APP_DIR / "RWA原型.html")
+def index():
+    response = send_file(APP_DIR / "web" / "index.html")
     response.headers["Cache-Control"] = "no-store"
     return response
 
