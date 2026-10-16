@@ -1,0 +1,3142 @@
+{
+    "mode": "ref",
+    "based_on": "cn_sa_exposure_class",
+    "note": "引用通用流程的字段判定与计算公式",
+    "resolves_to": {
+      "id": "cn_sa_exposure_class",
+      "name": "风险暴露分类",
+      "meta": {
+        "jurisdiction": "CN",
+        "method": "信用风险权重法",
+        "regulation": "商业银行资本管理办法",
+        "description": "按知识库里的规则从上到下，第一条命中再进它的下级。现金及现金等价物在最前，股权在已违约之前，其他资产在最后。某一支标了不适用就整段跳过，并且不落入同一层的兜底。",
+        "default_first": false,
+        "default_first_note": "已违约在股权之后、房地产和公司之前。股权即使违约也先归股权。逾期超过 90 天或五级分类为次级、可疑、损失的，走已违约。",
+        "tree_align": "knowledge/权重法风险暴露分类.json"
+      },
+      "fields_used": [
+        "annual_audit_opinion",
+        "audit_opinion",
+        "balance",
+        "bank_tier",
+        "bond_has_rating",
+        "bond_rating",
+        "cashflow_dependent",
+        "ccf",
+        "cet1_ratio",
+        "counterparty_name",
+        "counterparty_type",
+        "country_rating",
+        "covered_disclosure_ok",
+        "covered_oc_ratio",
+        "covered_pool_eligible",
+        "cross_border_trade",
+        "debt_ratio",
+        "ead",
+        "enterprise_size",
+        "exposure_share",
+        "financial_industry",
+        "financials_updated_within_6m",
+        "gov_bond_type",
+        "guarantee_reasonable",
+        "has_listed_security",
+        "has_property_collateral",
+        "impairment",
+        "instrument_type",
+        "is_credit_card",
+        "is_defaulted",
+        "is_subordinated",
+        "issuer_rating",
+        "issuer_scra_grade",
+        "lender_controls_asset",
+        "leverage_ratio",
+        "loan_classification_normal",
+        "loan_purpose",
+        "long_term_debt_declining",
+        "ltv",
+        "manual_bank_grade",
+        "meets_minimum_capital",
+        "meets_other_capital",
+        "no_default_3y",
+        "no_false_statements",
+        "no_independent_repayment",
+        "no_major_violation_3y",
+        "no_other_material_risk",
+        "nominal",
+        "not_on_dishonest_list",
+        "operating_cashflow_gt_finance_cost",
+        "operating_normal",
+        "original_maturity_months",
+        "profit_tests_met",
+        "project_cashflow_covers_debt",
+        "project_company",
+        "property_uses",
+        "provision_ratio",
+        "prudent",
+        "pse_claim",
+        "pse_region",
+        "repayment_from_commodity_sale",
+        "repayment_from_lease",
+        "repayment_from_project",
+        "revenue_last_year",
+        "revenue_mainly_central",
+        "seg_amount",
+        "seg_exposure",
+        "seg_rw",
+        "single_exposure",
+        "spe_for_physical_asset",
+        "state_subsidized_equity",
+        "transactor_clean",
+        "treat_as_equity"
+      ],
+      "formulas": {
+        "ead_on": {
+          "calc": "EAD = balance - impairment",
+          "fields": [
+            "balance",
+            "impairment"
+          ],
+          "op": "sub",
+          "args": [
+            {
+              "var": "balance"
+            },
+            {
+              "var": "impairment"
+            }
+          ]
+        },
+        "ead_off": {
+          "calc": "EAD = nominal × CCF",
+          "fields": [
+            "nominal",
+            "ccf"
+          ],
+          "op": "mul",
+          "args": [
+            {
+              "var": "nominal"
+            },
+            {
+              "var": "ccf"
+            }
+          ]
+        },
+        "rwa": {
+          "calc": "无缓释拆分时 RWA = EAD × 风险权重",
+          "fields": [
+            "ead"
+          ],
+          "op": "mul",
+          "args": [
+            {
+              "var": "ead"
+            },
+            {
+              "ref": "risk_weight"
+            }
+          ]
+        },
+        "rwa_on": {
+          "calc": "表内 RWA = Σ(各部分风险暴露 × 对应权重)",
+          "fields": [
+            "seg_exposure",
+            "seg_rw"
+          ],
+          "op": "sum",
+          "args": [
+            {
+              "op": "mul",
+              "args": [
+                {
+                  "var": "seg_exposure"
+                },
+                {
+                  "var": "seg_rw"
+                }
+              ]
+            }
+          ]
+        },
+        "rwa_off": {
+          "calc": "表外 RWA = Σ(名义金额 × CCF × 各部分对应权重)",
+          "fields": [
+            "nominal",
+            "ccf",
+            "seg_rw"
+          ],
+          "op": "sum",
+          "args": [
+            {
+              "op": "mul",
+              "args": [
+                {
+                  "var": "nominal"
+                },
+                {
+                  "var": "ccf"
+                },
+                {
+                  "var": "seg_rw"
+                }
+              ]
+            }
+          ]
+        },
+        "rwa_crm_split": {
+          "calc": "RWA = Σ(各部分 × 对应权重)",
+          "fields": [
+            "seg_amount",
+            "seg_rw"
+          ],
+          "op": "sum",
+          "args": [
+            {
+              "op": "mul",
+              "args": [
+                {
+                  "var": "seg_amount"
+                },
+                {
+                  "var": "seg_rw"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "books": [
+        {
+          "id": "line:on",
+          "kind": "onbook",
+          "label": "表内",
+          "note": "Σ((账面 − 减值) × 权重)",
+          "when": {
+            "field": "offbalance",
+            "op": "neq",
+            "value": true
+          },
+          "formula_ref": "formulas.rwa_on"
+        },
+        {
+          "id": "line:off",
+          "kind": "ccf",
+          "label": "表外",
+          "note": "Σ(名义 × CCF × 权重)",
+          "when": {
+            "field": "offbalance",
+            "op": "eq",
+            "value": true
+          },
+          "formula_ref": "formulas.rwa_off"
+        }
+      ],
+      "layers": [
+        {
+          "id": "cash",
+          "label": "现金及现金等价物",
+          "question": "现金及现金等价物？",
+          "when": [
+            {
+              "field": "instrument_type",
+              "op": "in",
+              "value": [
+                "cash",
+                "gold"
+              ]
+            }
+          ],
+          "if_yes": [
+            {
+              "id": "cash_on_hand",
+              "label": "现金",
+              "rule_id": "cash_on_hand",
+              "when": [
+                {
+                  "field": "instrument_type",
+                  "op": "eq",
+                  "value": "cash"
+                }
+              ],
+              "then": {
+                "exposure_class": "cash",
+                "sub_class": "现金",
+                "risk_weight": "0%"
+              }
+            },
+            {
+              "id": "gold",
+              "label": "黄金",
+              "rule_id": "gold",
+              "when": [
+                {
+                  "field": "instrument_type",
+                  "op": "eq",
+                  "value": "gold"
+                }
+              ],
+              "then": {
+                "exposure_class": "cash",
+                "sub_class": "黄金",
+                "risk_weight": "0%"
+              }
+            }
+          ]
+        },
+        {
+          "id": "equity",
+          "label": "股权风险暴露",
+          "question": "股权风险暴露？",
+          "when": [
+            {
+              "field": "instrument_type",
+              "op": "eq",
+              "value": "equity"
+            },
+            {
+              "field": "treat_as_equity",
+              "op": "eq",
+              "value": "yes"
+            }
+          ],
+          "if_yes": [
+            {
+              "id": "equity_subsidized",
+              "label": "获得国家重大补贴，并受到政府监督的股权投资",
+              "rule_id": "equity_subsidized",
+              "when": [
+                {
+                  "field": "state_subsidized_equity",
+                  "op": "eq",
+                  "value": "yes"
+                }
+              ],
+              "then": {
+                "exposure_class": "equity",
+                "sub_class": "获得国家重大补贴，并受到政府监督的股权投资",
+                "risk_weight": "250%"
+              }
+            },
+            {
+              "id": "equity_fi",
+              "label": "金融机构股权投资",
+              "rule_id": "equity_fi",
+              "when": [
+                {
+                  "field": "counterparty_type",
+                  "op": "in",
+                  "value": [
+                    "commercial_bank",
+                    "other_fi",
+                    "development_fi",
+                    "policy_bank"
+                  ]
+                }
+              ],
+              "then": {
+                "exposure_class": "equity",
+                "sub_class": "金融机构股权投资",
+                "risk_weight": "250%"
+              }
+            },
+            {
+              "id": "equity_corporate",
+              "label": "其他工商企业股权投资",
+              "rule_id": "equity_corporate",
+              "otherwise": true,
+              "when": [],
+              "then": {
+                "exposure_class": "equity",
+                "sub_class": "其他工商企业股权投资",
+                "risk_weight": "1250%"
+              }
+            }
+          ]
+        },
+        {
+          "id": "defaulted",
+          "label": "已违约风险暴露",
+          "question": "已违约风险暴露？",
+          "when": [
+            {
+              "field": "is_defaulted",
+              "op": "eq",
+              "value": "yes"
+            }
+          ],
+          "if_yes": [
+            {
+              "id": "defaulted_residential",
+              "label": "以居住用房为抵押且不依赖房地产现金流",
+              "rule_id": "defaulted_residential",
+              "when": [
+                {
+                  "field": "has_property_collateral",
+                  "op": "eq",
+                  "value": "yes"
+                },
+                {
+                  "field": "property_uses",
+                  "op": "contains",
+                  "value": "residential"
+                },
+                {
+                  "field": "cashflow_dependent",
+                  "op": "eq",
+                  "value": "no"
+                }
+              ],
+              "then": {
+                "exposure_class": "defaulted",
+                "sub_class": "以居住用房为抵押且不依赖房地产现金流",
+                "risk_weight": "100%"
+              }
+            },
+            {
+              "id": "defaulted_other",
+              "label": "其他已违约风险暴露",
+              "otherwise": true,
+              "when": [],
+              "then": {
+                "exposure_class": "",
+                "sub_class": "其他已违约风险暴露",
+                "risk_weight": null
+              },
+              "if_yes": [
+                {
+                  "id": "defaulted_tier2",
+                  "label": "第二档银行",
+                  "rule_id": "defaulted_tier2",
+                  "when": [
+                    {
+                      "field": "bank_tier",
+                      "op": "eq",
+                      "value": "tier2"
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "defaulted",
+                    "sub_class": "第二档银行",
+                    "risk_weight": "按交易对手"
+                  }
+                },
+                {
+                  "id": "defaulted_provision_low",
+                  "label": "损失准备低于账面价值20%",
+                  "rule_id": "defaulted_provision_low",
+                  "when": [
+                    {
+                      "field": "provision_ratio",
+                      "op": "lt",
+                      "value": 0.2
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "defaulted",
+                    "sub_class": "损失准备低于账面价值20%",
+                    "risk_weight": "150%"
+                  }
+                },
+                {
+                  "id": "defaulted_provision_high",
+                  "label": "损失准备不低于账面价值20%",
+                  "rule_id": "defaulted_provision_high",
+                  "when": [
+                    {
+                      "field": "provision_ratio",
+                      "op": "gte",
+                      "value": 0.2
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "defaulted",
+                    "sub_class": "损失准备不低于账面价值20%",
+                    "risk_weight": "100%"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "covered_bond",
+          "label": "合格资产担保债券风险暴露",
+          "question": "合格资产担保债券风险暴露？",
+          "when": [
+            {
+              "field": "instrument_type",
+              "op": "eq",
+              "value": "covered_bond"
+            },
+            {
+              "field": "covered_pool_eligible",
+              "op": "eq",
+              "value": "yes"
+            },
+            {
+              "field": "covered_oc_ratio",
+              "op": "gte",
+              "value": 1.1
+            },
+            {
+              "field": "covered_disclosure_ok",
+              "op": "eq",
+              "value": "yes"
+            }
+          ],
+          "if_yes": [
+            {
+              "id": "covered_bond_tier2",
+              "label": "第二档银行",
+              "rule_id": "covered_bond_tier2",
+              "when": [
+                {
+                  "field": "bank_tier",
+                  "op": "eq",
+                  "value": "tier2"
+                }
+              ],
+              "then": {
+                "exposure_class": "covered_bond",
+                "sub_class": "第二档银行",
+                "risk_weight": "按交易对手"
+              }
+            },
+            {
+              "id": "covered_bond_rated",
+              "label": "债券自身具有外部信用评级",
+              "when": [
+                {
+                  "field": "bond_has_rating",
+                  "op": "eq",
+                  "value": "yes"
+                }
+              ],
+              "then": {
+                "exposure_class": "",
+                "sub_class": "债券自身具有外部信用评级",
+                "risk_weight": null
+              },
+              "if_yes": [
+                {
+                  "id": "covered_bond_aa",
+                  "label": "AA-（含）以上",
+                  "rule_id": "covered_bond_aa",
+                  "when": [
+                    {
+                      "field": "bond_rating",
+                      "op": "in",
+                      "value": [
+                        "AAA",
+                        "AA+",
+                        "AA",
+                        "AA-"
+                      ]
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "covered_bond",
+                    "sub_class": "AA-（含）以上",
+                    "risk_weight": "10%"
+                  }
+                },
+                {
+                  "id": "covered_bond_bbb",
+                  "label": "AA-以下、BBB-（含）以上",
+                  "rule_id": "covered_bond_bbb",
+                  "when": [
+                    {
+                      "field": "bond_rating",
+                      "op": "in",
+                      "value": [
+                        "A+",
+                        "A",
+                        "A-",
+                        "BBB+",
+                        "BBB",
+                        "BBB-"
+                      ]
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "covered_bond",
+                    "sub_class": "AA-以下、BBB-（含）以上",
+                    "risk_weight": "20%"
+                  }
+                },
+                {
+                  "id": "covered_bond_b",
+                  "label": "BBB-以下、B-（含）以上",
+                  "rule_id": "covered_bond_b",
+                  "when": [
+                    {
+                      "field": "bond_rating",
+                      "op": "in",
+                      "value": [
+                        "BB+",
+                        "BB",
+                        "BB-",
+                        "B+",
+                        "B",
+                        "B-"
+                      ]
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "covered_bond",
+                    "sub_class": "BBB-以下、B-（含）以上",
+                    "risk_weight": "50%"
+                  }
+                },
+                {
+                  "id": "covered_bond_below_b",
+                  "label": "B-以下",
+                  "rule_id": "covered_bond_below_b",
+                  "when": [
+                    {
+                      "field": "bond_rating",
+                      "op": "in",
+                      "value": [
+                        "CCC",
+                        "CC",
+                        "C",
+                        "D"
+                      ]
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "covered_bond",
+                    "sub_class": "B-以下",
+                    "risk_weight": "100%"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "covered_bond_unrated",
+              "label": "债券自身不具有外部信用评级",
+              "otherwise": true,
+              "when": [],
+              "then": {
+                "exposure_class": "",
+                "sub_class": "债券自身不具有外部信用评级",
+                "risk_weight": null
+              },
+              "if_yes": [
+                {
+                  "id": "covered_bond_issuer_a_plus",
+                  "label": "发行银行为A+级",
+                  "rule_id": "covered_bond_issuer_a_plus",
+                  "when": [
+                    {
+                      "field": "issuer_scra_grade",
+                      "op": "eq",
+                      "value": "a_plus"
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "covered_bond",
+                    "sub_class": "发行银行为A+级",
+                    "risk_weight": "15%"
+                  }
+                },
+                {
+                  "id": "covered_bond_issuer_a",
+                  "label": "发行银行为A级",
+                  "rule_id": "covered_bond_issuer_a",
+                  "when": [
+                    {
+                      "field": "issuer_scra_grade",
+                      "op": "eq",
+                      "value": "a"
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "covered_bond",
+                    "sub_class": "发行银行为A级",
+                    "risk_weight": "20%"
+                  }
+                },
+                {
+                  "id": "covered_bond_issuer_b",
+                  "label": "发行银行为B级",
+                  "rule_id": "covered_bond_issuer_b",
+                  "when": [
+                    {
+                      "field": "issuer_scra_grade",
+                      "op": "eq",
+                      "value": "b"
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "covered_bond",
+                    "sub_class": "发行银行为B级",
+                    "risk_weight": "35%"
+                  }
+                },
+                {
+                  "id": "covered_bond_issuer_c",
+                  "label": "发行银行为C级",
+                  "rule_id": "covered_bond_issuer_c",
+                  "when": [
+                    {
+                      "field": "issuer_scra_grade",
+                      "op": "eq",
+                      "value": "c"
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "covered_bond",
+                    "sub_class": "发行银行为C级",
+                    "risk_weight": "100%"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "subordinated",
+          "label": "次级债权",
+          "question": "次级债权？",
+          "when": [
+            {
+              "field": "is_subordinated",
+              "op": "eq",
+              "value": "yes"
+            }
+          ],
+          "if_yes": [
+            {
+              "id": "subordinated_policy",
+              "label": "对我国开发性金融机构和政策性银行的次级债权",
+              "rule_id": "subordinated_policy",
+              "when": [
+                {
+                  "field": "counterparty_type",
+                  "op": "in",
+                  "value": [
+                    "development_fi",
+                    "policy_bank"
+                  ]
+                }
+              ],
+              "then": {
+                "exposure_class": "subordinated",
+                "sub_class": "对我国开发性金融机构和政策性银行的次级债权",
+                "risk_weight": "100%"
+              }
+            },
+            {
+              "id": "subordinated_other",
+              "label": "其他次级债权及TLAC工具",
+              "rule_id": "subordinated_other",
+              "otherwise": true,
+              "when": [],
+              "then": {
+                "exposure_class": "subordinated",
+                "sub_class": "其他次级债权及TLAC工具",
+                "risk_weight": "150%"
+              }
+            }
+          ]
+        },
+        {
+          "id": "sovereign",
+          "label": "主权风险暴露（主权国家/央行/国际组织）",
+          "question": "主权风险暴露（主权国家/央行/国际组织）？",
+          "when": [
+            {
+              "field": "counterparty_type",
+              "op": "in",
+              "value": [
+                "cn_central_government",
+                "cn_central_bank",
+                "foreign_sovereign",
+                "foreign_central_bank",
+                "bis",
+                "imf",
+                "ecb",
+                "eu",
+                "esm",
+                "efsm"
+              ]
+            }
+          ],
+          "if_yes": [
+            {
+              "id": "sovereign_cn",
+              "label": "对我国中央政府、央行的债权",
+              "rule_id": "sovereign_cn",
+              "when": [
+                {
+                  "field": "counterparty_type",
+                  "op": "in",
+                  "value": [
+                    "cn_central_government",
+                    "cn_central_bank"
+                  ]
+                }
+              ],
+              "then": {
+                "exposure_class": "sovereign",
+                "sub_class": "对我国中央政府、央行的债权",
+                "risk_weight": "0%"
+              }
+            },
+            {
+              "id": "sovereign_intl",
+              "label": "国际清算银行、国际货币基金组织、欧洲中央银行、欧盟、欧洲稳定机制和欧洲金融稳定机制",
+              "rule_id": "sovereign_intl",
+              "when": [
+                {
+                  "field": "counterparty_type",
+                  "op": "in",
+                  "value": [
+                    "bis",
+                    "imf",
+                    "ecb",
+                    "eu",
+                    "esm",
+                    "efsm"
+                  ]
+                }
+              ],
+              "then": {
+                "exposure_class": "sovereign",
+                "sub_class": "国际清算银行、国际货币基金组织、欧洲中央银行、欧盟、欧洲稳定机制和欧洲金融稳定机制",
+                "risk_weight": "0%"
+              }
+            },
+            {
+              "id": "sovereign_foreign",
+              "label": "其他国家或地区政府及其中央银行",
+              "when": [
+                {
+                  "field": "counterparty_type",
+                  "op": "in",
+                  "value": [
+                    "foreign_sovereign",
+                    "foreign_central_bank"
+                  ]
+                }
+              ],
+              "then": {
+                "exposure_class": "",
+                "sub_class": "其他国家或地区政府及其中央银行",
+                "risk_weight": null
+              },
+              "if_yes": [
+                {
+                  "id": "sovereign_foreign_aa",
+                  "label": "AA-（含）以上",
+                  "rule_id": "sovereign_foreign_aa",
+                  "when": [
+                    {
+                      "field": "issuer_rating",
+                      "op": "in",
+                      "value": [
+                        "AAA",
+                        "AA+",
+                        "AA",
+                        "AA-"
+                      ]
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "sovereign",
+                    "sub_class": "AA-（含）以上",
+                    "risk_weight": "0%"
+                  }
+                },
+                {
+                  "id": "sovereign_foreign_a",
+                  "label": "AA-以下、A-（含）以上",
+                  "rule_id": "sovereign_foreign_a",
+                  "when": [
+                    {
+                      "field": "issuer_rating",
+                      "op": "in",
+                      "value": [
+                        "A+",
+                        "A",
+                        "A-"
+                      ]
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "sovereign",
+                    "sub_class": "AA-以下、A-（含）以上",
+                    "risk_weight": "20%"
+                  }
+                },
+                {
+                  "id": "sovereign_foreign_bbb",
+                  "label": "A-以下、BBB-（含）以上",
+                  "rule_id": "sovereign_foreign_bbb",
+                  "when": [
+                    {
+                      "field": "issuer_rating",
+                      "op": "in",
+                      "value": [
+                        "BBB+",
+                        "BBB",
+                        "BBB-"
+                      ]
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "sovereign",
+                    "sub_class": "A-以下、BBB-（含）以上",
+                    "risk_weight": "50%"
+                  }
+                },
+                {
+                  "id": "sovereign_foreign_b",
+                  "label": "BBB-以下、B-（含）以上",
+                  "rule_id": "sovereign_foreign_b",
+                  "when": [
+                    {
+                      "field": "issuer_rating",
+                      "op": "in",
+                      "value": [
+                        "BB+",
+                        "BB",
+                        "BB-",
+                        "B+",
+                        "B",
+                        "B-"
+                      ]
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "sovereign",
+                    "sub_class": "BBB-以下、B-（含）以上",
+                    "risk_weight": "100%"
+                  }
+                },
+                {
+                  "id": "sovereign_foreign_below_b",
+                  "label": "B-以下",
+                  "rule_id": "sovereign_foreign_below_b",
+                  "when": [
+                    {
+                      "field": "issuer_rating",
+                      "op": "in",
+                      "value": [
+                        "CCC",
+                        "CC",
+                        "C",
+                        "D"
+                      ]
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "sovereign",
+                    "sub_class": "B-以下",
+                    "risk_weight": "150%"
+                  }
+                },
+                {
+                  "id": "sovereign_foreign_unrated",
+                  "label": "未评级",
+                  "rule_id": "sovereign_foreign_unrated",
+                  "when": [
+                    {
+                      "field": "issuer_rating",
+                      "op": "eq",
+                      "value": "unrated"
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "sovereign",
+                    "sub_class": "未评级",
+                    "risk_weight": "100%"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "pse",
+          "label": "公共部门实体风险暴露",
+          "question": "公共部门实体风险暴露？",
+          "when": [
+            {
+              "field": "counterparty_type",
+              "op": "eq",
+              "value": "pse"
+            }
+          ],
+          "if_yes": [
+            {
+              "id": "pse_overseas",
+              "label": "境外公共部门实体风险暴露",
+              "when": [
+                {
+                  "field": "pse_region",
+                  "op": "eq",
+                  "value": "overseas"
+                }
+              ],
+              "then": {
+                "exposure_class": "",
+                "sub_class": "境外公共部门实体风险暴露",
+                "risk_weight": null
+              },
+              "if_yes": [
+                {
+                  "id": "pse_overseas_aa",
+                  "label": "注册地AA-（含）以上",
+                  "rule_id": "pse_overseas_aa",
+                  "when": [
+                    {
+                      "field": "country_rating",
+                      "op": "in",
+                      "value": [
+                        "AAA",
+                        "AA+",
+                        "AA",
+                        "AA-"
+                      ]
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "pse",
+                    "sub_class": "注册地AA-（含）以上",
+                    "risk_weight": "20%"
+                  }
+                },
+                {
+                  "id": "pse_overseas_a",
+                  "label": "注册地AA-以下、A-（含）以上",
+                  "rule_id": "pse_overseas_a",
+                  "when": [
+                    {
+                      "field": "country_rating",
+                      "op": "in",
+                      "value": [
+                        "A+",
+                        "A",
+                        "A-"
+                      ]
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "pse",
+                    "sub_class": "注册地AA-以下、A-（含）以上",
+                    "risk_weight": "50%"
+                  }
+                },
+                {
+                  "id": "pse_overseas_b",
+                  "label": "注册地A-以下、B-（含）以上",
+                  "rule_id": "pse_overseas_b",
+                  "when": [
+                    {
+                      "field": "country_rating",
+                      "op": "in",
+                      "value": [
+                        "BBB+",
+                        "BBB",
+                        "BBB-",
+                        "BB+",
+                        "BB",
+                        "BB-",
+                        "B+",
+                        "B",
+                        "B-"
+                      ]
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "pse",
+                    "sub_class": "注册地A-以下、B-（含）以上",
+                    "risk_weight": "100%"
+                  }
+                },
+                {
+                  "id": "pse_overseas_below_b",
+                  "label": "注册地B-以下",
+                  "rule_id": "pse_overseas_below_b",
+                  "when": [
+                    {
+                      "field": "country_rating",
+                      "op": "in",
+                      "value": [
+                        "CCC",
+                        "CC",
+                        "C",
+                        "D"
+                      ]
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "pse",
+                    "sub_class": "注册地B-以下",
+                    "risk_weight": "150%"
+                  }
+                },
+                {
+                  "id": "pse_overseas_unrated",
+                  "label": "注册地未评级",
+                  "rule_id": "pse_overseas_unrated",
+                  "when": [
+                    {
+                      "field": "country_rating",
+                      "op": "eq",
+                      "value": "unrated"
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "pse",
+                    "sub_class": "注册地未评级",
+                    "risk_weight": "100%"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "pse_sovereign_equivalent",
+              "label": "视同我国主权的公共部门实体风险暴露",
+              "when": [
+                {
+                  "field": "pse_claim",
+                  "op": "in",
+                  "value": [
+                    "amc_bond",
+                    "local_gov_bond"
+                  ]
+                },
+                {
+                  "field": "revenue_mainly_central",
+                  "op": "eq",
+                  "value": "yes"
+                }
+              ],
+              "then": {
+                "exposure_class": "",
+                "sub_class": "视同我国主权的公共部门实体风险暴露",
+                "risk_weight": null
+              },
+              "if_yes": [
+                {
+                  "id": "pse_amc_bond",
+                  "label": "金融资产管理公司为收购国有银行不良贷款而定向发行的债券",
+                  "rule_id": "pse_amc_bond",
+                  "when": [
+                    {
+                      "field": "pse_claim",
+                      "op": "eq",
+                      "value": "amc_bond"
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "pse",
+                    "sub_class": "金融资产管理公司为收购国有银行不良贷款而定向发行的债券",
+                    "risk_weight": "0%"
+                  }
+                },
+                {
+                  "id": "pse_local_gov_bond",
+                  "label": "省（自治区、直辖市）及计划单列市人民政府风险暴露",
+                  "when": [
+                    {
+                      "field": "pse_claim",
+                      "op": "eq",
+                      "value": "local_gov_bond"
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "",
+                    "sub_class": "省（自治区、直辖市）及计划单列市人民政府风险暴露",
+                    "risk_weight": null
+                  },
+                  "if_yes": [
+                    {
+                      "id": "pse_local_gov_bond_general",
+                      "label": "一般债券",
+                      "rule_id": "pse_local_gov_bond_general",
+                      "when": [
+                        {
+                          "field": "gov_bond_type",
+                          "op": "eq",
+                          "value": "general"
+                        }
+                      ],
+                      "then": {
+                        "exposure_class": "pse",
+                        "sub_class": "一般债券",
+                        "risk_weight": "10%"
+                      }
+                    },
+                    {
+                      "id": "pse_local_gov_bond_special",
+                      "label": "专项债券",
+                      "rule_id": "pse_local_gov_bond_special",
+                      "when": [
+                        {
+                          "field": "gov_bond_type",
+                          "op": "eq",
+                          "value": "special"
+                        }
+                      ],
+                      "then": {
+                        "exposure_class": "pse",
+                        "sub_class": "专项债券",
+                        "risk_weight": "20%"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "pse_central_funded",
+                  "label": "收入主要源于中央财政的公共部门风险暴露",
+                  "rule_id": "pse_central_funded",
+                  "when": [
+                    {
+                      "field": "revenue_mainly_central",
+                      "op": "eq",
+                      "value": "yes"
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "pse",
+                    "sub_class": "收入主要源于中央财政的公共部门风险暴露",
+                    "risk_weight": "20%"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "pse_general",
+              "label": "一般公共部门实体风险暴露",
+              "rule_id": "pse_general",
+              "otherwise": true,
+              "when": [],
+              "then": {
+                "exposure_class": "pse",
+                "sub_class": "一般公共部门实体风险暴露",
+                "risk_weight": "50%"
+              }
+            }
+          ]
+        },
+        {
+          "id": "mdb",
+          "label": "多边开发银行风险暴露",
+          "question": "多边开发银行风险暴露？",
+          "when": [
+            {
+              "field": "counterparty_type",
+              "op": "eq",
+              "value": "mdb"
+            }
+          ],
+          "if_yes": [
+            {
+              "id": "mdb_qualified",
+              "label": "合格多边开发银行风险暴露",
+              "rule_id": "mdb_qualified",
+              "when": [
+                {
+                  "field": "counterparty_name",
+                  "op": "in",
+                  "value": [
+                    "世界银行集团",
+                    "亚洲开发银行",
+                    "非洲开发银行",
+                    "欧洲复兴开发银行",
+                    "泛美开发银行",
+                    "欧洲投资银行",
+                    "欧洲投资基金",
+                    "北欧投资银行",
+                    "加勒比海开发银行",
+                    "伊斯兰开发银行",
+                    "欧洲理事会开发银行",
+                    "国际免疫融资机制",
+                    "亚洲基础设施投资银行"
+                  ]
+                }
+              ],
+              "then": {
+                "exposure_class": "mdb",
+                "sub_class": "合格多边开发银行风险暴露",
+                "risk_weight": "0%"
+              }
+            },
+            {
+              "id": "mdb_other",
+              "label": "其他多边开发银行风险暴露",
+              "otherwise": true,
+              "when": [],
+              "then": {
+                "exposure_class": "",
+                "sub_class": "其他多边开发银行风险暴露",
+                "risk_weight": null
+              },
+              "if_yes": [
+                {
+                  "id": "mdb_other_aa",
+                  "label": "AA-（含）以上",
+                  "rule_id": "mdb_other_aa",
+                  "when": [
+                    {
+                      "field": "issuer_rating",
+                      "op": "in",
+                      "value": [
+                        "AAA",
+                        "AA+",
+                        "AA",
+                        "AA-"
+                      ]
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "mdb",
+                    "sub_class": "AA-（含）以上",
+                    "risk_weight": "20%"
+                  }
+                },
+                {
+                  "id": "mdb_other_a",
+                  "label": "AA-以下、A-（含）以上",
+                  "rule_id": "mdb_other_a",
+                  "when": [
+                    {
+                      "field": "issuer_rating",
+                      "op": "in",
+                      "value": [
+                        "A+",
+                        "A",
+                        "A-"
+                      ]
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "mdb",
+                    "sub_class": "AA-以下、A-（含）以上",
+                    "risk_weight": "30%"
+                  }
+                },
+                {
+                  "id": "mdb_other_bbb",
+                  "label": "A-以下、BBB-（含）以上",
+                  "rule_id": "mdb_other_bbb",
+                  "when": [
+                    {
+                      "field": "issuer_rating",
+                      "op": "in",
+                      "value": [
+                        "BBB+",
+                        "BBB",
+                        "BBB-"
+                      ]
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "mdb",
+                    "sub_class": "A-以下、BBB-（含）以上",
+                    "risk_weight": "50%"
+                  }
+                },
+                {
+                  "id": "mdb_other_b",
+                  "label": "BBB-以下、B-（含）以上",
+                  "rule_id": "mdb_other_b",
+                  "when": [
+                    {
+                      "field": "issuer_rating",
+                      "op": "in",
+                      "value": [
+                        "BB+",
+                        "BB",
+                        "BB-",
+                        "B+",
+                        "B",
+                        "B-"
+                      ]
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "mdb",
+                    "sub_class": "BBB-以下、B-（含）以上",
+                    "risk_weight": "100%"
+                  }
+                },
+                {
+                  "id": "mdb_other_below_b",
+                  "label": "B-以下",
+                  "rule_id": "mdb_other_below_b",
+                  "when": [
+                    {
+                      "field": "issuer_rating",
+                      "op": "in",
+                      "value": [
+                        "CCC",
+                        "CC",
+                        "C",
+                        "D"
+                      ]
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "mdb",
+                    "sub_class": "B-以下",
+                    "risk_weight": "150%"
+                  }
+                },
+                {
+                  "id": "mdb_other_unrated",
+                  "label": "未评级",
+                  "rule_id": "mdb_other_unrated",
+                  "when": [
+                    {
+                      "field": "issuer_rating",
+                      "op": "eq",
+                      "value": "unrated"
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "mdb",
+                    "sub_class": "未评级",
+                    "risk_weight": "50%"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "fi",
+          "label": "金融机构风险暴露",
+          "question": "金融机构风险暴露？",
+          "when": [
+            {
+              "field": "counterparty_type",
+              "op": "in",
+              "value": [
+                "commercial_bank",
+                "other_fi",
+                "development_fi",
+                "policy_bank"
+              ]
+            }
+          ],
+          "if_yes": [
+            {
+              "id": "fi_policy",
+              "label": "对我国开发性金融机构和政策性银行的债权",
+              "rule_id": "fi_policy",
+              "when": [
+                {
+                  "field": "counterparty_type",
+                  "op": "in",
+                  "value": [
+                    "development_fi",
+                    "policy_bank"
+                  ]
+                }
+              ],
+              "then": {
+                "exposure_class": "fi",
+                "sub_class": "对我国开发性金融机构和政策性银行的债权",
+                "risk_weight": "0%"
+              }
+            },
+            {
+              "id": "fi_bank",
+              "label": "商业银行风险暴露",
+              "when": [
+                {
+                  "field": "counterparty_type",
+                  "op": "eq",
+                  "value": "commercial_bank"
+                }
+              ],
+              "then": {
+                "exposure_class": "",
+                "sub_class": "商业银行风险暴露",
+                "risk_weight": null
+              },
+              "if_yes": [
+                {
+                  "id": "fi_bank_tier2",
+                  "label": "第二档银行",
+                  "when": [
+                    {
+                      "field": "bank_tier",
+                      "op": "eq",
+                      "value": "tier2"
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "",
+                    "sub_class": "第二档银行",
+                    "risk_weight": null
+                  },
+                  "if_yes": [
+                    {
+                      "id": "fi_bank_tier2_short",
+                      "label": "原始期限3个月以内或跨境货物贸易6个月以内",
+                      "rule_id": "fi_bank_tier2_short",
+                      "when": [
+                        {
+                          "field": "original_maturity_months",
+                          "op": "lte",
+                          "value": 3
+                        },
+                        {
+                          "all": [
+                            {
+                              "field": "cross_border_trade",
+                              "op": "eq",
+                              "value": "yes"
+                            },
+                            {
+                              "field": "original_maturity_months",
+                              "op": "lte",
+                              "value": 6
+                            }
+                          ]
+                        }
+                      ],
+                      "then": {
+                        "exposure_class": "fi",
+                        "sub_class": "原始期限3个月以内或跨境货物贸易6个月以内",
+                        "risk_weight": "20%"
+                      }
+                    },
+                    {
+                      "id": "fi_bank_tier2_general",
+                      "label": "第二档银行一般",
+                      "rule_id": "fi_bank_tier2_general",
+                      "otherwise": true,
+                      "when": [],
+                      "then": {
+                        "exposure_class": "fi",
+                        "sub_class": "第二档银行一般",
+                        "risk_weight": "40%"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "fi_bank_c",
+                  "label": "C级",
+                  "rule_id": "fi_bank_c",
+                  "when": [
+                    {
+                      "field": "meets_minimum_capital",
+                      "op": "in",
+                      "value": [
+                        "no",
+                        "unknown"
+                      ]
+                    },
+                    {
+                      "field": "audit_opinion",
+                      "op": "in",
+                      "value": [
+                        "adverse",
+                        "disclaimer",
+                        "going_concern"
+                      ]
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "fi",
+                    "sub_class": "C级",
+                    "risk_weight": "150%"
+                  }
+                },
+                {
+                  "id": "fi_bank_b",
+                  "label": "B级",
+                  "when": [
+                    {
+                      "field": "meets_minimum_capital",
+                      "op": "eq",
+                      "value": "yes"
+                    },
+                    {
+                      "field": "meets_other_capital",
+                      "op": "eq",
+                      "value": "no"
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "",
+                    "sub_class": "B级",
+                    "risk_weight": null
+                  },
+                  "if_yes": [
+                    {
+                      "id": "fi_bank_b_short",
+                      "label": "原始期限3个月以内或跨境货物贸易6个月以内",
+                      "rule_id": "fi_bank_b_short",
+                      "when": [
+                        {
+                          "field": "original_maturity_months",
+                          "op": "lte",
+                          "value": 3
+                        },
+                        {
+                          "all": [
+                            {
+                              "field": "cross_border_trade",
+                              "op": "eq",
+                              "value": "yes"
+                            },
+                            {
+                              "field": "original_maturity_months",
+                              "op": "lte",
+                              "value": 6
+                            }
+                          ]
+                        }
+                      ],
+                      "then": {
+                        "exposure_class": "fi",
+                        "sub_class": "原始期限3个月以内或跨境货物贸易6个月以内",
+                        "risk_weight": "50%"
+                      }
+                    },
+                    {
+                      "id": "fi_bank_b_general",
+                      "label": "B级",
+                      "rule_id": "fi_bank_b_general",
+                      "otherwise": true,
+                      "when": [],
+                      "then": {
+                        "exposure_class": "fi",
+                        "sub_class": "B级",
+                        "risk_weight": "75%"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "fi_bank_b_or_c",
+                  "label": "B级或C级",
+                  "when": [
+                    {
+                      "field": "meets_other_capital",
+                      "op": "eq",
+                      "value": "unknown"
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "",
+                    "sub_class": "B级或C级",
+                    "risk_weight": null
+                  },
+                  "if_yes": [
+                    {
+                      "id": "fi_bank_manual_b",
+                      "label": "B级",
+                      "when": [
+                        {
+                          "field": "manual_bank_grade",
+                          "op": "eq",
+                          "value": "b"
+                        }
+                      ],
+                      "then": {
+                        "exposure_class": "",
+                        "sub_class": "B级",
+                        "risk_weight": null
+                      },
+                      "if_yes": [
+                        {
+                          "id": "fi_bank_manual_b_short",
+                          "label": "原始期限3个月以内或跨境货物贸易6个月以内",
+                          "rule_id": "fi_bank_manual_b_short",
+                          "when": [
+                            {
+                              "field": "original_maturity_months",
+                              "op": "lte",
+                              "value": 3
+                            },
+                            {
+                              "all": [
+                                {
+                                  "field": "cross_border_trade",
+                                  "op": "eq",
+                                  "value": "yes"
+                                },
+                                {
+                                  "field": "original_maturity_months",
+                                  "op": "lte",
+                                  "value": 6
+                                }
+                              ]
+                            }
+                          ],
+                          "then": {
+                            "exposure_class": "fi",
+                            "sub_class": "原始期限3个月以内或跨境货物贸易6个月以内",
+                            "risk_weight": "50%"
+                          }
+                        },
+                        {
+                          "id": "fi_bank_manual_b_general",
+                          "label": "B级",
+                          "rule_id": "fi_bank_manual_b_general",
+                          "otherwise": true,
+                          "when": [],
+                          "then": {
+                            "exposure_class": "fi",
+                            "sub_class": "B级",
+                            "risk_weight": "75%"
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "id": "fi_bank_manual_c",
+                      "label": "C级",
+                      "rule_id": "fi_bank_manual_c",
+                      "when": [
+                        {
+                          "field": "manual_bank_grade",
+                          "op": "eq",
+                          "value": "c"
+                        }
+                      ],
+                      "then": {
+                        "exposure_class": "fi",
+                        "sub_class": "C级",
+                        "risk_weight": "150%"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "fi_bank_a_plus",
+                  "label": "A+级",
+                  "when": [
+                    {
+                      "field": "meets_minimum_capital",
+                      "op": "eq",
+                      "value": "yes"
+                    },
+                    {
+                      "field": "meets_other_capital",
+                      "op": "eq",
+                      "value": "yes"
+                    },
+                    {
+                      "field": "cet1_ratio",
+                      "op": "gte",
+                      "value": 0.14
+                    },
+                    {
+                      "field": "leverage_ratio",
+                      "op": "gte",
+                      "value": 0.05
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "",
+                    "sub_class": "A+级",
+                    "risk_weight": null
+                  },
+                  "if_yes": [
+                    {
+                      "id": "fi_bank_a_plus_short",
+                      "label": "原始期限3个月以内或跨境货物贸易6个月以内",
+                      "rule_id": "fi_bank_a_plus_short",
+                      "when": [
+                        {
+                          "field": "original_maturity_months",
+                          "op": "lte",
+                          "value": 3
+                        },
+                        {
+                          "all": [
+                            {
+                              "field": "cross_border_trade",
+                              "op": "eq",
+                              "value": "yes"
+                            },
+                            {
+                              "field": "original_maturity_months",
+                              "op": "lte",
+                              "value": 6
+                            }
+                          ]
+                        }
+                      ],
+                      "then": {
+                        "exposure_class": "fi",
+                        "sub_class": "原始期限3个月以内或跨境货物贸易6个月以内",
+                        "risk_weight": "20%"
+                      }
+                    },
+                    {
+                      "id": "fi_bank_a_plus_general",
+                      "label": "A+级",
+                      "rule_id": "fi_bank_a_plus_general",
+                      "otherwise": true,
+                      "when": [],
+                      "then": {
+                        "exposure_class": "fi",
+                        "sub_class": "A+级",
+                        "risk_weight": "30%"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "fi_bank_a",
+                  "label": "A级",
+                  "when": [
+                    {
+                      "field": "meets_minimum_capital",
+                      "op": "eq",
+                      "value": "yes"
+                    },
+                    {
+                      "field": "meets_other_capital",
+                      "op": "eq",
+                      "value": "yes"
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "",
+                    "sub_class": "A级",
+                    "risk_weight": null
+                  },
+                  "if_yes": [
+                    {
+                      "id": "fi_bank_a_short",
+                      "label": "原始期限3个月以内或跨境货物贸易6个月以内",
+                      "rule_id": "fi_bank_a_short",
+                      "when": [
+                        {
+                          "field": "original_maturity_months",
+                          "op": "lte",
+                          "value": 3
+                        },
+                        {
+                          "all": [
+                            {
+                              "field": "cross_border_trade",
+                              "op": "eq",
+                              "value": "yes"
+                            },
+                            {
+                              "field": "original_maturity_months",
+                              "op": "lte",
+                              "value": 6
+                            }
+                          ]
+                        }
+                      ],
+                      "then": {
+                        "exposure_class": "fi",
+                        "sub_class": "原始期限3个月以内或跨境货物贸易6个月以内",
+                        "risk_weight": "20%"
+                      }
+                    },
+                    {
+                      "id": "fi_bank_a_general",
+                      "label": "A级",
+                      "rule_id": "fi_bank_a_general",
+                      "otherwise": true,
+                      "when": [],
+                      "then": {
+                        "exposure_class": "fi",
+                        "sub_class": "A级",
+                        "risk_weight": "40%"
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "fi_other",
+              "label": "其他金融机构风险暴露",
+              "otherwise": true,
+              "when": [],
+              "then": {
+                "exposure_class": "",
+                "sub_class": "其他金融机构风险暴露",
+                "risk_weight": null
+              },
+              "if_yes": [
+                {
+                  "id": "fi_other_ig",
+                  "label": "投资级其他金融机构风险暴露",
+                  "rule_id": "fi_other_ig",
+                  "when": [
+                    {
+                      "field": "operating_normal",
+                      "op": "eq",
+                      "value": "yes"
+                    },
+                    {
+                      "field": "no_major_violation_3y",
+                      "op": "eq",
+                      "value": "yes"
+                    },
+                    {
+                      "field": "not_on_dishonest_list",
+                      "op": "eq",
+                      "value": "yes"
+                    },
+                    {
+                      "field": "no_false_statements",
+                      "op": "eq",
+                      "value": "yes"
+                    },
+                    {
+                      "field": "annual_audit_opinion",
+                      "op": "eq",
+                      "value": "unqualified"
+                    },
+                    {
+                      "field": "no_default_3y",
+                      "op": "eq",
+                      "value": "yes"
+                    },
+                    {
+                      "field": "loan_classification_normal",
+                      "op": "eq",
+                      "value": "yes"
+                    },
+                    {
+                      "field": "has_listed_security",
+                      "op": "eq",
+                      "value": "yes"
+                    },
+                    {
+                      "field": "guarantee_reasonable",
+                      "op": "eq",
+                      "value": "yes"
+                    },
+                    {
+                      "field": "profit_tests_met",
+                      "op": "eq",
+                      "value": "yes"
+                    },
+                    {
+                      "field": "debt_ratio",
+                      "op": "lte",
+                      "value": 0.7
+                    },
+                    {
+                      "any": [
+                        {
+                          "field": "financial_industry",
+                          "op": "eq",
+                          "value": "yes"
+                        },
+                        {
+                          "field": "operating_cashflow_gt_finance_cost",
+                          "op": "eq",
+                          "value": "yes"
+                        }
+                      ]
+                    },
+                    {
+                      "field": "financials_updated_within_6m",
+                      "op": "eq",
+                      "value": "yes"
+                    },
+                    {
+                      "field": "no_other_material_risk",
+                      "op": "eq",
+                      "value": "yes"
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "fi",
+                    "sub_class": "投资级其他金融机构风险暴露",
+                    "risk_weight": "75%"
+                  }
+                },
+                {
+                  "id": "fi_other_general",
+                  "label": "一般其他金融机构风险暴露",
+                  "rule_id": "fi_other_general",
+                  "otherwise": true,
+                  "when": [],
+                  "then": {
+                    "exposure_class": "fi",
+                    "sub_class": "一般其他金融机构风险暴露",
+                    "risk_weight": "100%"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "re_dev",
+          "label": "房地产开发风险暴露",
+          "question": "房地产开发风险暴露？",
+          "when": [
+            {
+              "field": "counterparty_type",
+              "op": "in",
+              "value": [
+                "corporate",
+                "spe"
+              ]
+            },
+            {
+              "field": "loan_purpose",
+              "op": "in",
+              "value": [
+                "land_development",
+                "housing_construction"
+              ]
+            }
+          ],
+          "if_yes": [
+            {
+              "id": "re_dev_prudent",
+              "label": "符合审慎要求的房地产开发风险暴露",
+              "rule_id": "re_dev_prudent",
+              "when": [
+                {
+                  "field": "prudent",
+                  "op": "eq",
+                  "value": "yes"
+                }
+              ],
+              "then": {
+                "exposure_class": "re_dev",
+                "sub_class": "符合审慎要求的房地产开发风险暴露",
+                "risk_weight": "100%"
+              }
+            },
+            {
+              "id": "re_dev_other",
+              "label": "其他房地产开发风险暴露",
+              "rule_id": "re_dev_other",
+              "otherwise": true,
+              "when": [],
+              "then": {
+                "exposure_class": "re_dev",
+                "sub_class": "其他房地产开发风险暴露",
+                "risk_weight": "150%"
+              }
+            }
+          ]
+        },
+        {
+          "id": "specialized",
+          "label": "专业贷款",
+          "question": "专业贷款？",
+          "when": [
+            {
+              "field": "spe_for_physical_asset",
+              "op": "eq",
+              "value": "yes"
+            },
+            {
+              "field": "no_independent_repayment",
+              "op": "eq",
+              "value": "yes"
+            },
+            {
+              "field": "lender_controls_asset",
+              "op": "eq",
+              "value": "yes"
+            }
+          ],
+          "if_yes": [
+            {
+              "id": "specialized_tier2",
+              "label": "第二档银行的专业贷款",
+              "rule_id": "specialized_tier2",
+              "when": [
+                {
+                  "field": "bank_tier",
+                  "op": "eq",
+                  "value": "tier2"
+                }
+              ],
+              "then": {
+                "exposure_class": "specialized",
+                "sub_class": "第二档银行的专业贷款",
+                "risk_weight": "100%"
+              }
+            },
+            {
+              "id": "specialized_project",
+              "label": "项目融资",
+              "when": [
+                {
+                  "field": "loan_purpose",
+                  "op": "eq",
+                  "value": "project"
+                },
+                {
+                  "field": "project_company",
+                  "op": "eq",
+                  "value": "yes"
+                },
+                {
+                  "field": "repayment_from_project",
+                  "op": "eq",
+                  "value": "yes"
+                }
+              ],
+              "then": {
+                "exposure_class": "",
+                "sub_class": "项目融资",
+                "risk_weight": null
+              },
+              "if_yes": [
+                {
+                  "id": "specialized_project_operating",
+                  "label": "运营阶段项目融资",
+                  "rule_id": "specialized_project_operating",
+                  "when": [
+                    {
+                      "field": "project_cashflow_covers_debt",
+                      "op": "eq",
+                      "value": "yes"
+                    },
+                    {
+                      "field": "long_term_debt_declining",
+                      "op": "eq",
+                      "value": "yes"
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "specialized",
+                    "sub_class": "运营阶段项目融资",
+                    "risk_weight": "100%"
+                  }
+                },
+                {
+                  "id": "specialized_project_pre",
+                  "label": "运营前阶段项目融资",
+                  "rule_id": "specialized_project_pre",
+                  "otherwise": true,
+                  "when": [],
+                  "then": {
+                    "exposure_class": "specialized",
+                    "sub_class": "运营前阶段项目融资",
+                    "risk_weight": "130%"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "specialized_object",
+              "label": "物品融资",
+              "rule_id": "specialized_object",
+              "when": [
+                {
+                  "field": "loan_purpose",
+                  "op": "eq",
+                  "value": "object_purchase"
+                },
+                {
+                  "field": "repayment_from_lease",
+                  "op": "eq",
+                  "value": "yes"
+                }
+              ],
+              "then": {
+                "exposure_class": "specialized",
+                "sub_class": "物品融资",
+                "risk_weight": "100%"
+              }
+            },
+            {
+              "id": "specialized_commodity",
+              "label": "商品融资",
+              "rule_id": "specialized_commodity",
+              "when": [
+                {
+                  "field": "loan_purpose",
+                  "op": "eq",
+                  "value": "commodity"
+                },
+                {
+                  "field": "repayment_from_commodity_sale",
+                  "op": "eq",
+                  "value": "yes"
+                }
+              ],
+              "then": {
+                "exposure_class": "specialized",
+                "sub_class": "商品融资",
+                "risk_weight": "100%"
+              }
+            }
+          ]
+        },
+        {
+          "id": "re_mixed",
+          "label": "居住用房地产和商用房地产共同抵押",
+          "question": "居住用房地产和商用房地产共同抵押？",
+          "when": [
+            {
+              "field": "has_property_collateral",
+              "op": "eq",
+              "value": "yes"
+            },
+            {
+              "field": "property_uses",
+              "op": "contains",
+              "value": "residential"
+            },
+            {
+              "any": [
+                {
+                  "field": "property_uses",
+                  "op": "contains",
+                  "value": "commercial"
+                },
+                {
+                  "field": "property_uses",
+                  "op": "contains",
+                  "value": "mixed_use"
+                }
+              ]
+            }
+          ],
+          "if_yes": []
+        },
+        {
+          "id": "re_residential",
+          "label": "居住用房地产风险暴露",
+          "question": "居住用房地产风险暴露？",
+          "when": [
+            {
+              "field": "has_property_collateral",
+              "op": "eq",
+              "value": "yes"
+            },
+            {
+              "field": "property_uses",
+              "op": "contains",
+              "value": "residential"
+            }
+          ],
+          "if_yes": [
+            {
+              "id": "re_residential_tier2",
+              "label": "第二档银行的居住用房地产风险暴露",
+              "rule_id": "re_residential_tier2",
+              "when": [
+                {
+                  "field": "bank_tier",
+                  "op": "eq",
+                  "value": "tier2"
+                }
+              ],
+              "then": {
+                "exposure_class": "re_residential",
+                "sub_class": "第二档银行的居住用房地产风险暴露",
+                "risk_weight": "按交易对手"
+              }
+            },
+            {
+              "id": "re_residential_independent",
+              "label": "不实质性依赖房地产所产生的现金流",
+              "when": [
+                {
+                  "field": "cashflow_dependent",
+                  "op": "eq",
+                  "value": "no"
+                }
+              ],
+              "then": {
+                "exposure_class": "",
+                "sub_class": "不实质性依赖房地产所产生的现金流",
+                "risk_weight": null
+              },
+              "if_yes": [
+                {
+                  "id": "re_residential_indep_imprudent",
+                  "label": "不符合审慎要求",
+                  "rule_id": "re_residential_indep_imprudent",
+                  "when": [
+                    {
+                      "field": "prudent",
+                      "op": "eq",
+                      "value": "no"
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "re_residential",
+                    "sub_class": "不符合审慎要求",
+                    "risk_weight": "按交易对手"
+                  }
+                },
+                {
+                  "id": "re_residential_indep_low",
+                  "label": "贷款价值比不超过50%",
+                  "rule_id": "re_residential_indep_low",
+                  "when": [
+                    {
+                      "field": "ltv",
+                      "op": "lte",
+                      "value": 0.5
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "re_residential",
+                    "sub_class": "贷款价值比不超过50%",
+                    "risk_weight": "20%"
+                  }
+                },
+                {
+                  "id": "re_residential_indep_60",
+                  "label": "贷款价值比高于50%、不超过60%",
+                  "rule_id": "re_residential_indep_60",
+                  "when": [
+                    {
+                      "field": "ltv",
+                      "op": "gt",
+                      "value": 0.5
+                    },
+                    {
+                      "field": "ltv",
+                      "op": "lte",
+                      "value": 0.6
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "re_residential",
+                    "sub_class": "贷款价值比高于50%、不超过60%",
+                    "risk_weight": "25%"
+                  }
+                },
+                {
+                  "id": "re_residential_indep_70",
+                  "label": "贷款价值比高于60%、不超过70%",
+                  "rule_id": "re_residential_indep_70",
+                  "when": [
+                    {
+                      "field": "ltv",
+                      "op": "gt",
+                      "value": 0.6
+                    },
+                    {
+                      "field": "ltv",
+                      "op": "lte",
+                      "value": 0.7
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "re_residential",
+                    "sub_class": "贷款价值比高于60%、不超过70%",
+                    "risk_weight": "30%"
+                  }
+                },
+                {
+                  "id": "re_residential_indep_80",
+                  "label": "贷款价值比高于70%、不超过80%",
+                  "rule_id": "re_residential_indep_80",
+                  "when": [
+                    {
+                      "field": "ltv",
+                      "op": "gt",
+                      "value": 0.7
+                    },
+                    {
+                      "field": "ltv",
+                      "op": "lte",
+                      "value": 0.8
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "re_residential",
+                    "sub_class": "贷款价值比高于70%、不超过80%",
+                    "risk_weight": "35%"
+                  }
+                },
+                {
+                  "id": "re_residential_indep_90",
+                  "label": "贷款价值比高于80%、不超过90%",
+                  "rule_id": "re_residential_indep_90",
+                  "when": [
+                    {
+                      "field": "ltv",
+                      "op": "gt",
+                      "value": 0.8
+                    },
+                    {
+                      "field": "ltv",
+                      "op": "lte",
+                      "value": 0.9
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "re_residential",
+                    "sub_class": "贷款价值比高于80%、不超过90%",
+                    "risk_weight": "40%"
+                  }
+                },
+                {
+                  "id": "re_residential_indep_100",
+                  "label": "贷款价值比高于90%、不超过100%",
+                  "rule_id": "re_residential_indep_100",
+                  "when": [
+                    {
+                      "field": "ltv",
+                      "op": "gt",
+                      "value": 0.9
+                    },
+                    {
+                      "field": "ltv",
+                      "op": "lte",
+                      "value": 1
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "re_residential",
+                    "sub_class": "贷款价值比高于90%、不超过100%",
+                    "risk_weight": "50%"
+                  }
+                },
+                {
+                  "id": "re_residential_indep_high",
+                  "label": "贷款价值比超过100%",
+                  "rule_id": "re_residential_indep_high",
+                  "when": [
+                    {
+                      "field": "ltv",
+                      "op": "gt",
+                      "value": 1
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "re_residential",
+                    "sub_class": "贷款价值比超过100%",
+                    "risk_weight": "按交易对手"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "re_residential_dependent",
+              "label": "实质性依赖房地产所产生的现金流",
+              "when": [
+                {
+                  "field": "cashflow_dependent",
+                  "op": "eq",
+                  "value": "yes"
+                }
+              ],
+              "then": {
+                "exposure_class": "",
+                "sub_class": "实质性依赖房地产所产生的现金流",
+                "risk_weight": null
+              },
+              "if_yes": [
+                {
+                  "id": "re_residential_dep_imprudent",
+                  "label": "不符合审慎要求",
+                  "rule_id": "re_residential_dep_imprudent",
+                  "when": [
+                    {
+                      "field": "prudent",
+                      "op": "eq",
+                      "value": "no"
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "re_residential",
+                    "sub_class": "不符合审慎要求",
+                    "risk_weight": "150%"
+                  }
+                },
+                {
+                  "id": "re_residential_dep_low",
+                  "label": "贷款价值比不超过50%",
+                  "rule_id": "re_residential_dep_low",
+                  "when": [
+                    {
+                      "field": "ltv",
+                      "op": "lte",
+                      "value": 0.5
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "re_residential",
+                    "sub_class": "贷款价值比不超过50%",
+                    "risk_weight": "30%"
+                  }
+                },
+                {
+                  "id": "re_residential_dep_60",
+                  "label": "贷款价值比高于50%、不超过60%",
+                  "rule_id": "re_residential_dep_60",
+                  "when": [
+                    {
+                      "field": "ltv",
+                      "op": "gt",
+                      "value": 0.5
+                    },
+                    {
+                      "field": "ltv",
+                      "op": "lte",
+                      "value": 0.6
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "re_residential",
+                    "sub_class": "贷款价值比高于50%、不超过60%",
+                    "risk_weight": "35%"
+                  }
+                },
+                {
+                  "id": "re_residential_dep_70",
+                  "label": "贷款价值比高于60%、不超过70%",
+                  "rule_id": "re_residential_dep_70",
+                  "when": [
+                    {
+                      "field": "ltv",
+                      "op": "gt",
+                      "value": 0.6
+                    },
+                    {
+                      "field": "ltv",
+                      "op": "lte",
+                      "value": 0.7
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "re_residential",
+                    "sub_class": "贷款价值比高于60%、不超过70%",
+                    "risk_weight": "45%"
+                  }
+                },
+                {
+                  "id": "re_residential_dep_80",
+                  "label": "贷款价值比高于70%、不超过80%",
+                  "rule_id": "re_residential_dep_80",
+                  "when": [
+                    {
+                      "field": "ltv",
+                      "op": "gt",
+                      "value": 0.7
+                    },
+                    {
+                      "field": "ltv",
+                      "op": "lte",
+                      "value": 0.8
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "re_residential",
+                    "sub_class": "贷款价值比高于70%、不超过80%",
+                    "risk_weight": "50%"
+                  }
+                },
+                {
+                  "id": "re_residential_dep_90",
+                  "label": "贷款价值比高于80%、不超过90%",
+                  "rule_id": "re_residential_dep_90",
+                  "when": [
+                    {
+                      "field": "ltv",
+                      "op": "gt",
+                      "value": 0.8
+                    },
+                    {
+                      "field": "ltv",
+                      "op": "lte",
+                      "value": 0.9
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "re_residential",
+                    "sub_class": "贷款价值比高于80%、不超过90%",
+                    "risk_weight": "60%"
+                  }
+                },
+                {
+                  "id": "re_residential_dep_100",
+                  "label": "贷款价值比高于90%、不超过100%",
+                  "rule_id": "re_residential_dep_100",
+                  "when": [
+                    {
+                      "field": "ltv",
+                      "op": "gt",
+                      "value": 0.9
+                    },
+                    {
+                      "field": "ltv",
+                      "op": "lte",
+                      "value": 1
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "re_residential",
+                    "sub_class": "贷款价值比高于90%、不超过100%",
+                    "risk_weight": "75%"
+                  }
+                },
+                {
+                  "id": "re_residential_dep_high",
+                  "label": "贷款价值比超过100%",
+                  "rule_id": "re_residential_dep_high",
+                  "when": [
+                    {
+                      "field": "ltv",
+                      "op": "gt",
+                      "value": 1
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "re_residential",
+                    "sub_class": "贷款价值比超过100%",
+                    "risk_weight": "105%"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "re_commercial",
+          "label": "商用房地产风险暴露",
+          "question": "商用房地产风险暴露？",
+          "when": [
+            {
+              "field": "has_property_collateral",
+              "op": "eq",
+              "value": "yes"
+            },
+            {
+              "any": [
+                {
+                  "field": "property_uses",
+                  "op": "contains",
+                  "value": "commercial"
+                },
+                {
+                  "field": "property_uses",
+                  "op": "contains",
+                  "value": "mixed_use"
+                }
+              ]
+            }
+          ],
+          "if_yes": [
+            {
+              "id": "re_commercial_tier2",
+              "label": "第二档银行的商用房地产风险暴露",
+              "rule_id": "re_commercial_tier2",
+              "when": [
+                {
+                  "field": "bank_tier",
+                  "op": "eq",
+                  "value": "tier2"
+                }
+              ],
+              "then": {
+                "exposure_class": "re_commercial",
+                "sub_class": "第二档银行的商用房地产风险暴露",
+                "risk_weight": "按交易对手"
+              }
+            },
+            {
+              "id": "re_commercial_independent",
+              "label": "不实质性依赖房地产所产生的现金流",
+              "when": [
+                {
+                  "field": "cashflow_dependent",
+                  "op": "eq",
+                  "value": "no"
+                }
+              ],
+              "then": {
+                "exposure_class": "",
+                "sub_class": "不实质性依赖房地产所产生的现金流",
+                "risk_weight": null
+              },
+              "if_yes": [
+                {
+                  "id": "re_commercial_indep_imprudent",
+                  "label": "不符合审慎要求",
+                  "rule_id": "re_commercial_indep_imprudent",
+                  "when": [
+                    {
+                      "field": "prudent",
+                      "op": "eq",
+                      "value": "no"
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "re_commercial",
+                    "sub_class": "不符合审慎要求",
+                    "risk_weight": "按交易对手"
+                  }
+                },
+                {
+                  "id": "re_commercial_indep_low",
+                  "label": "不依赖现金流且贷款价值比不超过60%",
+                  "rule_id": "re_commercial_indep_low",
+                  "when": [
+                    {
+                      "field": "ltv",
+                      "op": "lte",
+                      "value": 0.6
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "re_commercial",
+                    "sub_class": "不依赖现金流且贷款价值比不超过60%",
+                    "risk_weight": "65%"
+                  }
+                },
+                {
+                  "id": "re_commercial_indep_rest",
+                  "label": "不依赖现金流且贷款价值比超过60%",
+                  "rule_id": "re_commercial_indep_rest",
+                  "otherwise": true,
+                  "when": [],
+                  "then": {
+                    "exposure_class": "re_commercial",
+                    "sub_class": "不依赖现金流且贷款价值比超过60%",
+                    "risk_weight": "按交易对手"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "re_commercial_dependent",
+              "label": "实质性依赖房地产所产生的现金流",
+              "when": [
+                {
+                  "field": "cashflow_dependent",
+                  "op": "eq",
+                  "value": "yes"
+                }
+              ],
+              "then": {
+                "exposure_class": "",
+                "sub_class": "实质性依赖房地产所产生的现金流",
+                "risk_weight": null
+              },
+              "if_yes": [
+                {
+                  "id": "re_commercial_dep_imprudent",
+                  "label": "不符合审慎要求",
+                  "rule_id": "re_commercial_dep_imprudent",
+                  "when": [
+                    {
+                      "field": "prudent",
+                      "op": "eq",
+                      "value": "no"
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "re_commercial",
+                    "sub_class": "不符合审慎要求",
+                    "risk_weight": "150%"
+                  }
+                },
+                {
+                  "id": "re_commercial_dep_low",
+                  "label": "依赖现金流且贷款价值比不超过60%",
+                  "rule_id": "re_commercial_dep_low",
+                  "when": [
+                    {
+                      "field": "ltv",
+                      "op": "lte",
+                      "value": 0.6
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "re_commercial",
+                    "sub_class": "依赖现金流且贷款价值比不超过60%",
+                    "risk_weight": "75%"
+                  }
+                },
+                {
+                  "id": "re_commercial_dep_mid",
+                  "label": "依赖现金流且贷款价值比高于60%、不超过80%",
+                  "rule_id": "re_commercial_dep_mid",
+                  "when": [
+                    {
+                      "field": "ltv",
+                      "op": "gt",
+                      "value": 0.6
+                    },
+                    {
+                      "field": "ltv",
+                      "op": "lte",
+                      "value": 0.8
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "re_commercial",
+                    "sub_class": "依赖现金流且贷款价值比高于60%、不超过80%",
+                    "risk_weight": "90% 与交易对手较大值"
+                  }
+                },
+                {
+                  "id": "re_commercial_dep_high",
+                  "label": "依赖现金流且贷款价值比超过80%",
+                  "rule_id": "re_commercial_dep_high",
+                  "when": [
+                    {
+                      "field": "ltv",
+                      "op": "gt",
+                      "value": 0.8
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "re_commercial",
+                    "sub_class": "依赖现金流且贷款价值比超过80%",
+                    "risk_weight": "110%"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "retail",
+          "label": "个人风险暴露",
+          "question": "个人风险暴露？",
+          "when": [
+            {
+              "field": "counterparty_type",
+              "op": "eq",
+              "value": "individual"
+            }
+          ],
+          "if_yes": [
+            {
+              "id": "retail_regulatory",
+              "label": "监管零售个人风险暴露",
+              "when": [
+                {
+                  "field": "single_exposure",
+                  "op": "lte",
+                  "value": 10000000
+                },
+                {
+                  "field": "exposure_share",
+                  "op": "lte",
+                  "value": 0.005
+                }
+              ],
+              "then": {
+                "exposure_class": "",
+                "sub_class": "监管零售个人风险暴露",
+                "risk_weight": null
+              },
+              "if_yes": [
+                {
+                  "id": "retail_transactor",
+                  "label": "合格交易者个人风险暴露",
+                  "rule_id": "retail_transactor",
+                  "when": [
+                    {
+                      "field": "is_credit_card",
+                      "op": "eq",
+                      "value": "yes"
+                    },
+                    {
+                      "field": "transactor_clean",
+                      "op": "eq",
+                      "value": "yes"
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "retail",
+                    "sub_class": "合格交易者个人风险暴露",
+                    "risk_weight": "45%"
+                  }
+                },
+                {
+                  "id": "retail_regulatory_other",
+                  "label": "其他监管零售个人风险暴露",
+                  "rule_id": "retail_regulatory_other",
+                  "otherwise": true,
+                  "when": [],
+                  "then": {
+                    "exposure_class": "retail",
+                    "sub_class": "其他监管零售个人风险暴露",
+                    "risk_weight": "75%"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "retail_other",
+              "label": "其他个人风险暴露",
+              "rule_id": "retail_other",
+              "otherwise": true,
+              "when": [],
+              "then": {
+                "exposure_class": "retail",
+                "sub_class": "其他个人风险暴露",
+                "risk_weight": "100%"
+              }
+            }
+          ]
+        },
+        {
+          "id": "corporate_general",
+          "label": "一般公司风险暴露",
+          "question": "一般公司风险暴露？",
+          "when": [
+            {
+              "field": "counterparty_type",
+              "op": "in",
+              "value": [
+                "corporate",
+                "partnership",
+                "sole_proprietorship",
+                "spe",
+                "other_non_individual"
+              ]
+            }
+          ],
+          "if_yes": [
+            {
+              "id": "corporate_micro",
+              "label": "小微企业风险暴露",
+              "rule_id": "corporate_micro",
+              "when": [
+                {
+                  "field": "enterprise_size",
+                  "op": "in",
+                  "value": [
+                    "micro",
+                    "small"
+                  ]
+                },
+                {
+                  "field": "single_exposure",
+                  "op": "lte",
+                  "value": 10000000
+                },
+                {
+                  "field": "exposure_share",
+                  "op": "lte",
+                  "value": 0.005
+                }
+              ],
+              "then": {
+                "exposure_class": "corporate_general",
+                "sub_class": "小微企业风险暴露",
+                "risk_weight": "75%"
+              }
+            },
+            {
+              "id": "corporate_ig",
+              "label": "投资级公司风险暴露",
+              "when": [
+                {
+                  "field": "operating_normal",
+                  "op": "eq",
+                  "value": "yes"
+                },
+                {
+                  "field": "no_major_violation_3y",
+                  "op": "eq",
+                  "value": "yes"
+                },
+                {
+                  "field": "not_on_dishonest_list",
+                  "op": "eq",
+                  "value": "yes"
+                },
+                {
+                  "field": "no_false_statements",
+                  "op": "eq",
+                  "value": "yes"
+                },
+                {
+                  "field": "annual_audit_opinion",
+                  "op": "eq",
+                  "value": "unqualified"
+                },
+                {
+                  "field": "no_default_3y",
+                  "op": "eq",
+                  "value": "yes"
+                },
+                {
+                  "field": "loan_classification_normal",
+                  "op": "eq",
+                  "value": "yes"
+                },
+                {
+                  "field": "has_listed_security",
+                  "op": "eq",
+                  "value": "yes"
+                },
+                {
+                  "field": "guarantee_reasonable",
+                  "op": "eq",
+                  "value": "yes"
+                },
+                {
+                  "field": "profit_tests_met",
+                  "op": "eq",
+                  "value": "yes"
+                },
+                {
+                  "field": "debt_ratio",
+                  "op": "lte",
+                  "value": 0.7
+                },
+                {
+                  "any": [
+                    {
+                      "field": "financial_industry",
+                      "op": "eq",
+                      "value": "yes"
+                    },
+                    {
+                      "field": "operating_cashflow_gt_finance_cost",
+                      "op": "eq",
+                      "value": "yes"
+                    }
+                  ]
+                },
+                {
+                  "field": "financials_updated_within_6m",
+                  "op": "eq",
+                  "value": "yes"
+                },
+                {
+                  "field": "no_other_material_risk",
+                  "op": "eq",
+                  "value": "yes"
+                }
+              ],
+              "then": {
+                "exposure_class": "",
+                "sub_class": "投资级公司风险暴露",
+                "risk_weight": null
+              },
+              "if_yes": [
+                {
+                  "id": "corporate_ig_tier2",
+                  "label": "第二档银行不单独划分投资级公司",
+                  "rule_id": "corporate_ig_tier2",
+                  "when": [
+                    {
+                      "field": "bank_tier",
+                      "op": "eq",
+                      "value": "tier2"
+                    }
+                  ],
+                  "then": {
+                    "exposure_class": "corporate_general",
+                    "sub_class": "第二档银行不单独划分投资级公司",
+                    "risk_weight": "100%"
+                  }
+                },
+                {
+                  "id": "corporate_ig_tier1",
+                  "label": "投资级公司风险暴露",
+                  "rule_id": "corporate_ig_tier1",
+                  "otherwise": true,
+                  "when": [],
+                  "then": {
+                    "exposure_class": "corporate_general",
+                    "sub_class": "投资级公司风险暴露",
+                    "risk_weight": "75%"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "corporate_sme",
+              "label": "中小企业风险暴露",
+              "rule_id": "corporate_sme",
+              "when": [
+                {
+                  "field": "revenue_last_year",
+                  "op": "lte",
+                  "value": 300000000
+                },
+                {
+                  "field": "enterprise_size",
+                  "op": "in",
+                  "value": [
+                    "medium",
+                    "small",
+                    "micro"
+                  ]
+                }
+              ],
+              "then": {
+                "exposure_class": "corporate_general",
+                "sub_class": "中小企业风险暴露",
+                "risk_weight": "85%"
+              }
+            },
+            {
+              "id": "corporate_other",
+              "label": "其他一般公司风险暴露",
+              "rule_id": "corporate_other",
+              "otherwise": true,
+              "when": [],
+              "then": {
+                "exposure_class": "corporate_general",
+                "sub_class": "其他一般公司风险暴露",
+                "risk_weight": "100%"
+              }
+            }
+          ]
+        },
+        {
+          "id": "other_asset",
+          "label": "其他资产",
+          "question": "其他资产？",
+          "when": [
+            {
+              "field": "instrument_type",
+              "op": "eq",
+              "value": "other_asset"
+            }
+          ],
+          "if_yes": []
+        },
+        {
+          "id": "unclassified",
+          "label": "未归类",
+          "question": "未归类？",
+          "when": [],
+          "if_yes": []
+        }
+      ],
+      "tail": [
+        {
+          "id": "step:route",
+          "kind": "rule",
+          "label": "路由校验",
+          "note": "只校验，不计算",
+          "formula_ref": null
+        },
+        {
+          "id": "step:crm",
+          "kind": "crm",
+          "label": "缓释拆分",
+          "note": "覆盖部分 · 未覆盖部分",
+          "formula_ref": "formulas.rwa_crm_split"
+        },
+        {
+          "id": "step:out",
+          "kind": "result",
+          "label": "结果与依据",
+          "note": "路由回执",
+          "formula_ref": null
+        }
+      ]
+    }
+  }

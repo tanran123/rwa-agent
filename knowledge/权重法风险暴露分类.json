@@ -1,0 +1,4250 @@
+{
+  "name": "cn_sa_exposure_class",
+  "title": "风险暴露分类",
+  "fields": [
+    {
+      "name": "instrument_type",
+      "label": "工具",
+      "meaning": "这一笔是现金、黄金、其他资产、股权、资产担保债券，还是普通债权。表头可能叫业务品种、资产类型。单元格原文要在映射里对到 cash、gold、other_asset、equity、covered_bond、claim。库存现金和黄金不是债权。固定资产、无形资产、递延费用没有交易对手，填 other_asset。存放中央银行仍填 claim，再按交易对手走主权。",
+      "source": "column",
+      "type": "enum",
+      "options": [
+        {
+          "label": "现金",
+          "code": "cash"
+        },
+        {
+          "label": "黄金",
+          "code": "gold"
+        },
+        {
+          "label": "其他资产",
+          "code": "other_asset"
+        },
+        {
+          "label": "股权",
+          "code": "equity"
+        },
+        {
+          "label": "资产担保债券",
+          "code": "covered_bond"
+        },
+        {
+          "label": "债权",
+          "code": "claim"
+        }
+      ]
+    },
+    {
+      "name": "treat_as_equity",
+      "label": "是否应视同股权",
+      "meaning": "债权是否应视同股权。收益主要靠资本利得、不可赎回、有剩余索取权，或与一级资本同样结构，或约定用股票清偿。监管已认可按债务处理的为 no。",
+      "source": "column",
+      "type": "enum",
+      "note": "收益主要靠资本利得、不可赎回、有剩余索取权，或与一级资本同样结构，或约定用股票清偿。监管已认可按债务处理的填 no。",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "state_subsidized_equity",
+      "label": "是否国家重大补贴并受政府监督的股权",
+      "meaning": "是否获得国家重大补贴并受到政府监督的股权。中央财政持股，方案写明规模、范围、运作和风险，并经国务院批准。",
+      "source": "column",
+      "type": "enum",
+      "note": "中央财政持股，方案写明规模、范围、运作和风险，并经国务院批准。",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "is_defaulted",
+      "label": "是否已违约",
+      "meaning": "是否已违约：逾期超过 90 天，或不处置押品就可能无法全额偿还。自然人按这一笔，其他按这个债务人。表里若是逾期天数或五级分类，在映射的 how 里写成 yes 或 no。",
+      "source": "column",
+      "type": "enum",
+      "note": "逾期超过 90 天，或不处置押品就可能无法全额偿还。自然人按债项填，其他按债务人填。",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "is_subordinated",
+      "label": "是否次级债权",
+      "meaning": "是否次级债权，受偿顺序在普通债权之后。金融机构风险暴露不含次级债权。",
+      "source": "column",
+      "type": "enum",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "covered_pool_eligible",
+      "label": "资产池是否只含合格资产",
+      "meaning": "资产担保债券的资产池是否只含合格资产。合格范围是附件2第十部分列出的那几类。",
+      "source": "column",
+      "type": "enum",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "covered_oc_ratio",
+      "label": "资产池名义价值 / 未偿还债券名义价值",
+      "meaning": "资产池名义价值除以未偿还债券名义价值。110% 写成 1.1。可以是一列比率，也可以由资产池名义价值和债券名义价值两列相除。",
+      "source": "column",
+      "type": "number",
+      "unit": "ratio",
+      "note": "110% 写成 1.1。"
+    },
+    {
+      "name": "covered_disclosure_ok",
+      "label": "是否至少每半年能取得披露信息",
+      "meaning": "是否至少每半年能取得资产池和债券的披露信息。披露内容见附件2第十部分。",
+      "source": "column",
+      "type": "enum",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "counterparty_type",
+      "label": "交易对手",
+      "meaning": "债务人属于哪一类主体。财政部对 cn_central_government，人民银行对 cn_central_bank。农村合作银行、村镇银行、农村信用合作社对 commercial_bank。表头可能叫客户类型、发行人类型。",
+      "source": "column",
+      "type": "enum",
+      "extensible": true,
+      "note": "财政部填 cn_central_government，人民银行填 cn_central_bank。农村合作银行、村镇银行、农村信用合作社填 commercial_bank。要加新种类，在 options 加一项，规则里的 match 写它的 code。",
+      "options": [
+        {
+          "label": "我国中央政府",
+          "code": "cn_central_government"
+        },
+        {
+          "label": "我国中央银行",
+          "code": "cn_central_bank"
+        },
+        {
+          "label": "其他主权国家或经济实体",
+          "code": "foreign_sovereign"
+        },
+        {
+          "label": "其他中央银行",
+          "code": "foreign_central_bank"
+        },
+        {
+          "label": "国际清算银行",
+          "code": "bis"
+        },
+        {
+          "label": "国际货币基金组织",
+          "code": "imf"
+        },
+        {
+          "label": "欧洲中央银行",
+          "code": "ecb"
+        },
+        {
+          "label": "欧盟",
+          "code": "eu"
+        },
+        {
+          "label": "欧洲稳定机制",
+          "code": "esm"
+        },
+        {
+          "label": "欧洲金融稳定机制",
+          "code": "efsm"
+        },
+        {
+          "label": "公共部门实体",
+          "code": "pse"
+        },
+        {
+          "label": "多边开发银行",
+          "code": "mdb"
+        },
+        {
+          "label": "商业银行",
+          "code": "commercial_bank"
+        },
+        {
+          "label": "其他金融机构",
+          "code": "other_fi"
+        },
+        {
+          "label": "开发性金融机构",
+          "code": "development_fi"
+        },
+        {
+          "label": "政策性银行",
+          "code": "policy_bank"
+        },
+        {
+          "label": "公司",
+          "code": "corporate"
+        },
+        {
+          "label": "合伙制企业",
+          "code": "partnership"
+        },
+        {
+          "label": "独资企业",
+          "code": "sole_proprietorship"
+        },
+        {
+          "label": "特殊目的实体",
+          "code": "spe"
+        },
+        {
+          "label": "其他非自然人",
+          "code": "other_non_individual"
+        },
+        {
+          "label": "自然人",
+          "code": "individual"
+        }
+      ]
+    },
+    {
+      "name": "counterparty_name",
+      "label": "交易对手名称",
+      "meaning": "交易对手的法定名称。合格多边开发银行要和规则 mdb_qualified 里的名称逐字相同。",
+      "source": "column",
+      "type": "string",
+      "note": "合格多边开发银行在规则 mdb_qualified 里按这个名称核对。"
+    },
+    {
+      "name": "fi_subtype",
+      "label": "其他金融机构类型",
+      "meaning": "其他金融机构的具体种类，仅当交易对手是其他金融机构时需要。对 options 里的中文，例如证券公司、企业集团财务公司。",
+      "source": "column",
+      "type": "enum",
+      "extensible": true,
+      "options": [
+        {
+          "label": "证券公司",
+          "code": "securities"
+        },
+        {
+          "label": "保险公司",
+          "code": "insurer"
+        },
+        {
+          "label": "保险资产管理公司",
+          "code": "insurance_amc"
+        },
+        {
+          "label": "金融资产管理公司",
+          "code": "amc"
+        },
+        {
+          "label": "信托公司",
+          "code": "trust"
+        },
+        {
+          "label": "企业集团财务公司",
+          "code": "group_finance_company"
+        },
+        {
+          "label": "金融租赁公司",
+          "code": "financial_leasing"
+        },
+        {
+          "label": "汽车金融公司",
+          "code": "auto_finance"
+        },
+        {
+          "label": "货币经纪公司",
+          "code": "money_broker"
+        },
+        {
+          "label": "消费金融公司",
+          "code": "consumer_finance"
+        },
+        {
+          "label": "基金公司",
+          "code": "fund"
+        },
+        {
+          "label": "理财公司",
+          "code": "wealth"
+        },
+        {
+          "label": "金融资产投资公司",
+          "code": "investment_company"
+        },
+        {
+          "label": "金融控股公司",
+          "code": "financial_holding"
+        },
+        {
+          "label": "其他受金融监管部门监管的机构",
+          "code": "other_regulated"
+        }
+      ]
+    },
+    {
+      "name": "pse_region",
+      "label": "公共部门所在地",
+      "meaning": "公共部门实体在境内还是境外。境内为 domestic，境外为 overseas。",
+      "source": "column",
+      "type": "enum",
+      "options": [
+        {
+          "label": "境内",
+          "code": "domestic"
+        },
+        {
+          "label": "境外",
+          "code": "overseas"
+        }
+      ]
+    },
+    {
+      "name": "pse_claim",
+      "label": "对公共部门的债权种类",
+      "meaning": "对公共部门这笔债权的种类。金融资产管理公司为收购国有银行不良贷款而定向发行的债券为 amc_bond；省、自治区、直辖市及计划单列市人民政府债券为 local_gov_bond；其余为 other。",
+      "source": "column",
+      "type": "enum",
+      "options": [
+        {
+          "label": "金融资产管理公司为收购国有银行不良贷款而定向发行的债券",
+          "code": "amc_bond"
+        },
+        {
+          "label": "省（自治区、直辖市）及计划单列市人民政府债券",
+          "code": "local_gov_bond"
+        },
+        {
+          "label": "其他",
+          "code": "other"
+        }
+      ]
+    },
+    {
+      "name": "gov_bond_type",
+      "label": "政府债券类型",
+      "meaning": "政府债券是一般债券还是专项债券。只在债权种类是政府债券时需要。一般债券为 general，专项债券为 special。",
+      "source": "column",
+      "type": "enum",
+      "options": [
+        {
+          "label": "一般债券",
+          "code": "general"
+        },
+        {
+          "label": "专项债券",
+          "code": "special"
+        }
+      ]
+    },
+    {
+      "name": "revenue_mainly_central",
+      "label": "收入是否主要源于中央财政",
+      "meaning": "这个公共部门的收入是否主要源于中央财政。不包括财政部和人民银行。",
+      "source": "column",
+      "type": "enum",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "meets_minimum_capital",
+      "label": "是否满足最低资本要求",
+      "meaning": "作为交易对手的那家商业银行是否满足最低资本要求，不含第二支柱。是 yes，否 no，无法判断 unknown。这不是本行自己的资本。",
+      "source": "column",
+      "type": "enum",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        },
+        {
+          "label": "无法判断",
+          "code": "unknown"
+        }
+      ]
+    },
+    {
+      "name": "meets_other_capital",
+      "label": "是否满足其他各级资本要求",
+      "meaning": "作为交易对手的商业银行是否满足储备资本、逆周期资本、系统重要性附加资本。无法判断时不要映射成 yes 或 no，留给人工字段 manual_bank_grade。",
+      "source": "column",
+      "type": "enum",
+      "note": "储备资本、逆周期资本、系统重要性附加资本。不含第二支柱。",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        },
+        {
+          "label": "无法判断",
+          "code": "unknown"
+        }
+      ]
+    },
+    {
+      "name": "cet1_ratio",
+      "label": "核心一级资本充足率",
+      "meaning": "作为交易对手的商业银行的核心一级资本充足率。14% 写成 0.14。",
+      "source": "column",
+      "type": "number",
+      "unit": "ratio",
+      "note": "14% 写成 0.14。"
+    },
+    {
+      "name": "leverage_ratio",
+      "label": "杠杆率",
+      "meaning": "作为交易对手的商业银行的杠杆率。5% 写成 0.05。",
+      "source": "column",
+      "type": "number",
+      "unit": "ratio",
+      "note": "5% 写成 0.05。"
+    },
+    {
+      "name": "audit_opinion",
+      "label": "外部审计意见",
+      "meaning": "作为交易对手的商业银行的外部审计意见。无报告 none，无保留 unqualified，保留 qualified，否定 adverse，无法表示 disclaimer，持续经营存疑 going_concern。",
+      "source": "column",
+      "type": "enum",
+      "options": [
+        {
+          "label": "无报告",
+          "code": "none"
+        },
+        {
+          "label": "无保留",
+          "code": "unqualified"
+        },
+        {
+          "label": "保留",
+          "code": "qualified"
+        },
+        {
+          "label": "否定",
+          "code": "adverse"
+        },
+        {
+          "label": "无法表示",
+          "code": "disclaimer"
+        },
+        {
+          "label": "持续经营存疑",
+          "code": "going_concern"
+        }
+      ]
+    },
+    {
+      "name": "loan_purpose",
+      "label": "融资用途",
+      "meaning": "这笔融资的用途。地产开发、房屋建设、项目建设、购买实物资产、商品融资或其他，对到 land_development、housing_construction、project、object_purchase、commodity、other。",
+      "source": "column",
+      "type": "enum",
+      "extensible": true,
+      "options": [
+        {
+          "label": "地产开发",
+          "code": "land_development"
+        },
+        {
+          "label": "房屋建设",
+          "code": "housing_construction"
+        },
+        {
+          "label": "项目建设",
+          "code": "project"
+        },
+        {
+          "label": "购买实物资产",
+          "code": "object_purchase"
+        },
+        {
+          "label": "商品融资",
+          "code": "commodity"
+        },
+        {
+          "label": "其他",
+          "code": "other"
+        }
+      ]
+    },
+    {
+      "name": "spe_for_physical_asset",
+      "label": "是否为实物资产设立的特殊目的实体",
+      "meaning": "债务人是否为某一实物资产设立的特殊目的实体。判断专业贷款的三个特征之一。",
+      "source": "column",
+      "type": "enum",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "no_independent_repayment",
+      "label": "除资产收入外没有独立还款能力",
+      "meaning": "除该资产产生的收入外，债务人是否没有独立还款能力。判断专业贷款的三个特征之二。",
+      "source": "column",
+      "type": "enum",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "lender_controls_asset",
+      "label": "银行对资产及其收入有相当控制权",
+      "meaning": "银行对资产及其收入是否有相当控制权。判断专业贷款的三个特征之三。三条同时为 yes 才是专业贷款。",
+      "source": "column",
+      "type": "enum",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "project_company",
+      "label": "是否为该项目组建",
+      "meaning": "债务人是否为该项目组建。只有项目融资还要看这一项。",
+      "source": "column",
+      "type": "enum",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "repayment_from_project",
+      "label": "还款是否主要靠项目自身收入",
+      "meaning": "还款是否主要靠项目自身收入。",
+      "source": "column",
+      "type": "enum",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "project_cashflow_covers_debt",
+      "label": "项目现金流是否足以偿还剩余债务",
+      "meaning": "项目现金流是否足以偿还剩余债务。这是运营阶段项目融资的条件之一。",
+      "source": "column",
+      "type": "enum",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "long_term_debt_declining",
+      "label": "长期负债是否在减少",
+      "meaning": "长期负债是否在减少。这是运营阶段项目融资的条件之二。",
+      "source": "column",
+      "type": "enum",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "repayment_from_lease",
+      "label": "还款是否主要靠该资产出租",
+      "meaning": "还款是否主要靠该实物资产出租，例如船舶、飞机、轨道交通工具。这是物品融资。",
+      "source": "column",
+      "type": "enum",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "repayment_from_commodity_sale",
+      "label": "没有其他资产且还款靠出售商品",
+      "meaning": "债务人是否没有其他资产，且还款靠出售商品。这是商品融资。",
+      "source": "column",
+      "type": "enum",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "has_property_collateral",
+      "label": "是否有房地产抵押",
+      "meaning": "这笔是否有房地产抵押。",
+      "source": "column",
+      "type": "enum",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "property_uses",
+      "label": "抵押物用途",
+      "meaning": "抵押房地产的用途，可以多选。居住 residential，商用 commercial，商住两用 mixed_use。表里若是一个文本列，把原文对到 code。",
+      "source": "column",
+      "type": "list",
+      "options": [
+        {
+          "label": "居住",
+          "code": "residential"
+        },
+        {
+          "label": "商用",
+          "code": "commercial"
+        },
+        {
+          "label": "商住两用",
+          "code": "mixed_use"
+        }
+      ]
+    },
+    {
+      "name": "single_exposure",
+      "label": "对单一债务人的风险暴露",
+      "meaning": "对同一债务人的风险暴露金额，单位元。企业按单家或集团，个人按该自然人。1000 万写成 10000000。已经是一列就直接映射；要按债务人把多行加总时，在 how 里写。",
+      "source": "column",
+      "type": "number",
+      "unit": "CNY",
+      "note": "企业按单家或集团，个人按该自然人。1000 万写成 10000000。"
+    },
+    {
+      "name": "exposure_share",
+      "label": "占全行信用风险暴露的比例",
+      "meaning": "该债务人风险暴露占全行信用风险暴露的比例。0.5% 写成 0.005。用该债务人金额除以全表信用风险暴露合计，不要找一列现成的占比，除非表里已经算好。",
+      "source": "calc",
+      "type": "number",
+      "unit": "ratio",
+      "note": "0.5% 写成 0.005。"
+    },
+    {
+      "name": "enterprise_size",
+      "label": "企业划型",
+      "meaning": "按国家划型标准确定的企业规模。微型 micro，小型 small，中型 medium，大型 large。",
+      "source": "column",
+      "type": "enum",
+      "options": [
+        {
+          "label": "微型",
+          "code": "micro"
+        },
+        {
+          "label": "小型",
+          "code": "small"
+        },
+        {
+          "label": "中型",
+          "code": "medium"
+        },
+        {
+          "label": "大型",
+          "code": "large"
+        }
+      ]
+    },
+    {
+      "name": "revenue_last_year",
+      "label": "最近一年营业收入",
+      "meaning": "最近一年营业收入，单位元。3 亿写成 300000000。",
+      "source": "column",
+      "type": "number",
+      "unit": "CNY",
+      "note": "3 亿写成 300000000。"
+    },
+    {
+      "name": "operating_normal",
+      "label": "经营正常且按时披露",
+      "meaning": "是否经营正常、没有风险迹象，并且按时披露财务报告。",
+      "source": "column",
+      "type": "enum",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "no_major_violation_3y",
+      "label": "最近三年无重大违法违规",
+      "meaning": "最近三年是否没有重大违法违规。",
+      "source": "column",
+      "type": "enum",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "not_on_dishonest_list",
+      "label": "未进失信名单",
+      "meaning": "是否未纳入人民法院失信被执行人名单。",
+      "source": "column",
+      "type": "enum",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "no_false_statements",
+      "label": "财报没有虚假记载",
+      "meaning": "财务报表是否没有虚假记载。",
+      "source": "column",
+      "type": "enum",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "annual_audit_opinion",
+      "label": "最新年报审计意见",
+      "meaning": "该公司或该机构最新年报的审计意见。投资级要求无保留 unqualified。这和商业银行评级用的 audit_opinion 不是同一列。",
+      "source": "column",
+      "type": "enum",
+      "options": [
+        {
+          "label": "无保留",
+          "code": "unqualified"
+        },
+        {
+          "label": "保留",
+          "code": "qualified"
+        },
+        {
+          "label": "否定",
+          "code": "adverse"
+        },
+        {
+          "label": "无法表示",
+          "code": "disclaimer"
+        },
+        {
+          "label": "无报告",
+          "code": "none"
+        }
+      ]
+    },
+    {
+      "name": "no_default_3y",
+      "label": "最近三年没有违约或拖欠",
+      "meaning": "最近三年是否没有违约或拖欠。",
+      "source": "column",
+      "type": "enum",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "loan_classification_normal",
+      "label": "本行分类均为正常",
+      "meaning": "本行对这个债务人的债权，风险分类是否都是正常。",
+      "source": "column",
+      "type": "enum",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "has_listed_security",
+      "label": "有存续的股票或债券",
+      "meaning": "是否在认可的交易所或银行间市场有存续的股票或债券。资产证券化不算。",
+      "source": "column",
+      "type": "enum",
+      "note": "认可的交易所或银行间市场。资产证券化不算。",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "guarantee_reasonable",
+      "label": "对外担保规模合理",
+      "meaning": "对外担保规模是否合理。",
+      "source": "column",
+      "type": "enum",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "profit_tests_met",
+      "label": "盈利条件都满足",
+      "meaning": "盈利条件是否都满足：近三年合并利润总额和归属母公司净利润都大于 3000 万；法人利润总额和净利润都大于 0；最新一期两边净利润都大于 0；综合收益都大于 0。由这些财务列判断，在 how 里写，不要找一列叫盈利条件。",
+      "source": "calc",
+      "type": "enum",
+      "note": "近三年合并利润总额和归属母公司净利润都大于 3000 万；法人利润总额和净利润都大于 0；最新一期两边净利润都大于 0；综合收益都大于 0。",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "debt_ratio",
+      "label": "上一会计年度末资产负债率",
+      "meaning": "上一会计年度末资产负债率。70% 写成 0.7。可以是一列，也可以由总负债和总资产相除。",
+      "source": "column",
+      "type": "number",
+      "unit": "ratio",
+      "note": "70% 写成 0.7。"
+    },
+    {
+      "name": "financial_industry",
+      "label": "是否金融行业",
+      "meaning": "债务人是否属于金融行业。为 yes 时，投资级可以不要求经营现金流大于财务费用。",
+      "source": "column",
+      "type": "enum",
+      "note": "金融行业可以不要求经营现金流大于财务费用。",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "operating_cashflow_gt_finance_cost",
+      "label": "经营现金流大于财务费用",
+      "meaning": "上一会计年度经营活动现金流量净额是否大于财务费用。可以是一列是否，也可以由这两列比较。",
+      "source": "column",
+      "type": "enum",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "financials_updated_within_6m",
+      "label": "财务数据在报表日后 6 个月内已更新",
+      "meaning": "财务数据在报表日后 6 个月内是否已经更新。",
+      "source": "column",
+      "type": "enum",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "no_other_material_risk",
+      "label": "没有其他重大风险",
+      "meaning": "银行是否认为不存在其他重大风险。存在时填 no。表里没有对应列就不要映射，留给人工填。",
+      "source": "manual",
+      "type": "enum",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "is_credit_card",
+      "label": "是否信用卡",
+      "meaning": "这笔是不是信用卡。合格交易者只针对信用卡。",
+      "source": "column",
+      "type": "enum",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "transactor_clean",
+      "label": "合格交易者还款记录是否达标",
+      "meaning": "合格交易者的还款记录是否达标：过去三年内最近 12 个有欠款的账单周期，都在到期日当天或之前还清。一般由账单历史计算。",
+      "source": "calc",
+      "type": "enum",
+      "note": "过去三年内最近 12 个有欠款的账单周期，均在到期日（含）前全额偿还。",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "bank_tier",
+      "label": "银行档次",
+      "meaning": "计算这笔的本行是第一档还是第二档。这是本行参数，全表相同，不是客户身上的列。不要按每一行去对。",
+      "source": "manual",
+      "type": "enum",
+      "options": [
+        {
+          "code": "tier1",
+          "label": "第一档"
+        },
+        {
+          "code": "tier2",
+          "label": "第二档"
+        }
+      ]
+    },
+    {
+      "name": "original_maturity_months",
+      "label": "原始期限",
+      "meaning": "这笔的原始期限，单位月。表里是月数就直接映射；表里是起息日和到期日时，在 how 里换成月数。",
+      "source": "column",
+      "type": "number",
+      "unit": "month"
+    },
+    {
+      "name": "cross_border_trade",
+      "label": "是否跨境货物贸易",
+      "meaning": "这笔是不是跨境货物贸易。",
+      "source": "column",
+      "type": "enum",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "issuer_rating",
+      "label": "外部评级",
+      "meaning": "外部评级符号，如 AAA、AA-、B-，没有评级时用 unrated。只用于境外主权、其他中央银行、其他多边开发银行。不要填债券自己的评级，也不要填注册地评级。",
+      "source": "column",
+      "type": "enum",
+      "extensible": true,
+      "options": [
+        {
+          "code": "AAA",
+          "label": "AAA"
+        },
+        {
+          "code": "AA+",
+          "label": "AA+"
+        },
+        {
+          "code": "AA",
+          "label": "AA"
+        },
+        {
+          "code": "AA-",
+          "label": "AA-"
+        },
+        {
+          "code": "A+",
+          "label": "A+"
+        },
+        {
+          "code": "A",
+          "label": "A"
+        },
+        {
+          "code": "A-",
+          "label": "A-"
+        },
+        {
+          "code": "BBB+",
+          "label": "BBB+"
+        },
+        {
+          "code": "BBB",
+          "label": "BBB"
+        },
+        {
+          "code": "BBB-",
+          "label": "BBB-"
+        },
+        {
+          "code": "BB+",
+          "label": "BB+"
+        },
+        {
+          "code": "BB",
+          "label": "BB"
+        },
+        {
+          "code": "BB-",
+          "label": "BB-"
+        },
+        {
+          "code": "B+",
+          "label": "B+"
+        },
+        {
+          "code": "B",
+          "label": "B"
+        },
+        {
+          "code": "B-",
+          "label": "B-"
+        },
+        {
+          "code": "CCC",
+          "label": "CCC"
+        },
+        {
+          "code": "CC",
+          "label": "CC"
+        },
+        {
+          "code": "C",
+          "label": "C"
+        },
+        {
+          "code": "D",
+          "label": "D"
+        },
+        {
+          "code": "unrated",
+          "label": "unrated"
+        }
+      ],
+      "note": "境外主权、其他中央银行、其他多边开发银行使用。合格资产担保债券用自己的 bond_rating，境外公共部门用 country_rating。"
+    },
+    {
+      "name": "cashflow_dependent",
+      "label": "还款是否实质依赖房地产现金流",
+      "meaning": "还款是否实质依赖房地产产生的现金流。来自该房地产出售或租赁的现金流超过还款来源的 50% 为 yes。可以是一列是否，也可以由房地产现金流和还款来源比较。",
+      "source": "column",
+      "type": "enum",
+      "note": "来自该房地产出售或租赁的现金流超过 50% 填 yes。",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "ltv",
+      "label": "贷款价值比",
+      "meaning": "贷款余额占抵押房地产价值的比例。50% 写成 0.5。可以是一列贷款价值比，也可以由贷款余额和押品价值相除。",
+      "source": "column",
+      "type": "number",
+      "unit": "ratio",
+      "note": "50% 写成 0.5。"
+    },
+    {
+      "name": "prudent",
+      "label": "是否符合审慎要求",
+      "meaning": "这一笔是否符合该类的审慎要求。房地产开发、居住用房地产、商用房地产的要求不同。表里通常没有现成的一列，没有就不要映射。",
+      "source": "manual",
+      "type": "enum",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "provision_ratio",
+      "label": "损失准备占账面价值的比例",
+      "meaning": "损失准备占账面价值的比例，已违约时使用。20% 写成 0.2。可以是一列，也可以由损失准备和账面价值相除。",
+      "source": "column",
+      "type": "number",
+      "unit": "ratio",
+      "note": "20% 写成 0.2。"
+    }
+  ],
+  "rules": [
+    {
+      "name": "cash",
+      "label": "现金及现金等价物",
+      "note": "《商业银行资本管理办法》第五十七条。存放中央银行不在本条，按主权风险暴露划分。",
+      "when": {
+        "all": [
+          {
+            "field": "instrument_type",
+            "op": "in",
+            "match": [
+              "cash",
+              "gold"
+            ]
+          }
+        ]
+      },
+      "children": [
+        {
+          "name": "cash_on_hand",
+          "label": "现金",
+          "when": {
+            "all": [
+              {
+                "field": "instrument_type",
+                "op": "eq",
+                "match": "cash"
+              }
+            ]
+          },
+          "value": 0
+        },
+        {
+          "name": "gold",
+          "label": "黄金",
+          "when": {
+            "all": [
+              {
+                "field": "instrument_type",
+                "op": "eq",
+                "match": "gold"
+              }
+            ]
+          },
+          "value": 0
+        }
+      ]
+    },
+    {
+      "name": "equity",
+      "label": "股权风险暴露",
+      "note": "已违约的股权仍归本类。",
+      "when": {
+        "any": [
+          {
+            "field": "instrument_type",
+            "op": "eq",
+            "match": "equity"
+          },
+          {
+            "field": "treat_as_equity",
+            "op": "eq",
+            "match": "yes"
+          }
+        ]
+      },
+      "children": [
+        {
+          "fields":[],
+          "name": "equity_subsidized",
+          "label": "获得国家重大补贴，并受到政府监督的股权投资",
+          "when": {
+            "all": [
+              {
+                "field": "state_subsidized_equity",
+                "op": "eq",
+                "match": "yes"
+              }
+            ]
+          },
+          "note": "《商业银行资本管理办法》第七十六条，风险权重为 250%。",
+          "value": 2.5
+        },
+        {
+          "name": "equity_fi",
+          "label": "金融机构股权投资",
+          "note": "未扣除部分。",
+          "when": {
+            "all": [
+              {
+                "field": "counterparty_type",
+                "op": "in",
+                "match": [
+                  "commercial_bank",
+                  "other_fi",
+                  "development_fi",
+                  "policy_bank"
+                ]
+              }
+            ]
+          },
+          "value": 2.5
+        }
+      ],
+      "otherwise": {
+        "name": "equity_corporate",
+        "label": "其他工商企业股权投资",
+        "value": 12.5
+      }
+      
+    },
+    {
+      "name": "defaulted",
+      "label": "已违约风险暴露",
+      "when": {
+        "all": [
+          {
+            "field": "is_defaulted",
+            "op": "eq",
+            "match": "yes"
+          }
+        ]
+      },
+      "children": [
+        {
+          "name": "defaulted_residential",
+          "label": "以居住用房为抵押且不依赖房地产现金流",
+          "when": {
+            "all": [
+              {
+                "field": "has_property_collateral",
+                "op": "eq",
+                "match": "yes"
+              },
+              {
+                "field": "property_uses",
+                "op": "contains",
+                "match": "residential"
+              },
+              {
+                "field": "cashflow_dependent",
+                "op": "eq",
+                "match": "no"
+              }
+            ]
+          },
+          "value": 1
+        }
+      ],
+      "otherwise": {
+        "name": "defaulted_other",
+        "label": "其他已违约风险暴露",
+        "children": [
+          {
+            "name": "defaulted_tier2",
+            "label": "第二档银行",
+            "when": {
+              "all": [
+                {
+                  "field": "bank_tier",
+                  "op": "eq",
+                  "match": "tier2"
+                }
+              ]
+            },
+            "weight": {
+              "same_as": "counterparty_ordinary_claim"
+            },
+            "note": "《商业银行资本管理办法》第八十条，第二档不单独划分已违约风险暴露，按照交易对手风险权重计量。"
+          },
+          {
+            "name": "defaulted_provision_low",
+            "label": "损失准备低于账面价值20%",
+            "when": {
+              "all": [
+                {
+                  "field": "provision_ratio",
+                  "op": "lt",
+                  "match": 0.2
+                }
+              ]
+            },
+            "value": 1.5
+          },
+          {
+            "name": "defaulted_provision_high",
+            "label": "损失准备不低于账面价值20%",
+            "when": {
+              "all": [
+                {
+                  "field": "provision_ratio",
+                  "op": "gte",
+                  "match": 0.2
+                }
+              ]
+            },
+            "value": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "covered_bond",
+      "label": "合格资产担保债券风险暴露",
+      "note": "未满足合格条件时本条不命中，继续按交易对手划分。《商业银行资本管理办法》第七十九条。",
+      "when": {
+        "all": [
+          {
+            "field": "instrument_type",
+            "op": "eq",
+            "match": "covered_bond"
+          },
+          {
+            "field": "covered_pool_eligible",
+            "op": "eq",
+            "match": "yes"
+          },
+          {
+            "field": "covered_oc_ratio",
+            "op": "gte",
+            "match": 1.1
+          },
+          {
+            "field": "covered_disclosure_ok",
+            "op": "eq",
+            "match": "yes"
+          }
+        ]
+      },
+      "fields": [
+        {
+          "name": "bond_has_rating",
+          "label": "债券自身是否有外部信用评级",
+          "meaning": "这只资产担保债券自身有没有外部信用评级。表里已有是否评级就映射那一列；若只有评级符号，有符号为 yes，空白为 no。",
+          "source": "column",
+          "type": "enum",
+          "options": [
+            {
+              "label": "是",
+              "code": "yes"
+            },
+            {
+              "label": "否",
+              "code": "no"
+            }
+          ]
+        },
+        {
+          "name": "bond_rating",
+          "label": "债券自身外部信用评级",
+          "meaning": "这只资产担保债券自身的外部信用评级符号。不要填发行银行的评级。",
+          "source": "column",
+          "type": "enum",
+          "extensible": true,
+          "note": "只在债券自身有评级时填写。",
+          "options": [
+            {
+              "code": "AAA",
+              "label": "AAA"
+            },
+            {
+              "code": "AA+",
+              "label": "AA+"
+            },
+            {
+              "code": "AA",
+              "label": "AA"
+            },
+            {
+              "code": "AA-",
+              "label": "AA-"
+            },
+            {
+              "code": "A+",
+              "label": "A+"
+            },
+            {
+              "code": "A",
+              "label": "A"
+            },
+            {
+              "code": "A-",
+              "label": "A-"
+            },
+            {
+              "code": "BBB+",
+              "label": "BBB+"
+            },
+            {
+              "code": "BBB",
+              "label": "BBB"
+            },
+            {
+              "code": "BBB-",
+              "label": "BBB-"
+            },
+            {
+              "code": "BB+",
+              "label": "BB+"
+            },
+            {
+              "code": "BB",
+              "label": "BB"
+            },
+            {
+              "code": "BB-",
+              "label": "BB-"
+            },
+            {
+              "code": "B+",
+              "label": "B+"
+            },
+            {
+              "code": "B",
+              "label": "B"
+            },
+            {
+              "code": "B-",
+              "label": "B-"
+            },
+            {
+              "code": "CCC",
+              "label": "CCC"
+            },
+            {
+              "code": "CC",
+              "label": "CC"
+            },
+            {
+              "code": "C",
+              "label": "C"
+            },
+            {
+              "code": "D",
+              "label": "D"
+            },
+            {
+              "code": "unrated",
+              "label": "unrated"
+            }
+          ]
+        },
+        {
+          "name": "issuer_scra_grade",
+          "label": "发行银行的标准信用风险评估结果",
+          "meaning": "发行银行的标准信用风险评估结果，只取 A+、A、B、C，对应 a_plus、a、b、c。表里已有级别就映射；没有就留空。",
+          "source": "column",
+          "type": "enum",
+          "note": "债券自身没有评级时，按发行银行的 A+、A、B、C 填写。",
+          "options": [
+            {
+              "label": "A+级",
+              "code": "a_plus"
+            },
+            {
+              "label": "A级",
+              "code": "a"
+            },
+            {
+              "label": "B级",
+              "code": "b"
+            },
+            {
+              "label": "C级",
+              "code": "c"
+            }
+          ]
+        }
+      ],
+      "children": [
+        {
+          "name": "covered_bond_tier2",
+          "label": "第二档银行",
+          "when": {
+            "all": [
+              {
+                "field": "bank_tier",
+                "op": "eq",
+                "match": "tier2"
+              }
+            ]
+          },
+          "weight": {
+            "same_as": "counterparty_ordinary_claim"
+          },
+          "note": "《商业银行资本管理办法》第七十九条，第二档不单独划分合格资产担保债券，按照交易对手风险权重计量。"
+        },
+        {
+          "name": "covered_bond_rated",
+          "label": "债券自身具有外部信用评级",
+          "when": {
+            "all": [
+              {
+                "field": "bond_has_rating",
+                "op": "eq",
+                "match": "yes"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "covered_bond_aa",
+              "label": "AA-（含）以上",
+              "when": {
+                "all": [
+                  {
+                    "field": "bond_rating",
+                    "op": "in",
+                    "match": [
+                      "AAA",
+                      "AA+",
+                      "AA",
+                      "AA-"
+                    ]
+                  }
+                ]
+              },
+              "value": 0.1
+            },
+            {
+              "name": "covered_bond_bbb",
+              "label": "AA-以下、BBB-（含）以上",
+              "when": {
+                "all": [
+                  {
+                    "field": "bond_rating",
+                    "op": "in",
+                    "match": [
+                      "A+",
+                      "A",
+                      "A-",
+                      "BBB+",
+                      "BBB",
+                      "BBB-"
+                    ]
+                  }
+                ]
+              },
+              "value": 0.2
+            },
+            {
+              "name": "covered_bond_b",
+              "label": "BBB-以下、B-（含）以上",
+              "when": {
+                "all": [
+                  {
+                    "field": "bond_rating",
+                    "op": "in",
+                    "match": [
+                      "BB+",
+                      "BB",
+                      "BB-",
+                      "B+",
+                      "B",
+                      "B-"
+                    ]
+                  }
+                ]
+              },
+              "value": 0.5
+            },
+            {
+              "name": "covered_bond_below_b",
+              "label": "B-以下",
+              "when": {
+                "all": [
+                  {
+                    "field": "bond_rating",
+                    "op": "in",
+                    "match": [
+                      "CCC",
+                      "CC",
+                      "C",
+                      "D"
+                    ]
+                  }
+                ]
+              },
+              "value": 1
+            }
+          ]
+        }
+      ],
+      "otherwise": {
+        "name": "covered_bond_unrated",
+        "label": "债券自身不具有外部信用评级",
+        "children": [
+          {
+            "name": "covered_bond_issuer_a_plus",
+            "label": "发行银行为A+级",
+            "when": {
+              "all": [
+                {
+                  "field": "issuer_scra_grade",
+                  "op": "eq",
+                  "match": "a_plus"
+                }
+              ]
+            },
+            "value": 0.15
+          },
+          {
+            "name": "covered_bond_issuer_a",
+            "label": "发行银行为A级",
+            "when": {
+              "all": [
+                {
+                  "field": "issuer_scra_grade",
+                  "op": "eq",
+                  "match": "a"
+                }
+              ]
+            },
+            "value": 0.2
+          },
+          {
+            "name": "covered_bond_issuer_b",
+            "label": "发行银行为B级",
+            "when": {
+              "all": [
+                {
+                  "field": "issuer_scra_grade",
+                  "op": "eq",
+                  "match": "b"
+                }
+              ]
+            },
+            "value": 0.35
+          },
+          {
+            "name": "covered_bond_issuer_c",
+            "label": "发行银行为C级",
+            "when": {
+              "all": [
+                {
+                  "field": "issuer_scra_grade",
+                  "op": "eq",
+                  "match": "c"
+                }
+              ]
+            },
+            "value": 1
+          }
+        ]
+      }
+    },
+    {
+      "name": "subordinated",
+      "label": "次级债权",
+      "note": "附件未单列。先单独成类，避免进入金融机构或一般公司。",
+      "when": {
+        "all": [
+          {
+            "field": "is_subordinated",
+            "op": "eq",
+            "match": "yes"
+          }
+        ]
+      },
+      "children": [
+        {
+          "name": "subordinated_policy",
+          "label": "对我国开发性金融机构和政策性银行的次级债权",
+          "note": "未扣除部分。",
+          "when": {
+            "all": [
+              {
+                "field": "counterparty_type",
+                "op": "in",
+                "match": [
+                  "development_fi",
+                  "policy_bank"
+                ]
+              }
+            ]
+          },
+          "value": 1
+        }
+      ],
+      "otherwise": {
+        "name": "subordinated_other",
+        "label": "其他次级债权及TLAC工具",
+        "note": "含 TLAC 工具。",
+        "value": 1.5
+      }
+    },
+    {
+      "name": "sovereign",
+      "label": "主权风险暴露（主权国家/央行/国际组织）",
+      "when": {
+        "all": [
+          {
+            "field": "counterparty_type",
+            "op": "in",
+            "match": [
+              "cn_central_government",
+              "cn_central_bank",
+              "foreign_sovereign",
+              "foreign_central_bank",
+              "bis",
+              "imf",
+              "ecb",
+              "eu",
+              "esm",
+              "efsm"
+            ]
+          }
+        ]
+      },
+      "children": [
+        {
+          "name": "sovereign_cn",
+          "label": "对我国中央政府、央行的债权",
+          "when": {
+            "all": [
+              {
+                "field": "counterparty_type",
+                "op": "in",
+                "match": [
+                  "cn_central_government",
+                  "cn_central_bank"
+                ]
+              }
+            ]
+          },
+          "value": 0
+        },
+        {
+          "name": "sovereign_intl",
+          "label": "国际清算银行、国际货币基金组织、欧洲中央银行、欧盟、欧洲稳定机制和欧洲金融稳定机制",
+          "when": {
+            "all": [
+              {
+                "field": "counterparty_type",
+                "op": "in",
+                "match": [
+                  "bis",
+                  "imf",
+                  "ecb",
+                  "eu",
+                  "esm",
+                  "efsm"
+                ]
+              }
+            ]
+          },
+          "value": 0,
+          "note": "《商业银行资本管理办法》第五十九条。"
+        },
+        {
+          "name": "sovereign_foreign",
+          "label": "其他国家或地区政府及其中央银行",
+          "when": {
+            "all": [
+              {
+                "field": "counterparty_type",
+                "op": "in",
+                "match": [
+                  "foreign_sovereign",
+                  "foreign_central_bank"
+                ]
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "sovereign_foreign_aa",
+              "label": "AA-（含）以上",
+              "when": {
+                "all": [
+                  {
+                    "field": "issuer_rating",
+                    "op": "in",
+                    "match": [
+                      "AAA",
+                      "AA+",
+                      "AA",
+                      "AA-"
+                    ]
+                  }
+                ]
+              },
+              "value": 0
+            },
+            {
+              "name": "sovereign_foreign_a",
+              "label": "AA-以下、A-（含）以上",
+              "when": {
+                "all": [
+                  {
+                    "field": "issuer_rating",
+                    "op": "in",
+                    "match": [
+                      "A+",
+                      "A",
+                      "A-"
+                    ]
+                  }
+                ]
+              },
+              "value": 0.2
+            },
+            {
+              "name": "sovereign_foreign_bbb",
+              "label": "A-以下、BBB-（含）以上",
+              "when": {
+                "all": [
+                  {
+                    "field": "issuer_rating",
+                    "op": "in",
+                    "match": [
+                      "BBB+",
+                      "BBB",
+                      "BBB-"
+                    ]
+                  }
+                ]
+              },
+              "value": 0.5
+            },
+            {
+              "name": "sovereign_foreign_b",
+              "label": "BBB-以下、B-（含）以上",
+              "when": {
+                "all": [
+                  {
+                    "field": "issuer_rating",
+                    "op": "in",
+                    "match": [
+                      "BB+",
+                      "BB",
+                      "BB-",
+                      "B+",
+                      "B",
+                      "B-"
+                    ]
+                  }
+                ]
+              },
+              "value": 1
+            },
+            {
+              "name": "sovereign_foreign_below_b",
+              "label": "B-以下",
+              "when": {
+                "all": [
+                  {
+                    "field": "issuer_rating",
+                    "op": "in",
+                    "match": [
+                      "CCC",
+                      "CC",
+                      "C",
+                      "D"
+                    ]
+                  }
+                ]
+              },
+              "value": 1.5
+            },
+            {
+              "name": "sovereign_foreign_unrated",
+              "label": "未评级",
+              "when": {
+                "all": [
+                  {
+                    "field": "issuer_rating",
+                    "op": "eq",
+                    "match": "unrated"
+                  }
+                ]
+              },
+              "value": 1
+            }
+          ],
+          "note": "《商业银行资本管理办法》第五十八条。"
+        }
+      ]
+    },
+    {
+      "name": "pse",
+      "label": "公共部门实体风险暴露",
+      "when": {
+        "all": [
+          {
+            "field": "counterparty_type",
+            "op": "eq",
+            "match": "pse"
+          }
+        ]
+      },
+      "children": [
+        {
+          "name": "pse_overseas",
+          "label": "境外公共部门实体风险暴露",
+          "when": {
+            "all": [
+              {
+                "field": "pse_region",
+                "op": "eq",
+                "match": "overseas"
+              }
+            ]
+          },
+          "fields": [
+            {
+              "name": "country_rating",
+              "label": "注册地所在国家或地区的外部评级",
+              "meaning": "公共部门实体注册地所在国家或地区的外部评级符号。不是这家机构自己的评级。",
+              "source": "column",
+              "type": "enum",
+              "extensible": true,
+              "note": "按注册地所在国家或地区的评级分档，不是这家公共部门自己的评级。",
+              "options": [
+                {
+                  "code": "AAA",
+                  "label": "AAA"
+                },
+                {
+                  "code": "AA+",
+                  "label": "AA+"
+                },
+                {
+                  "code": "AA",
+                  "label": "AA"
+                },
+                {
+                  "code": "AA-",
+                  "label": "AA-"
+                },
+                {
+                  "code": "A+",
+                  "label": "A+"
+                },
+                {
+                  "code": "A",
+                  "label": "A"
+                },
+                {
+                  "code": "A-",
+                  "label": "A-"
+                },
+                {
+                  "code": "BBB+",
+                  "label": "BBB+"
+                },
+                {
+                  "code": "BBB",
+                  "label": "BBB"
+                },
+                {
+                  "code": "BBB-",
+                  "label": "BBB-"
+                },
+                {
+                  "code": "BB+",
+                  "label": "BB+"
+                },
+                {
+                  "code": "BB",
+                  "label": "BB"
+                },
+                {
+                  "code": "BB-",
+                  "label": "BB-"
+                },
+                {
+                  "code": "B+",
+                  "label": "B+"
+                },
+                {
+                  "code": "B",
+                  "label": "B"
+                },
+                {
+                  "code": "B-",
+                  "label": "B-"
+                },
+                {
+                  "code": "CCC",
+                  "label": "CCC"
+                },
+                {
+                  "code": "CC",
+                  "label": "CC"
+                },
+                {
+                  "code": "C",
+                  "label": "C"
+                },
+                {
+                  "code": "D",
+                  "label": "D"
+                },
+                {
+                  "code": "unrated",
+                  "label": "unrated"
+                }
+              ]
+            }
+          ],
+          "children": [
+            {
+              "name": "pse_overseas_aa",
+              "label": "注册地AA-（含）以上",
+              "when": {
+                "all": [
+                  {
+                    "field": "country_rating",
+                    "op": "in",
+                    "match": [
+                      "AAA",
+                      "AA+",
+                      "AA",
+                      "AA-"
+                    ]
+                  }
+                ]
+              },
+              "value": 0.2
+            },
+            {
+              "name": "pse_overseas_a",
+              "label": "注册地AA-以下、A-（含）以上",
+              "when": {
+                "all": [
+                  {
+                    "field": "country_rating",
+                    "op": "in",
+                    "match": [
+                      "A+",
+                      "A",
+                      "A-"
+                    ]
+                  }
+                ]
+              },
+              "value": 0.5
+            },
+            {
+              "name": "pse_overseas_b",
+              "label": "注册地A-以下、B-（含）以上",
+              "when": {
+                "all": [
+                  {
+                    "field": "country_rating",
+                    "op": "in",
+                    "match": [
+                      "BBB+",
+                      "BBB",
+                      "BBB-",
+                      "BB+",
+                      "BB",
+                      "BB-",
+                      "B+",
+                      "B",
+                      "B-"
+                    ]
+                  }
+                ]
+              },
+              "value": 1
+            },
+            {
+              "name": "pse_overseas_below_b",
+              "label": "注册地B-以下",
+              "when": {
+                "all": [
+                  {
+                    "field": "country_rating",
+                    "op": "in",
+                    "match": [
+                      "CCC",
+                      "CC",
+                      "C",
+                      "D"
+                    ]
+                  }
+                ]
+              },
+              "value": 1.5
+            },
+            {
+              "name": "pse_overseas_unrated",
+              "label": "注册地未评级",
+              "when": {
+                "all": [
+                  {
+                    "field": "country_rating",
+                    "op": "eq",
+                    "match": "unrated"
+                  }
+                ]
+              },
+              "value": 1
+            }
+          ],
+          "note": "《商业银行资本管理办法》第五十八条。"
+        },
+        {
+          "name": "pse_sovereign_equivalent",
+          "label": "视同我国主权的公共部门实体风险暴露",
+          "when": {
+            "any": [
+              {
+                "field": "pse_claim",
+                "op": "in",
+                "match": [
+                  "amc_bond",
+                  "local_gov_bond"
+                ]
+              },
+              {
+                "field": "revenue_mainly_central",
+                "op": "eq",
+                "match": "yes"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "pse_amc_bond",
+              "label": "金融资产管理公司为收购国有银行不良贷款而定向发行的债券",
+              "note": "《商业银行资本管理办法》第六十二条，对我国中央政府投资的金融资产管理公司为收购国有银行不良贷款而定向发行的债券，风险权重为 0。",
+              "value": 0,
+              "when": {
+                "all": [
+                  {
+                    "field": "pse_claim",
+                    "op": "eq",
+                    "match": "amc_bond"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "pse_local_gov_bond",
+              "label": "省（自治区、直辖市）及计划单列市人民政府风险暴露",
+              "note": "只包括政府债券。",
+              "when": {
+                "all": [
+                  {
+                    "field": "pse_claim",
+                    "op": "eq",
+                    "match": "local_gov_bond"
+                  }
+                ]
+              },
+              "children": [
+                {
+                  "name": "pse_local_gov_bond_general",
+                  "label": "一般债券",
+                  "when": {
+                    "all": [
+                      {
+                        "field": "gov_bond_type",
+                        "op": "eq",
+                        "match": "general"
+                      }
+                    ]
+                  },
+                  "value": 0.1
+                },
+                {
+                  "name": "pse_local_gov_bond_special",
+                  "label": "专项债券",
+                  "when": {
+                    "all": [
+                      {
+                        "field": "gov_bond_type",
+                        "op": "eq",
+                        "match": "special"
+                      }
+                    ]
+                  },
+                  "value": 0.2
+                }
+              ]
+            },
+            {
+              "name": "pse_central_funded",
+              "label": "收入主要源于中央财政的公共部门风险暴露",
+              "when": {
+                "all": [
+                  {
+                    "field": "revenue_mainly_central",
+                    "op": "eq",
+                    "match": "yes"
+                  }
+                ]
+              },
+              "value": 0.2
+            }
+          ]
+        }
+      ],
+      "otherwise": {
+        "name": "pse_general",
+        "label": "一般公共部门实体风险暴露",
+        "value": 0.5
+      }
+    },
+    {
+      "name": "mdb",
+      "label": "多边开发银行风险暴露",
+      "when": {
+        "all": [
+          {
+            "field": "counterparty_type",
+            "op": "eq",
+            "match": "mdb"
+          }
+        ]
+      },
+      "children": [
+        {
+          "name": "mdb_qualified",
+          "label": "合格多边开发银行风险暴露",
+          "note": "附件2第四部分的合格名单。巴塞尔委员会更新时，只改这里的名称。",
+          "when": {
+            "all": [
+              {
+                "field": "counterparty_name",
+                "op": "in",
+                "match": [
+                  "世界银行集团",
+                  "亚洲开发银行",
+                  "非洲开发银行",
+                  "欧洲复兴开发银行",
+                  "泛美开发银行",
+                  "欧洲投资银行",
+                  "欧洲投资基金",
+                  "北欧投资银行",
+                  "加勒比海开发银行",
+                  "伊斯兰开发银行",
+                  "欧洲理事会开发银行",
+                  "国际免疫融资机制",
+                  "亚洲基础设施投资银行"
+                ]
+              }
+            ]
+          },
+          "value": 0
+        }
+      ],
+      "otherwise": {
+        "name": "mdb_other",
+        "label": "其他多边开发银行风险暴露",
+        "children": [
+          {
+            "name": "mdb_other_aa",
+            "label": "AA-（含）以上",
+            "when": {
+              "all": [
+                {
+                  "field": "issuer_rating",
+                  "op": "in",
+                  "match": [
+                    "AAA",
+                    "AA+",
+                    "AA",
+                    "AA-"
+                  ]
+                }
+              ]
+            },
+            "value": 0.2
+          },
+          {
+            "name": "mdb_other_a",
+            "label": "AA-以下、A-（含）以上",
+            "when": {
+              "all": [
+                {
+                  "field": "issuer_rating",
+                  "op": "in",
+                  "match": [
+                    "A+",
+                    "A",
+                    "A-"
+                  ]
+                }
+              ]
+            },
+            "value": 0.3
+          },
+          {
+            "name": "mdb_other_bbb",
+            "label": "A-以下、BBB-（含）以上",
+            "when": {
+              "all": [
+                {
+                  "field": "issuer_rating",
+                  "op": "in",
+                  "match": [
+                    "BBB+",
+                    "BBB",
+                    "BBB-"
+                  ]
+                }
+              ]
+            },
+            "value": 0.5
+          },
+          {
+            "name": "mdb_other_b",
+            "label": "BBB-以下、B-（含）以上",
+            "when": {
+              "all": [
+                {
+                  "field": "issuer_rating",
+                  "op": "in",
+                  "match": [
+                    "BB+",
+                    "BB",
+                    "BB-",
+                    "B+",
+                    "B",
+                    "B-"
+                  ]
+                }
+              ]
+            },
+            "value": 1
+          },
+          {
+            "name": "mdb_other_below_b",
+            "label": "B-以下",
+            "when": {
+              "all": [
+                {
+                  "field": "issuer_rating",
+                  "op": "in",
+                  "match": [
+                    "CCC",
+                    "CC",
+                    "C",
+                    "D"
+                  ]
+                }
+              ]
+            },
+            "value": 1.5
+          },
+          {
+            "name": "mdb_other_unrated",
+            "label": "未评级",
+            "when": {
+              "all": [
+                {
+                  "field": "issuer_rating",
+                  "op": "eq",
+                  "match": "unrated"
+                }
+              ]
+            },
+            "value": 0.5
+          }
+        ],
+        "note": "《商业银行资本管理办法》第六十条，按这家多边开发银行自身的外部评级。"
+      }
+    },
+    {
+      "name": "fi",
+      "label": "金融机构风险暴露",
+      "when": {
+        "all": [
+          {
+            "field": "counterparty_type",
+            "op": "in",
+            "match": [
+              "commercial_bank",
+              "other_fi",
+              "development_fi",
+              "policy_bank"
+            ]
+          }
+        ]
+      },
+      "children": [
+        {
+          "name": "fi_policy",
+          "label": "对我国开发性金融机构和政策性银行的债权",
+          "note": "附件未列入主权，先放在金融机构下。",
+          "when": {
+            "all": [
+              {
+                "field": "counterparty_type",
+                "op": "in",
+                "match": [
+                  "development_fi",
+                  "policy_bank"
+                ]
+              }
+            ]
+          },
+          "value": 0
+        },
+        {
+          "name": "fi_bank",
+          "label": "商业银行风险暴露",
+          "fields": [
+            {
+              "name": "fi_bank_applicable",
+              "label": "是否适用",
+              "meaning": "这个产品会不会形成对商业银行的债权。贷款不能贷给银行时填不适用，商业银行这一支整段跳过，也不要落到其他金融机构。没填视为适用。按产品填，不是每一笔从 Excel 对。",
+              "source": "manual",
+              "type": "enum",
+              "options": [
+                {
+                  "label": "适用",
+                  "code": "applicable"
+                },
+                {
+                  "label": "不适用",
+                  "code": "not_applicable"
+                }
+              ]
+            }
+          ],
+          "skip": {
+            "field": "fi_bank_applicable",
+            "op": "eq",
+            "match": "not_applicable"
+          },
+          "when": {
+            "all": [
+              {
+                "field": "counterparty_type",
+                "op": "eq",
+                "match": "commercial_bank"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "fi_bank_tier2",
+              "label": "第二档银行",
+              "when": {
+                "all": [
+                  {
+                    "field": "bank_tier",
+                    "op": "eq",
+                    "match": "tier2"
+                  }
+                ]
+              },
+              "children": [
+                {
+                  "name": "fi_bank_tier2_short",
+                  "label": "原始期限3个月以内或跨境货物贸易6个月以内",
+                  "when": {
+                    "any": [
+                      {
+                        "field": "original_maturity_months",
+                        "op": "lte",
+                        "match": 3
+                      },
+                      {
+                        "all": [
+                          {
+                            "field": "cross_border_trade",
+                            "op": "eq",
+                            "match": "yes"
+                          },
+                          {
+                            "field": "original_maturity_months",
+                            "op": "lte",
+                            "match": 6
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "value": 0.2
+                }
+              ],
+              "otherwise": {
+                "name": "fi_bank_tier2_general",
+                "label": "第二档银行一般",
+                "value": 0.4
+              }
+            },
+            {
+              "name": "fi_bank_c",
+              "label": "C级",
+              "when": {
+                "any": [
+                  {
+                    "field": "meets_minimum_capital",
+                    "op": "in",
+                    "match": [
+                      "no",
+                      "unknown"
+                    ]
+                  },
+                  {
+                    "field": "audit_opinion",
+                    "op": "in",
+                    "match": [
+                      "adverse",
+                      "disclaimer",
+                      "going_concern"
+                    ]
+                  }
+                ]
+              },
+              "value": 1.5
+            },
+            {
+              "name": "fi_bank_b",
+              "label": "B级",
+              "when": {
+                "all": [
+                  {
+                    "field": "meets_minimum_capital",
+                    "op": "eq",
+                    "match": "yes"
+                  },
+                  {
+                    "field": "meets_other_capital",
+                    "op": "eq",
+                    "match": "no"
+                  }
+                ]
+              },
+              "children": [
+                {
+                  "name": "fi_bank_b_short",
+                  "label": "原始期限3个月以内或跨境货物贸易6个月以内",
+                  "note": "原始期限 3 个月以内，或跨境货物贸易 6 个月以内。",
+                  "when": {
+                    "any": [
+                      {
+                        "field": "original_maturity_months",
+                        "op": "lte",
+                        "match": 3
+                      },
+                      {
+                        "all": [
+                          {
+                            "field": "cross_border_trade",
+                            "op": "eq",
+                            "match": "yes"
+                          },
+                          {
+                            "field": "original_maturity_months",
+                            "op": "lte",
+                            "match": 6
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "value": 0.5
+                }
+              ],
+              "otherwise": {
+                "name": "fi_bank_b_general",
+                "label": "B级",
+                "value": 0.75
+              }
+            },
+            {
+              "name": "fi_bank_b_or_c",
+              "label": "B级或C级",
+              "when": {
+                "all": [
+                  {
+                    "field": "meets_other_capital",
+                    "op": "eq",
+                    "match": "unknown"
+                  }
+                ]
+              },
+              "fields": [
+                {
+                  "name": "manual_bank_grade",
+                  "label": "人工选定的级别",
+                  "meaning": "其他各级资本要求无法判断时，由人在 B 级和 C 级里选一个。不要从 Excel 映射。",
+                  "source": "manual",
+                  "type": "enum",
+                  "note": "其他各级资本要求无法判断时，在 B 级和 C 级里选一个，再按所选级别计量。",
+                  "options": [
+                    {
+                      "label": "B级",
+                      "code": "b"
+                    },
+                    {
+                      "label": "C级",
+                      "code": "c"
+                    }
+                  ]
+                }
+              ],
+              "children": [
+                {
+                  "name": "fi_bank_manual_b",
+                  "label": "B级",
+                  "when": {
+                    "all": [
+                      {
+                        "field": "manual_bank_grade",
+                        "op": "eq",
+                        "match": "b"
+                      }
+                    ]
+                  },
+                  "children": [
+                    {
+                      "name": "fi_bank_manual_b_short",
+                      "label": "原始期限3个月以内或跨境货物贸易6个月以内",
+                      "when": {
+                        "any": [
+                          {
+                            "field": "original_maturity_months",
+                            "op": "lte",
+                            "match": 3
+                          },
+                          {
+                            "all": [
+                              {
+                                "field": "cross_border_trade",
+                                "op": "eq",
+                                "match": "yes"
+                              },
+                              {
+                                "field": "original_maturity_months",
+                                "op": "lte",
+                                "match": 6
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      "value": 0.5
+                    }
+                  ],
+                  "otherwise": {
+                    "name": "fi_bank_manual_b_general",
+                    "label": "B级",
+                    "value": 0.75
+                  }
+                },
+                {
+                  "name": "fi_bank_manual_c",
+                  "label": "C级",
+                  "when": {
+                    "all": [
+                      {
+                        "field": "manual_bank_grade",
+                        "op": "eq",
+                        "match": "c"
+                      }
+                    ]
+                  },
+                  "value": 1.5
+                }
+              ]
+            },
+            {
+              "name": "fi_bank_a_plus",
+              "label": "A+级",
+              "when": {
+                "all": [
+                  {
+                    "field": "meets_minimum_capital",
+                    "op": "eq",
+                    "match": "yes"
+                  },
+                  {
+                    "field": "meets_other_capital",
+                    "op": "eq",
+                    "match": "yes"
+                  },
+                  {
+                    "field": "cet1_ratio",
+                    "op": "gte",
+                    "match": 0.14
+                  },
+                  {
+                    "field": "leverage_ratio",
+                    "op": "gte",
+                    "match": 0.05
+                  }
+                ]
+              },
+              "children": [
+                {
+                  "name": "fi_bank_a_plus_short",
+                  "label": "原始期限3个月以内或跨境货物贸易6个月以内",
+                  "note": "原始期限 3 个月以内，或跨境货物贸易 6 个月以内。",
+                  "when": {
+                    "any": [
+                      {
+                        "field": "original_maturity_months",
+                        "op": "lte",
+                        "match": 3
+                      },
+                      {
+                        "all": [
+                          {
+                            "field": "cross_border_trade",
+                            "op": "eq",
+                            "match": "yes"
+                          },
+                          {
+                            "field": "original_maturity_months",
+                            "op": "lte",
+                            "match": 6
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "value": 0.2
+                }
+              ],
+              "otherwise": {
+                "name": "fi_bank_a_plus_general",
+                "label": "A+级",
+                "value": 0.3
+              }
+            },
+            {
+              "name": "fi_bank_a",
+              "label": "A级",
+              "when": {
+                "all": [
+                  {
+                    "field": "meets_minimum_capital",
+                    "op": "eq",
+                    "match": "yes"
+                  },
+                  {
+                    "field": "meets_other_capital",
+                    "op": "eq",
+                    "match": "yes"
+                  }
+                ]
+              },
+              "children": [
+                {
+                  "name": "fi_bank_a_short",
+                  "label": "原始期限3个月以内或跨境货物贸易6个月以内",
+                  "note": "原始期限 3 个月以内，或跨境货物贸易 6 个月以内。",
+                  "when": {
+                    "any": [
+                      {
+                        "field": "original_maturity_months",
+                        "op": "lte",
+                        "match": 3
+                      },
+                      {
+                        "all": [
+                          {
+                            "field": "cross_border_trade",
+                            "op": "eq",
+                            "match": "yes"
+                          },
+                          {
+                            "field": "original_maturity_months",
+                            "op": "lte",
+                            "match": 6
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  "value": 0.2
+                }
+              ],
+              "otherwise": {
+                "name": "fi_bank_a_general",
+                "label": "A级",
+                "value": 0.4
+              }
+            }
+          ]
+        }
+      ],
+      "otherwise": {
+        "name": "fi_other",
+        "label": "其他金融机构风险暴露",
+        "children": [
+          {
+            "name": "fi_other_ig",
+            "label": "投资级其他金融机构风险暴露",
+            "when": {
+              "all": [
+                {
+                  "field": "operating_normal",
+                  "op": "eq",
+                  "match": "yes"
+                },
+                {
+                  "field": "no_major_violation_3y",
+                  "op": "eq",
+                  "match": "yes"
+                },
+                {
+                  "field": "not_on_dishonest_list",
+                  "op": "eq",
+                  "match": "yes"
+                },
+                {
+                  "field": "no_false_statements",
+                  "op": "eq",
+                  "match": "yes"
+                },
+                {
+                  "field": "annual_audit_opinion",
+                  "op": "eq",
+                  "match": "unqualified"
+                },
+                {
+                  "field": "no_default_3y",
+                  "op": "eq",
+                  "match": "yes"
+                },
+                {
+                  "field": "loan_classification_normal",
+                  "op": "eq",
+                  "match": "yes"
+                },
+                {
+                  "field": "has_listed_security",
+                  "op": "eq",
+                  "match": "yes"
+                },
+                {
+                  "field": "guarantee_reasonable",
+                  "op": "eq",
+                  "match": "yes"
+                },
+                {
+                  "field": "profit_tests_met",
+                  "op": "eq",
+                  "match": "yes"
+                },
+                {
+                  "field": "debt_ratio",
+                  "op": "lte",
+                  "match": 0.7
+                },
+                {
+                  "any": [
+                    {
+                      "field": "financial_industry",
+                      "op": "eq",
+                      "match": "yes"
+                    },
+                    {
+                      "field": "operating_cashflow_gt_finance_cost",
+                      "op": "eq",
+                      "match": "yes"
+                    }
+                  ]
+                },
+                {
+                  "field": "financials_updated_within_6m",
+                  "op": "eq",
+                  "match": "yes"
+                },
+                {
+                  "field": "no_other_material_risk",
+                  "op": "eq",
+                  "match": "yes"
+                }
+              ]
+            },
+            "value": 0.75,
+            "note": "条件写在本条里，与另一类投资级互不影响。"
+          }
+        ],
+        "otherwise": {
+          "name": "fi_other_general",
+          "label": "一般其他金融机构风险暴露",
+          "value": 1
+        }
+      }
+    },
+    {
+      "name": "re_dev",
+      "label": "房地产开发风险暴露",
+      "when": {
+        "all": [
+          {
+            "field": "counterparty_type",
+            "op": "in",
+            "match": [
+              "corporate",
+              "spe"
+            ]
+          },
+          {
+            "field": "loan_purpose",
+            "op": "in",
+            "match": [
+              "land_development",
+              "housing_construction"
+            ]
+          }
+        ]
+      },
+      "children": [
+        {
+          "name": "re_dev_prudent",
+          "label": "符合审慎要求的房地产开发风险暴露",
+          "when": {
+            "all": [
+              {
+                "field": "prudent",
+                "op": "eq",
+                "match": "yes"
+              }
+            ]
+          },
+          "value": 1
+        }
+      ],
+      "otherwise": {
+        "name": "re_dev_other",
+        "label": "其他房地产开发风险暴露",
+        "value": 1.5
+      }
+    },
+    {
+      "name": "specialized",
+      "label": "专业贷款",
+      "when": {
+        "all": [
+          {
+            "field": "spe_for_physical_asset",
+            "op": "eq",
+            "match": "yes"
+          },
+          {
+            "field": "no_independent_repayment",
+            "op": "eq",
+            "match": "yes"
+          },
+          {
+            "field": "lender_controls_asset",
+            "op": "eq",
+            "match": "yes"
+          }
+        ]
+      },
+      "children": [
+        {
+          "name": "specialized_tier2",
+          "label": "第二档银行的专业贷款",
+          "note": "按一般公司。",
+          "when": {
+            "all": [
+              {
+                "field": "bank_tier",
+                "op": "eq",
+                "match": "tier2"
+              }
+            ]
+          },
+          "value": 1
+        },
+        {
+          "name": "specialized_project",
+          "label": "项目融资",
+          "when": {
+            "all": [
+              {
+                "field": "loan_purpose",
+                "op": "eq",
+                "match": "project"
+              },
+              {
+                "field": "project_company",
+                "op": "eq",
+                "match": "yes"
+              },
+              {
+                "field": "repayment_from_project",
+                "op": "eq",
+                "match": "yes"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "specialized_project_operating",
+              "label": "运营阶段项目融资",
+              "when": {
+                "all": [
+                  {
+                    "field": "project_cashflow_covers_debt",
+                    "op": "eq",
+                    "match": "yes"
+                  },
+                  {
+                    "field": "long_term_debt_declining",
+                    "op": "eq",
+                    "match": "yes"
+                  }
+                ]
+              },
+              "value": 1
+            }
+          ],
+          "otherwise": {
+            "name": "specialized_project_pre",
+            "label": "运营前阶段项目融资",
+            "value": 1.3
+          }
+        },
+        {
+          "name": "specialized_object",
+          "label": "物品融资",
+          "when": {
+            "all": [
+              {
+                "field": "loan_purpose",
+                "op": "eq",
+                "match": "object_purchase"
+              },
+              {
+                "field": "repayment_from_lease",
+                "op": "eq",
+                "match": "yes"
+              }
+            ]
+          },
+          "value": 1
+        },
+        {
+          "name": "specialized_commodity",
+          "label": "商品融资",
+          "when": {
+            "all": [
+              {
+                "field": "loan_purpose",
+                "op": "eq",
+                "match": "commodity"
+              },
+              {
+                "field": "repayment_from_commodity_sale",
+                "op": "eq",
+                "match": "yes"
+              }
+            ]
+          },
+          "value": 1
+        }
+      ]
+    },
+    {
+      "name": "re_mixed",
+      "label": "居住用房地产和商用房地产共同抵押",
+      "note": "先选定再归入居住用或商用。 选定居住用或商用后，再用对应类别的权重。",
+      "when": {
+        "all": [
+          {
+            "field": "has_property_collateral",
+            "op": "eq",
+            "match": "yes"
+          },
+          {
+            "field": "property_uses",
+            "op": "contains",
+            "match": "residential"
+          },
+          {
+            "any": [
+              {
+                "field": "property_uses",
+                "op": "contains",
+                "match": "commercial"
+              },
+              {
+                "field": "property_uses",
+                "op": "contains",
+                "match": "mixed_use"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "re_residential",
+      "label": "居住用房地产风险暴露",
+      "when": {
+        "all": [
+          {
+            "field": "has_property_collateral",
+            "op": "eq",
+            "match": "yes"
+          },
+          {
+            "field": "property_uses",
+            "op": "contains",
+            "match": "residential"
+          }
+        ]
+      },
+      "children": [
+        {
+          "name": "re_residential_tier2",
+          "label": "第二档银行的居住用房地产风险暴露",
+          "when": {
+            "all": [
+              {
+                "field": "bank_tier",
+                "op": "eq",
+                "match": "tier2"
+              }
+            ]
+          },
+          "weight": {
+            "same_as": "counterparty_ordinary_claim"
+          },
+          "note": "《商业银行资本管理办法》第七十一条，第二档不单独划分居住用房地产风险暴露，按照交易对手风险权重计量。"
+        },
+        {
+          "name": "re_residential_independent",
+          "label": "不实质性依赖房地产所产生的现金流",
+          "when": {
+            "all": [
+              {
+                "field": "cashflow_dependent",
+                "op": "eq",
+                "match": "no"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "re_residential_indep_imprudent",
+              "label": "不符合审慎要求",
+              "when": {
+                "all": [
+                  {
+                    "field": "prudent",
+                    "op": "eq",
+                    "match": "no"
+                  }
+                ]
+              },
+              "weight": {
+                "same_as": "counterparty_ordinary_claim"
+              },
+              "note": "《商业银行资本管理办法》第七十一条，还款不实质性依赖现金流且不符合审慎要求的，按照交易对手风险权重计量。"
+            },
+            {
+              "name": "re_residential_indep_low",
+              "label": "贷款价值比不超过50%",
+              "when": {
+                "all": [
+                  {
+                    "field": "ltv",
+                    "op": "lte",
+                    "match": 0.5
+                  }
+                ]
+              },
+              "value": 0.2
+            },
+            {
+              "name": "re_residential_indep_60",
+              "label": "贷款价值比高于50%、不超过60%",
+              "when": {
+                "all": [
+                  {
+                    "field": "ltv",
+                    "op": "gt",
+                    "match": 0.5
+                  },
+                  {
+                    "field": "ltv",
+                    "op": "lte",
+                    "match": 0.6
+                  }
+                ]
+              },
+              "value": 0.25
+            },
+            {
+              "name": "re_residential_indep_70",
+              "label": "贷款价值比高于60%、不超过70%",
+              "when": {
+                "all": [
+                  {
+                    "field": "ltv",
+                    "op": "gt",
+                    "match": 0.6
+                  },
+                  {
+                    "field": "ltv",
+                    "op": "lte",
+                    "match": 0.7
+                  }
+                ]
+              },
+              "value": 0.3
+            },
+            {
+              "name": "re_residential_indep_80",
+              "label": "贷款价值比高于70%、不超过80%",
+              "when": {
+                "all": [
+                  {
+                    "field": "ltv",
+                    "op": "gt",
+                    "match": 0.7
+                  },
+                  {
+                    "field": "ltv",
+                    "op": "lte",
+                    "match": 0.8
+                  }
+                ]
+              },
+              "value": 0.35
+            },
+            {
+              "name": "re_residential_indep_90",
+              "label": "贷款价值比高于80%、不超过90%",
+              "when": {
+                "all": [
+                  {
+                    "field": "ltv",
+                    "op": "gt",
+                    "match": 0.8
+                  },
+                  {
+                    "field": "ltv",
+                    "op": "lte",
+                    "match": 0.9
+                  }
+                ]
+              },
+              "value": 0.4
+            },
+            {
+              "name": "re_residential_indep_100",
+              "label": "贷款价值比高于90%、不超过100%",
+              "when": {
+                "all": [
+                  {
+                    "field": "ltv",
+                    "op": "gt",
+                    "match": 0.9
+                  },
+                  {
+                    "field": "ltv",
+                    "op": "lte",
+                    "match": 1
+                  }
+                ]
+              },
+              "value": 0.5
+            },
+            {
+              "name": "re_residential_indep_high",
+              "label": "贷款价值比超过100%",
+              "when": {
+                "all": [
+                  {
+                    "field": "ltv",
+                    "op": "gt",
+                    "match": 1
+                  }
+                ]
+              },
+              "weight": {
+                "same_as": "counterparty_ordinary_claim"
+              },
+              "note": "《商业银行资本管理办法》第七十一条，贷款价值比 100% 以上按照交易对手风险权重计量。"
+            }
+          ]
+        },
+        {
+          "name": "re_residential_dependent",
+          "label": "实质性依赖房地产所产生的现金流",
+          "when": {
+            "all": [
+              {
+                "field": "cashflow_dependent",
+                "op": "eq",
+                "match": "yes"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "re_residential_dep_imprudent",
+              "label": "不符合审慎要求",
+              "when": {
+                "all": [
+                  {
+                    "field": "prudent",
+                    "op": "eq",
+                    "match": "no"
+                  }
+                ]
+              },
+              "value": 1.5,
+              "note": "《商业银行资本管理办法》第七十一条，还款实质性依赖现金流且不符合审慎要求的，风险权重为 150%。"
+            },
+            {
+              "name": "re_residential_dep_low",
+              "label": "贷款价值比不超过50%",
+              "when": {
+                "all": [
+                  {
+                    "field": "ltv",
+                    "op": "lte",
+                    "match": 0.5
+                  }
+                ]
+              },
+              "value": 0.3
+            },
+            {
+              "name": "re_residential_dep_60",
+              "label": "贷款价值比高于50%、不超过60%",
+              "when": {
+                "all": [
+                  {
+                    "field": "ltv",
+                    "op": "gt",
+                    "match": 0.5
+                  },
+                  {
+                    "field": "ltv",
+                    "op": "lte",
+                    "match": 0.6
+                  }
+                ]
+              },
+              "value": 0.35
+            },
+            {
+              "name": "re_residential_dep_70",
+              "label": "贷款价值比高于60%、不超过70%",
+              "when": {
+                "all": [
+                  {
+                    "field": "ltv",
+                    "op": "gt",
+                    "match": 0.6
+                  },
+                  {
+                    "field": "ltv",
+                    "op": "lte",
+                    "match": 0.7
+                  }
+                ]
+              },
+              "value": 0.45
+            },
+            {
+              "name": "re_residential_dep_80",
+              "label": "贷款价值比高于70%、不超过80%",
+              "when": {
+                "all": [
+                  {
+                    "field": "ltv",
+                    "op": "gt",
+                    "match": 0.7
+                  },
+                  {
+                    "field": "ltv",
+                    "op": "lte",
+                    "match": 0.8
+                  }
+                ]
+              },
+              "value": 0.5
+            },
+            {
+              "name": "re_residential_dep_90",
+              "label": "贷款价值比高于80%、不超过90%",
+              "when": {
+                "all": [
+                  {
+                    "field": "ltv",
+                    "op": "gt",
+                    "match": 0.8
+                  },
+                  {
+                    "field": "ltv",
+                    "op": "lte",
+                    "match": 0.9
+                  }
+                ]
+              },
+              "value": 0.6
+            },
+            {
+              "name": "re_residential_dep_100",
+              "label": "贷款价值比高于90%、不超过100%",
+              "when": {
+                "all": [
+                  {
+                    "field": "ltv",
+                    "op": "gt",
+                    "match": 0.9
+                  },
+                  {
+                    "field": "ltv",
+                    "op": "lte",
+                    "match": 1
+                  }
+                ]
+              },
+              "value": 0.75
+            },
+            {
+              "name": "re_residential_dep_high",
+              "label": "贷款价值比超过100%",
+              "when": {
+                "all": [
+                  {
+                    "field": "ltv",
+                    "op": "gt",
+                    "match": 1
+                  }
+                ]
+              },
+              "value": 1.05
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "re_commercial",
+      "label": "商用房地产风险暴露",
+      "when": {
+        "all": [
+          {
+            "field": "has_property_collateral",
+            "op": "eq",
+            "match": "yes"
+          },
+          {
+            "any": [
+              {
+                "field": "property_uses",
+                "op": "contains",
+                "match": "commercial"
+              },
+              {
+                "field": "property_uses",
+                "op": "contains",
+                "match": "mixed_use"
+              }
+            ]
+          }
+        ]
+      },
+      "children": [
+        {
+          "name": "re_commercial_tier2",
+          "label": "第二档银行的商用房地产风险暴露",
+          "when": {
+            "all": [
+              {
+                "field": "bank_tier",
+                "op": "eq",
+                "match": "tier2"
+              }
+            ]
+          },
+          "weight": {
+            "same_as": "counterparty_ordinary_claim"
+          },
+          "note": "《商业银行资本管理办法》第七十二条，第二档不单独划分商用房地产风险暴露，按照交易对手风险权重计量。"
+        },
+        {
+          "name": "re_commercial_independent",
+          "label": "不实质性依赖房地产所产生的现金流",
+          "when": {
+            "all": [
+              {
+                "field": "cashflow_dependent",
+                "op": "eq",
+                "match": "no"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "re_commercial_indep_imprudent",
+              "label": "不符合审慎要求",
+              "when": {
+                "all": [
+                  {
+                    "field": "prudent",
+                    "op": "eq",
+                    "match": "no"
+                  }
+                ]
+              },
+              "weight": {
+                "same_as": "counterparty_ordinary_claim"
+              },
+              "note": "《商业银行资本管理办法》第七十二条，还款不实质性依赖现金流且不符合审慎要求的，按照交易对手风险权重计量。"
+            },
+            {
+              "name": "re_commercial_indep_low",
+              "label": "不依赖现金流且贷款价值比不超过60%",
+              "when": {
+                "all": [
+                  {
+                    "field": "ltv",
+                    "op": "lte",
+                    "match": 0.6
+                  }
+                ]
+              },
+              "value": 0.65
+            }
+          ],
+          "otherwise": {
+            "name": "re_commercial_indep_rest",
+            "label": "不依赖现金流且贷款价值比超过60%",
+            "weight": {
+              "same_as": "counterparty_ordinary_claim"
+            },
+            "note": "《商业银行资本管理办法》第七十二条，贷款价值比 60% 以上按照交易对手风险权重计量。"
+          }
+        },
+        {
+          "name": "re_commercial_dependent",
+          "label": "实质性依赖房地产所产生的现金流",
+          "when": {
+            "all": [
+              {
+                "field": "cashflow_dependent",
+                "op": "eq",
+                "match": "yes"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "re_commercial_dep_imprudent",
+              "label": "不符合审慎要求",
+              "when": {
+                "all": [
+                  {
+                    "field": "prudent",
+                    "op": "eq",
+                    "match": "no"
+                  }
+                ]
+              },
+              "value": 1.5,
+              "note": "《商业银行资本管理办法》第七十二条，还款实质性依赖现金流且不符合审慎要求的，风险权重为 150%。"
+            },
+            {
+              "name": "re_commercial_dep_low",
+              "label": "依赖现金流且贷款价值比不超过60%",
+              "when": {
+                "all": [
+                  {
+                    "field": "ltv",
+                    "op": "lte",
+                    "match": 0.6
+                  }
+                ]
+              },
+              "value": 0.75
+            },
+            {
+              "name": "re_commercial_dep_mid",
+              "label": "依赖现金流且贷款价值比高于60%、不超过80%",
+              "when": {
+                "all": [
+                  {
+                    "field": "ltv",
+                    "op": "gt",
+                    "match": 0.6
+                  },
+                  {
+                    "field": "ltv",
+                    "op": "lte",
+                    "match": 0.8
+                  }
+                ]
+              },
+              "weight": {
+                "greater_of": [
+                  0.9,
+                  {
+                    "same_as": "counterparty_ordinary_claim"
+                  }
+                ]
+              },
+              "note": "《商业银行资本管理办法》第七十二条，取 90% 与交易对手风险权重中的较大值。"
+            },
+            {
+              "name": "re_commercial_dep_high",
+              "label": "依赖现金流且贷款价值比超过80%",
+              "when": {
+                "all": [
+                  {
+                    "field": "ltv",
+                    "op": "gt",
+                    "match": 0.8
+                  }
+                ]
+              },
+              "value": 1.1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "retail",
+      "label": "个人风险暴露",
+      "when": {
+        "all": [
+          {
+            "field": "counterparty_type",
+            "op": "eq",
+            "match": "individual"
+          }
+        ]
+      },
+      "children": [
+        {
+          "name": "retail_regulatory",
+          "label": "监管零售个人风险暴露",
+          "when": {
+            "all": [
+              {
+                "field": "single_exposure",
+                "op": "lte",
+                "match": 10000000
+              },
+              {
+                "field": "exposure_share",
+                "op": "lte",
+                "match": 0.005
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "retail_transactor",
+              "label": "合格交易者个人风险暴露",
+              "when": {
+                "all": [
+                  {
+                    "field": "is_credit_card",
+                    "op": "eq",
+                    "match": "yes"
+                  },
+                  {
+                    "field": "transactor_clean",
+                    "op": "eq",
+                    "match": "yes"
+                  }
+                ]
+              },
+              "value": 0.45
+            }
+          ],
+          "otherwise": {
+            "name": "retail_regulatory_other",
+            "label": "其他监管零售个人风险暴露",
+            "value": 0.75
+          }
+        }
+      ],
+      "otherwise": {
+        "name": "retail_other",
+        "label": "其他个人风险暴露",
+        "value": 1
+      }
+    },
+    {
+      "name": "corporate_general",
+      "label": "一般公司风险暴露",
+      "when": {
+        "all": [
+          {
+            "field": "counterparty_type",
+            "op": "in",
+            "match": [
+              "corporate",
+              "partnership",
+              "sole_proprietorship",
+              "spe",
+              "other_non_individual"
+            ]
+          }
+        ]
+      },
+      "children": [
+        {
+          "name": "corporate_micro",
+          "label": "小微企业风险暴露",
+          "when": {
+            "all": [
+              {
+                "field": "enterprise_size",
+                "op": "in",
+                "match": [
+                  "micro",
+                  "small"
+                ]
+              },
+              {
+                "field": "single_exposure",
+                "op": "lte",
+                "match": 10000000
+              },
+              {
+                "field": "exposure_share",
+                "op": "lte",
+                "match": 0.005
+              }
+            ]
+          },
+          "value": 0.75
+        },
+        {
+          "name": "corporate_ig",
+          "label": "投资级公司风险暴露",
+          "when": {
+            "all": [
+              {
+                "field": "operating_normal",
+                "op": "eq",
+                "match": "yes"
+              },
+              {
+                "field": "no_major_violation_3y",
+                "op": "eq",
+                "match": "yes"
+              },
+              {
+                "field": "not_on_dishonest_list",
+                "op": "eq",
+                "match": "yes"
+              },
+              {
+                "field": "no_false_statements",
+                "op": "eq",
+                "match": "yes"
+              },
+              {
+                "field": "annual_audit_opinion",
+                "op": "eq",
+                "match": "unqualified"
+              },
+              {
+                "field": "no_default_3y",
+                "op": "eq",
+                "match": "yes"
+              },
+              {
+                "field": "loan_classification_normal",
+                "op": "eq",
+                "match": "yes"
+              },
+              {
+                "field": "has_listed_security",
+                "op": "eq",
+                "match": "yes"
+              },
+              {
+                "field": "guarantee_reasonable",
+                "op": "eq",
+                "match": "yes"
+              },
+              {
+                "field": "profit_tests_met",
+                "op": "eq",
+                "match": "yes"
+              },
+              {
+                "field": "debt_ratio",
+                "op": "lte",
+                "match": 0.7
+              },
+              {
+                "any": [
+                  {
+                    "field": "financial_industry",
+                    "op": "eq",
+                    "match": "yes"
+                  },
+                  {
+                    "field": "operating_cashflow_gt_finance_cost",
+                    "op": "eq",
+                    "match": "yes"
+                  }
+                ]
+              },
+              {
+                "field": "financials_updated_within_6m",
+                "op": "eq",
+                "match": "yes"
+              },
+              {
+                "field": "no_other_material_risk",
+                "op": "eq",
+                "match": "yes"
+              }
+            ]
+          },
+          "children": [
+            {
+              "name": "corporate_ig_tier2",
+              "label": "第二档银行不单独划分投资级公司",
+              "note": "第二档不单独划分投资级，按一般公司。",
+              "when": {
+                "all": [
+                  {
+                    "field": "bank_tier",
+                    "op": "eq",
+                    "match": "tier2"
+                  }
+                ]
+              },
+              "value": 1
+            }
+          ],
+          "otherwise": {
+            "name": "corporate_ig_tier1",
+            "label": "投资级公司风险暴露",
+            "value": 0.75
+          },
+          "note": "条件写在本条里，与另一类投资级互不影响。"
+        },
+        {
+          "name": "corporate_sme",
+          "label": "中小企业风险暴露",
+          "when": {
+            "all": [
+              {
+                "field": "revenue_last_year",
+                "op": "lte",
+                "match": 300000000
+              },
+              {
+                "field": "enterprise_size",
+                "op": "in",
+                "match": [
+                  "medium",
+                  "small",
+                  "micro"
+                ]
+              }
+            ]
+          },
+          "value": 0.85
+        }
+      ],
+      "otherwise": {
+        "name": "corporate_other",
+        "label": "其他一般公司风险暴露",
+        "value": 1
+      }
+    },
+    {
+      "name": "other_asset",
+      "label": "其他资产",
+      "note": "《商业银行资本管理办法》第八十一条。没有交易对手的表内资产，如固定资产、无形资产和递延费用。",
+      "when": {
+        "all": [
+          {
+            "field": "instrument_type",
+            "op": "eq",
+            "match": "other_asset"
+          }
+        ]
+      },
+      "value": 1
+    }
+  ],
+  "otherwise": {
+    "name": "unclassified",
+    "label": "未归类"
+  },
+  "extensions": [
+    {
+      "example": true,
+      "note": "可删除。挂在 fi_other_general 下再拆。",
+      "attach_to": "fi_other_general",
+      "fields": [
+        {
+          "name": "intra_group",
+          "label": "是否集团成员",
+          "meaning": "例子。这家企业集团财务公司是不是本集团成员。",
+          "source": "column",
+          "type": "enum",
+          "options": [
+            {
+              "label": "是",
+              "code": "yes"
+            },
+            {
+              "label": "否",
+              "code": "no"
+            }
+          ]
+        }
+      ],
+      "children": [
+        {
+          "name": "fi_intra_group_finance_co",
+          "label": "集团内的企业集团财务公司",
+          "when": {
+            "all": [
+              {
+                "field": "fi_subtype",
+                "op": "eq",
+                "match": "group_finance_company"
+              },
+              {
+                "field": "intra_group",
+                "op": "eq",
+                "match": "yes"
+              }
+            ]
+          }
+        },
+        {
+          "name": "fi_extra_group_finance_co",
+          "label": "集团外的企业集团财务公司",
+          "when": {
+            "all": [
+              {
+                "field": "fi_subtype",
+                "op": "eq",
+                "match": "group_finance_company"
+              },
+              {
+                "field": "intra_group",
+                "op": "eq",
+                "match": "no"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "example": true,
+      "note": "可删除。挂在 corporate_general 上，小微、投资级、中小、其他一般公司命中后都可再按产品拆。产品取值在 options 里加。",
+      "attach_to": "corporate_general",
+      "fields": [
+        {
+          "name": "product_name",
+          "label": "产品",
+          "meaning": "例子。银行内部的产品名称。新增值先加在 options，再把 Excel 里的产品名对到 code。",
+          "source": "column",
+          "type": "enum",
+          "extensible": true,
+          "options": [
+            {
+              "label": "贸易融资",
+              "code": "trade_finance"
+            },
+            {
+              "label": "流动资金贷款",
+              "code": "working_capital"
+            },
+            {
+              "label": "银团贷款",
+              "code": "syndicated"
+            }
+          ]
+        }
+      ],
+      "children": [
+        {
+          "name": "product_trade_finance",
+          "label": "贸易融资",
+          "when": {
+            "all": [
+              {
+                "field": "product_name",
+                "op": "eq",
+                "match": "trade_finance"
+              }
+            ]
+          },
+          "fields": [
+            {
+              "name": "sight_lc",
+              "label": "是否即期信用证",
+              "meaning": "例子。这笔贸易融资是不是即期信用证。只在贸易融资这一支使用。",
+              "source": "column",
+              "type": "enum",
+              "note": "例子。只在贸易融资这一支使用，流动资金贷款不填这个字段。",
+              "options": [
+                {
+                  "label": "是",
+                  "code": "yes"
+                },
+                {
+                  "label": "否",
+                  "code": "no"
+                }
+              ]
+            }
+          ],
+          "children": [
+            {
+              "name": "tf_sight_lc",
+              "label": "即期信用证",
+              "when": {
+                "all": [
+                  {
+                    "field": "sight_lc",
+                    "op": "eq",
+                    "match": "yes"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "product_working_capital",
+          "label": "流动资金贷款",
+          "when": {
+            "all": [
+              {
+                "field": "product_name",
+                "op": "eq",
+                "match": "working_capital"
+              }
+            ]
+          },
+          "fields": [
+            {
+              "name": "revolving",
+              "label": "是否循环额度",
+              "meaning": "例子。这笔流动资金贷款是不是循环额度。只在流动资金贷款这一支使用。",
+              "source": "column",
+              "type": "enum",
+              "note": "例子。只在流动资金贷款这一支使用。",
+              "options": [
+                {
+                  "label": "是",
+                  "code": "yes"
+                },
+                {
+                  "label": "否",
+                  "code": "no"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "excel": [
+    {
+      "example": true,
+      "note": "可删除。大模型按这个样子写。field 填字段 name。columns 填 Excel 表头。单元格原文作 values 的键，值必须是该字段的 code。数字字段不写 values。",
+      "field": "is_defaulted",
+      "columns": [
+        "是否违约"
+      ],
+      "values": {
+        "是": "yes",
+        "否": "no"
+      }
+    },
+    {
+      "example": true,
+      "note": "可删除。一个字段来自多列时，把表头都写进 columns，在 how 里写怎么得到字段值。",
+      "field": "ltv",
+      "columns": [
+        "贷款余额",
+        "押品评估价值"
+      ],
+      "how": "贷款余额 / 押品评估价值，结果用比值，50% 写成 0.5"
+    }
+  ]
+}
