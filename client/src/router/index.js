@@ -60,7 +60,7 @@ const routes = [
   { path: '/tree', name: 'tree', component: TreeView, meta: { group: '暴露分类规则', title: '暴露分类决策树', blurb: '决策树根据实际配置动态生成；可高亮指定债项的实际命中路径，并对未命中、冲突或字段缺失的路径给出提示', sections: treeTabs } },
   { path: '/weights', name: 'weights', component: WeightsView, meta: { group: '暴露分类规则', title: '风险权重', blurb: '权重表。没有单列的档位保持未列明。', sections: treeTabs } },
   { path: '/assistant', name: 'assistant', component: AssistantView, meta: { group: '暴露分类规则', title: '自然语言规则配置助手', blurb: '先识别再生成。生成的规则要确认后才保存，对话是预置脚本。' } },
-  { path: '/ead-on', name: 'ead-on', component: EadView, props: { side: 'on' }, meta: { group: 'EAD 计算规则', title: '表内 EAD', blurb: '按产品维护。债权类一般为账面余额减去减值准备。' } },
+  { path: '/ead-on', name: 'ead-on', component: EadView, props: { side: 'on' }, meta: { group: 'EAD 计算规则', title: '表内 EAD', blurb: '先选定产品，再新增或试算该产品的规则。' } },
   { path: '/ead-off', name: 'ead-off', component: EadView, props: { side: 'off' }, meta: { group: 'EAD 计算规则', title: '表外 EAD', blurb: '先选定产品，再用该产品的信用转换系数。', sections: eadOffTabs } },
   { path: '/ccf', name: 'ccf', component: CcfView, meta: { group: 'EAD 计算规则', title: '信用转换系数', blurb: '一行是一种表外类型加一个条件。', sections: eadOffTabs } },
   { path: '/wizard', name: 'wizard', component: WizardView, meta: { group: '计量执行', title: '信用风险 RWA 计量向导', blurb: '分步骤完成从计量范围选择、数据导入到计量结果查看的全过程', sections: wizardTabs } },

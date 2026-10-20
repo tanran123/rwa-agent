@@ -10,3 +10,4 @@ __pycache__/
 *.xlsm
 data/traces/
 **/data/traces/
+output/

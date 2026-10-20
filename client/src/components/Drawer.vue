@@ -24,7 +24,7 @@ watch(() => props.open, async (value) => {
       <div class="drawer-head">
         <h3>{{ title }}</h3>
         <div class="spacer"></div>
-        <button type="button" class="btn sm" @click="emit('close')">关闭 ✕</button>
+        <button type="button" class="modal-close" aria-label="关闭" @click="emit('close')">×</button>
       </div>
       <div class="drawer-body">
         <slot />

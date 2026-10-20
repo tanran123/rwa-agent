@@ -1,1 +1,1 @@
-"""Credit-risk assistant built on deepagents. Calculation stays in rwa_agent."""
+"""Credit-risk coordinator. Each subagent directory holds that step's program."""

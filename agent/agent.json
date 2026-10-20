@@ -1,0 +1,7 @@
+{
+  "name": "rwa-pipeline",
+  "description": "信用风险计算总控。先做风险暴露权重判断，再按名单做后续计算。",
+  "runtime": {
+    "model": "qwen-plus"
+  }
+}

@@ -42,7 +42,7 @@ onMounted(load);
           <tr v-for="row in rows" :key="row.id">
             <td>{{ row.grp }}</td>
             <td>{{ row.name }}</td>
-            <td><input v-model="draft[row.id]" style="width: 88px" /></td>
+            <td><input v-model="draft[row.id]" type="text" /></td>
             <td class="dim">{{ row.usedFor }}</td>
             <td><button type="button" class="btn sm" @click="save(row)">保存</button></td>
           </tr>

@@ -1,6 +1,6 @@
 # 分类 JSON 怎么变成决策树
 
-文件：`交付/exposure-weight-decision/rwa_agent/exposure_class.py`。规则文件：同目录 `knowledge/权重法风险暴露分类.json`。字段和规则的写法见 `archive/knowledge/风险暴露分类配置说明.md`。改规则只改交付目录这份 JSON。
+文件：`agent/subagents/weight/calc/exposure_class.py`。规则文件：`交付/exposure-weight-decision/knowledge/权重法风险暴露分类.json`。字段和规则的写法见 `archive/knowledge/风险暴露分类配置说明.md`。改规则只改交付目录这份 JSON。
 
 `load_class_doc` 要求顶层是对象，且 `rules` 是数组。`class_fields` 收集顶层 `fields`，以及每条规则、`children`、`otherwise` 上的 `fields`。同名只留第一次。每条收成 `id`、`label`、`meaning`、`type`、`source`、`options`（最多 40 个，只要有 `code` 的）。`extensions` 不进入字段表，也不进入树。
 

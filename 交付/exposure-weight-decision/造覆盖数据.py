@@ -15,7 +15,7 @@ from rwa_agent.exposure_class import class_fields, prototype_flow
 from rwa_agent.paper_calc import _classify, _cond, _when, _walk
 
 ROOT = Path(__file__).resolve().parent
-OUT = ROOT / "同业_模拟.xlsx"
+OUT = ROOT / "samples" / "同业_模拟.xlsx"
 
 TONGYE_HEADERS = [
     "GL A/C No.",

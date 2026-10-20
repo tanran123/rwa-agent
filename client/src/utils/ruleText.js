@@ -80,13 +80,51 @@ const CODE_LABELS = {
 
 export const OP_LABELS = {
   eq: "等于",
-  in: "属于集合",
+  in: "是其中任意一个",
   contains: "含有",
   gt: "大于",
   gte: "大于等于",
   lt: "小于",
   lte: "小于等于"
 };
+
+function shownValue(raw, codes) {
+  const text = codeText(raw, codes);
+  if (typeof raw === "number") return text;
+  return "「" + text + "」";
+}
+
+function shownValues(match, codes) {
+  const list = Array.isArray(match) ? match : [match];
+  return list.map((item) => shownValue(item, codes)).join("或");
+}
+
+export function conditionSentence(item, book) {
+  if (!item) return "—";
+  const labels = book && book.labels ? book.labels : {};
+  const codes = book && book.codes ? book.codes : {};
+  const field = "「" + (labels[item.field] || item.field || "—") + "」";
+  const value = shownValues(item.match, codes);
+  const op = item.op || "eq";
+  if (op === "eq") return field + "等于" + value;
+  if (op === "in") return field + "是" + value + "中的任意一个";
+  if (op === "contains") return field + "里含有" + value;
+  if (op === "gt") return field + "大于" + value;
+  if (op === "gte") return field + "大于等于" + value;
+  if (op === "lt") return field + "小于" + value;
+  if (op === "lte") return field + "小于等于" + value;
+  return field + (OP_LABELS[op] || op) + value;
+}
+
+export function whenIntro(when) {
+  const key = whenKey(when);
+  if (key !== "all" && key !== "any") return "";
+  const items = when[key] || [];
+  const nested = items.some((item) => item && (item.all || item.any));
+  if (!nested && items.length <= 1) return "这一条要成立";
+  if (key === "all") return "下面每一条都要成立";
+  return "下面有一条成立即可";
+}
 
 export function pct2(value) {
   const n = Number(value);
@@ -127,15 +165,11 @@ export function whenKey(when) {
 export function summarizeWhen(when, book) {
   if (!when) return "—";
   const key = whenKey(when);
-  if (key === "field") {
-    const value = Array.isArray(when.match) ? when.match.map((item) => codeText(item, book.codes)).join("|") : codeText(when.match, book.codes);
-    return (book.labels[when.field] || when.field) + " " + (OP_LABELS[when.op] || when.op || "等于") + " " + value;
-  }
+  if (key === "field") return conditionSentence(when, book);
   if (!key) return "—";
   const parts = when[key].map((item) => {
-    if (item && (item.all || item.any)) return "(" + summarizeWhen(item, book) + ")";
-    const value = Array.isArray(item.match) ? item.match.map((code) => codeText(code, book.codes)).join("|") : codeText(item.match, book.codes);
-    return (book.labels[item.field] || item.field) + " " + (OP_LABELS[item.op] || item.op || "等于") + " " + value;
+    if (item && (item.all || item.any)) return "（" + summarizeWhen(item, book) + "）";
+    return conditionSentence(item, book);
   });
-  return parts.join(key === "all" ? " 且 " : " 或 ");
+  return parts.join(key === "all" ? "，并且" : "，或者");
 }

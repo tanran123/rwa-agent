@@ -117,14 +117,11 @@ async function copyJson() {
         <div class="panel-head"><h3>判断条件</h3></div>
         <div class="panel-body">
           <template v-if="node.skip">
-            <div class="cond-group-label">skip — 本产品不适用这条时整段跳过</div>
+            <div class="cond-group-label">本产品不适用这条时，整段跳过</div>
             <WhenList :when="node.skip.field ? node.skip : node.skip" :book="book" />
             <div class="hint" style="margin: 6px 0 10px; font-size: 11px; color: var(--ink-3)">skip 成立就当没有这条，子级也不进；被跳过的那条 when 本来会命中时，不再走同一层的 otherwise，退回外层继续下一条。</div>
           </template>
-          <template v-if="whenKey(node.when)">
-            <div class="cond-group-label">{{ whenKey(node.when) === "any" ? "when.any — 以下成立一条即可" : "when.all — 以下每一条都要成立" }}</div>
-            <WhenList :when="node.when" :book="book" />
-          </template>
+          <WhenList v-if="whenKey(node.when)" :when="node.when" :book="book" />
           <p v-if="!node.skip && !whenKey(node.when)" class="dim">这一层没有单独写 when。</p>
         </div>
       </div>

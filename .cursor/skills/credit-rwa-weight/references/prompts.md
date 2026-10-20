@@ -1,6 +1,6 @@
 # 通义千问提示词
 
-调用在 `交付/exposure-weight-decision/rwa_agent/model.py` 的 `_complete`。模型默认 `qwen-plus`，地址默认 `https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions`，`temperature` 为 0。密钥读本目录 `.env` 的 `DASHSCOPE_API_KEY`，没有则读 `QWEN_API_KEY`。`QWEN_BASE_URL`、`QWEN_MODEL` 可以覆盖默认值。
+调用在 `agent/subagents/weight/calc/model.py` 的 `_complete`。模型默认 `qwen-plus`，地址默认 `https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions`，`temperature` 为 0。密钥读 `交付/exposure-weight-decision/.env` 的 `DASHSCOPE_API_KEY`，没有则读 `QWEN_API_KEY`。`QWEN_BASE_URL`、`QWEN_MODEL` 可以覆盖默认值。
 
 返回正文用 `_extract_json` 取出一个 JSON 对象。改下面任一段时，同时改对应的 Python 函数和本文件。
 

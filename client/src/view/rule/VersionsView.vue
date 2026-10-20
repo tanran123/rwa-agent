@@ -3,6 +3,7 @@ import { computed, ref } from "vue";
 import { fetchRuleVersions } from "@/api/rule";
 import { useContext } from "@/composables/useContext";
 import AsyncView from "@/components/AsyncView.vue";
+import Drawer from "@/components/Drawer.vue";
 
 const { session } = useContext();
 const jur = ref("");
@@ -62,7 +63,7 @@ function open(row) {
               <tr><th>司法管辖区</th><th>版本编号</th><th>规则名称</th><th>规则类型</th><th>生效日期</th><th>适用机构</th><th>状态</th><th>维护人</th><th>操作</th></tr>
             </thead>
             <tbody>
-              <tr v-for="row in shown(data)" :key="row.id" class="clickable" :class="{ sel: session.versionId === row.id }" @click="picked = row">
+              <tr v-for="row in shown(data)" :key="row.id" class="clickable" :class="{ sel: picked && picked.id === row.id }" @click="picked = row">
                 <td>{{ jurLabel(row.jurisdiction) }}</td>
                 <td class="mono">{{ row.version }}</td>
                 <td>{{ row.name }}</td>
@@ -77,14 +78,22 @@ function open(row) {
           </table>
         </div>
       </div>
-      <div v-if="picked" class="panel">
-        <div class="panel-head"><h3>版本详情 · {{ picked.version }}</h3></div>
-        <div class="panel-body">
-          <p>规则名称 {{ picked.name }} · {{ jurLabel(picked.jurisdiction) }} · {{ picked.institution }}</p>
-          <p>生效 {{ picked.effectiveFrom }}<span v-if="picked.effectiveTo">，失效 {{ picked.effectiveTo }}</span></p>
-          <p class="dim">{{ picked.changelog }}</p>
-        </div>
-      </div>
     </template>
   </AsyncView>
+  <Drawer :open="!!picked" :title="picked ? '版本详情 · ' + picked.version : ''" @close="picked = null">
+    <div v-if="picked" class="panel">
+      <div class="panel-body">
+        <div class="kv">
+          <div class="k">规则名称</div><div class="v">{{ picked.name }}</div>
+          <div class="k">地区</div><div class="v">{{ jurLabel(picked.jurisdiction) }}</div>
+          <div class="k">规则类型</div><div class="v">{{ picked.ruleType }}</div>
+          <div class="k">适用机构</div><div class="v">{{ picked.institution }}</div>
+          <div class="k">状态</div><div class="v">{{ labels[picked.status] || picked.status }}</div>
+          <div class="k">生效</div><div class="v">{{ picked.effectiveFrom }}<template v-if="picked.effectiveTo"> 至 {{ picked.effectiveTo }}</template></div>
+          <div class="k">维护人</div><div class="v">{{ picked.author }}</div>
+          <div class="k">变更说明</div><div class="v">{{ picked.changelog }}</div>
+        </div>
+      </div>
+    </div>
+  </Drawer>
 </template>

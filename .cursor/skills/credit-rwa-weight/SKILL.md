@@ -6,7 +6,7 @@ description: >-
 
 # 风险暴露权重决策
 
-程序目录是 `交付/exposure-weight-decision`。下面的命令都在这个目录执行。分类和权重只读这里的 `knowledge/权重法风险暴露分类.json`。
+计算程序在 `agent/subagents/weight/`。下面的命令仍在 `交付/exposure-weight-decision` 执行。分类和权重只读这里的 `knowledge/权重法风险暴露分类.json`。
 
 `archive/` 里的 `rwa_agent/`、`web/`、`knowledge/风险暴露分类.json`、`knowledge/底稿模型计算.json` 是另一套。不要改那一套来影响这次结果，也不要把那份缓存当成这次的输出。
 
@@ -21,7 +21,7 @@ description: >-
 
 必须有用户给出的信用风险底稿，扩展名是 `.xlsx`。路径不存在就停下来，向用户要文件。不要换成别的工作簿，也不要用 `造覆盖数据.py` 生成的表充数。
 
-可以另给结果 Excel 的路径。不给则写到与底稿同一目录，文件名是 `工作簿名_风险暴露分类.xlsx`。
+可以另给结果 Excel 的路径。底稿在 `交付/exposure-weight-decision/` 里面时，不给则写到仓库根目录 `output/workbooks/工作簿名_风险暴露分类.xlsx`。底稿在这个目录以外时，写到与底稿同一目录，文件名是 `工作簿名_风险暴露分类.xlsx`。留痕一律写到 `output/traces/`。
 
 运行环境：
 
@@ -49,7 +49,7 @@ python -m rwa_agent.paper_calc 工作簿.xlsx
 第二个参数是结果 Excel 路径，可以省略。
 
 5. 成功时标准输出正好三行：结果 Excel 路径、留痕 JSON 路径、`敞口 … 亿  风险加权资产 … 亿`。回复只用这三行里的路径和数字。失败则说明错误原文，不要编一个敞口或权重。
-6. 用户要解释某一笔时，打开同名的 `data/traces/工作簿名-计算留痕.md`，按源表名和 Excel 行号找到那一节。只引用该节写出的取值、命中规则、公式和代入。用规则名回到 `knowledge/权重法风险暴露分类.json` 里 `name` 相同的那一条。留痕没写的分支不要补。
+6. 用户要解释某一笔时，打开同名的 `output/traces/工作簿名-计算留痕.md`，按源表名和 Excel 行号找到那一节。只引用该节写出的取值、命中规则、公式和代入。用规则名回到 `knowledge/权重法风险暴露分类.json` 里 `name` 相同的那一条。留痕没写的分支不要补。
 
 用户要按流水线顺序算整本书时，不要在这里改命令。使用技能 `credit-rwa-pipeline`，执行 `python -m rwa_agent.pipeline 工作簿.xlsx`。这一步在 `STEPS` 里的名字是 `weight`，实现是 `rwa_agent/steps/weight.py`，内部仍调用 `run_workbook`。
 
@@ -62,7 +62,7 @@ python -m rwa_agent.paper_calc 工作簿.xlsx
 
 ### 检查每个末端能不能走到
 
-只有用户明确要求覆盖决策树每个末端时，才在该目录执行 `python 造覆盖数据.py`。它按每个末端造一行，写出 `同业_模拟.xlsx`。再用这本书跑「计算一本工作簿」，看留痕是否进了对应规则。这本书不代替正式底稿。
+只有用户明确要求覆盖决策树每个末端时，才在该目录执行 `python 造覆盖数据.py`。它按每个末端造一行，写出 `samples/同业_模拟.xlsx`。再用这本书跑「计算一本工作簿」，看留痕是否进了对应规则。这本书不代替正式底稿。
 
 ## 输出格式
 
@@ -84,4 +84,4 @@ python -m rwa_agent.paper_calc 工作簿.xlsx
 - 不要编造权重、条款号，或底稿里没有的金额。
 - 金额沿用底稿口径。命令行的敞口和风险加权资产单位是亿元。留痕里的 `ead`、`rwa` 与源表金额列同一单位。
 - 通义千问只做选表、表头对应、规则停住后补条件。提示词和采纳规则在 [references/prompts.md](references/prompts.md)。不要在对话里另写一套提示词去算权重。
-- 命令行 `paper_calc` 不读 `knowledge/底稿模型计算.json`。不要手改这份缓存或 `data/traces/` 里的留痕来改结果。
+- 命令行 `paper_calc` 不读 `knowledge/底稿模型计算.json`。不要手改这份缓存或 `output/traces/` 里的留痕来改结果。

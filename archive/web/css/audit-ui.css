@@ -39,18 +39,18 @@
 #auditBody .fn-weight { max-width: 108px; overflow: hidden; text-overflow: ellipsis; }
 /* ---------------- 通用组件 ---------------- */
 #auditBody .panel, .drawer .panel, .modal .panel{
-  background: var(--panel); border: 1px solid var(--line);
-  border-radius: var(--radius-lg); box-shadow: var(--shadow);
+  background: var(--panel); border: 1px solid #e8edf4;
+  border-radius: 16px; box-shadow: 0 1px 2px rgba(15, 23, 42, .03);
   margin-bottom: 16px; overflow: hidden;
 }
 #auditBody .panel-head, .drawer .panel-head, .modal .panel-head{
-  padding: 12px 15px; border-bottom: 1px solid var(--line-2);
+  padding: 16px 18px; border-bottom: 1px solid #eef2f6; background: #fff;
   display: flex; align-items: center; gap: 10px;
 }
-#auditBody .panel-head h3, .drawer .panel-head h3, .modal .panel-head h3{ margin: 0; font-size: 13.5px; font-weight: 600; }
+#auditBody .panel-head h3, .drawer .panel-head h3, .modal .panel-head h3{ margin: 0; font-size: 15px; font-weight: 700; letter-spacing: -.02em; }
 #auditBody .panel-head .sub, .drawer .panel-head .sub, .modal .panel-head .sub{ font-size: 11.5px; color: var(--ink-3); }
 #auditBody .panel-head .spacer, .drawer .panel-head .spacer, .modal .panel-head .spacer{ flex: 1; }
-#auditBody .panel-body, .drawer .panel-body, .modal .panel-body{ padding: 15px; font-size: 13px; line-height: 1.7; }
+#auditBody .panel-body, .drawer .panel-body, .modal .panel-body{ padding: 16px 18px; font-size: 13.5px; line-height: 1.7; }
 #auditBody .panel-body p, .drawer .panel-body p, .modal .panel-body p{ margin: 0 0 8px; font-size: 13px; line-height: 1.7; }
 #auditBody .panel-body p:last-child, .drawer .panel-body p:last-child, .modal .panel-body p:last-child{ margin-bottom: 0; }
 #auditBody .panel-body.tight, .drawer .panel-body.tight, .modal .panel-body.tight{ padding: 0; }
@@ -68,8 +68,8 @@
 
 /* KPI */
 #auditBody .kpi, .drawer .kpi, .modal .kpi{
-  background: var(--panel); border: 1px solid var(--line);
-  border-radius: var(--radius-lg); padding: 13px 15px; box-shadow: var(--shadow);
+  background: var(--panel); border: 1px solid #e8edf4;
+  border-radius: 16px; padding: 16px 18px; box-shadow: 0 1px 2px rgba(15, 23, 42, .03);
 }
 #auditBody .kpi .k-label, .drawer .kpi .k-label, .modal .kpi .k-label{ font-size: 11.5px; color: var(--ink-3); display: flex; align-items: center; gap: 5px; }
 #auditBody .kpi .k-value, .drawer .kpi .k-value, .modal .kpi .k-value{
@@ -82,11 +82,11 @@
 
 /* 按钮 */
 #auditBody .btn, .drawer .btn, .modal .btn{
-  display: inline-flex; align-items: center; gap: 5px;
-  padding: 5px 11px; font-size: 12.5px; font-family: inherit;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 13px; font-size: 13px; font-family: inherit; font-weight: 600;
   border: 1px solid var(--line); background: var(--panel);
-  color: var(--ink); border-radius: var(--radius); cursor: pointer;
-  transition: all .12s; white-space: nowrap; line-height: 1.5;
+  color: var(--ink); border-radius: 10px; cursor: pointer;
+  transition: border-color .12s, color .12s, background .12s, box-shadow .12s; white-space: nowrap; line-height: 1.5;
 }
 #auditBody .btn:hover, .drawer .btn:hover, .modal .btn:hover{ background: var(--panel-2); border-color: #cfd6dd; }
 #auditBody .btn:active, .drawer .btn:active, .modal .btn:active{ transform: translateY(1px); }
@@ -96,7 +96,7 @@
 #auditBody .btn.ghost:hover, .drawer .btn.ghost:hover, .modal .btn.ghost:hover{ background: var(--brand-soft); }
 #auditBody .btn.danger, .drawer .btn.danger, .modal .btn.danger{ color: var(--danger); border-color: #e8c5c2; }
 #auditBody .btn.danger:hover, .drawer .btn.danger:hover, .modal .btn.danger:hover{ background: var(--danger-soft); }
-#auditBody .btn.sm, .drawer .btn.sm, .modal .btn.sm{ padding: 3px 8px; font-size: 11.5px; }
+#auditBody .btn.sm, .drawer .btn.sm, .modal .btn.sm{ padding: 5px 10px; font-size: 12px; border-radius: 8px; }
 #auditBody .btn.xs, .drawer .btn.xs, .modal .btn.xs{ padding: 1px 6px; font-size: 11px; border-radius: 4px; }
 #auditBody .btn:disabled, .drawer .btn:disabled, .modal .btn:disabled{ opacity: .45; cursor: not-allowed; }
 #auditBody .btn-group, .drawer .btn-group, .modal .btn-group{ display: inline-flex; gap: 6px; flex-wrap: wrap; }
@@ -104,7 +104,7 @@
 /* 标签 */
 #auditBody .tag, .drawer .tag, .modal .tag{
   display: inline-flex; align-items: center; gap: 4px;
-  font-size: 11px; padding: 1.5px 7px; border-radius: 4px;
+  font-size: 12px; padding: 2px 8px; border-radius: 999px;
   background: var(--muted-soft); color: var(--muted); font-weight: 500;
   white-space: nowrap; line-height: 1.6;
 }
@@ -125,24 +125,35 @@
 
 /* 表格 */
 #auditBody .table-wrap, .drawer .table-wrap, .modal .table-wrap{ overflow-x: auto; }
-#auditBody table.tbl, .drawer table.tbl, .modal table.tbl{ width: 100%; border-collapse: collapse; font-size: 12.5px; }
+#auditBody table.tbl, .drawer table.tbl, .modal table.tbl{ width: 100%; border-collapse: collapse; font-size: 13px; }
 #auditBody table.tbl th, .drawer table.tbl th, .modal table.tbl th{
-  text-align: left; padding: 8px 10px; font-weight: 600; font-size: 11.5px;
-  color: var(--ink-2); background: var(--panel-2);
-  border-bottom: 1px solid var(--line); white-space: nowrap;
+  text-align: left; padding: 12px 14px; font-weight: 600; font-size: 12px;
+  color: #8b95a5; background: #fff;
+  border-bottom: 1px solid #eef2f6; white-space: nowrap;
   position: sticky; top: 0; z-index: 2;
 }
 #auditBody table.tbl th.sortable, .drawer table.tbl th.sortable, .modal table.tbl th.sortable{ cursor: pointer; user-select: none; }
 #auditBody table.tbl th.sortable:hover, .drawer table.tbl th.sortable:hover, .modal table.tbl th.sortable:hover{ color: var(--brand); }
 #auditBody table.tbl th.num, .drawer table.tbl th.num, .modal table.tbl th.num, #auditBody table.tbl td.num, .drawer table.tbl td.num, .modal table.tbl td.num{ text-align: right; font-variant-numeric: tabular-nums; }
 #auditBody table.tbl td, .drawer table.tbl td, .modal table.tbl td{
-  padding: 7px 10px; border-bottom: 1px solid var(--line-2);
-  vertical-align: top; color: var(--ink);
+  padding: 12px 14px; border-bottom: 1px solid #eef2f6;
+  vertical-align: middle; color: var(--ink); line-height: 1.55;
 }
 #auditBody table.tbl tbody tr:hover, .drawer table.tbl tbody tr:hover, .modal table.tbl tbody tr:hover{ background: #f8fafc; }
 #auditBody table.tbl tbody tr.clickable, .drawer table.tbl tbody tr.clickable, .modal table.tbl tbody tr.clickable{ cursor: pointer; }
 #auditBody table.tbl tbody tr.sel, .drawer table.tbl tbody tr.sel, .modal table.tbl tbody tr.sel{ background: var(--brand-soft); }
-#auditBody table.tbl.compact td, .drawer table.tbl.compact td, .modal table.tbl.compact td, #auditBody table.tbl.compact th, .drawer table.tbl.compact th, .modal table.tbl.compact th{ padding: 5px 8px; }
+#auditBody table.tbl.compact td, .drawer table.tbl.compact td, .modal table.tbl.compact td, #auditBody table.tbl.compact th, .drawer table.tbl.compact th, .modal table.tbl.compact th{ padding: 10px 12px; }
+#auditBody table.tbl td input, .drawer table.tbl td input, .modal table.tbl td input,
+#auditBody table.tbl td select, .drawer table.tbl td select, .modal table.tbl td select{
+  width: 96px; max-width: 100%; padding: 6px 10px;
+  background: #f7f9fc; border-color: #e6ebf2;
+}
+#auditBody table.tbl .btn.sm, .drawer table.tbl .btn.sm, .modal table.tbl .btn.sm{
+  background: transparent; border-color: transparent; color: var(--brand); padding: 4px 8px;
+}
+#auditBody table.tbl .btn.sm:hover, .drawer table.tbl .btn.sm:hover, .modal table.tbl .btn.sm:hover{
+  background: var(--brand-soft); border-color: transparent; color: #134e3a;
+}
 #auditBody .mono, .drawer .mono, .modal .mono{ font-family: var(--font); font-size: inherit; font-variant-numeric: tabular-nums; }
 #auditBody .codeblock, .drawer .codeblock, .modal .codeblock,
 #auditBody .cond .cf, .drawer .cond .cf, .modal .cond .cf,
@@ -163,9 +174,9 @@
   color: var(--ink-2); margin-bottom: 4px;
 }
 #auditBody .field .hint, .drawer .field .hint, .modal .field .hint{ font-size: 11px; color: var(--ink-3); margin-top: 3px; line-height: 1.5; }
-#auditBody input[type=text], .drawer input[type=text], .modal input[type=text], #auditBody input[type=number], .drawer input[type=number], .modal input[type=number], #auditBody input[type=date], .drawer input[type=date], .modal input[type=date], #auditBody select, .drawer select, .modal select, #auditBody textarea, .drawer textarea, .modal textarea{
-  width: 100%; padding: 6px 9px; font-size: 12.5px; font-family: inherit;
-  border: 1px solid var(--line); border-radius: var(--radius);
+#auditBody input:not([type]), .drawer input:not([type]), .modal input:not([type]), #auditBody input[type=text], .drawer input[type=text], .modal input[type=text], #auditBody input[type=search], .drawer input[type=search], .modal input[type=search], #auditBody input[type=number], .drawer input[type=number], .modal input[type=number], #auditBody input[type=date], .drawer input[type=date], .modal input[type=date], #auditBody select, .drawer select, .modal select, #auditBody textarea, .drawer textarea, .modal textarea{
+  width: 100%; padding: 8px 10px; font-size: 13px; font-family: inherit;
+  border: 1px solid var(--line); border-radius: 10px;
   background: var(--panel); color: var(--ink); outline: none;
 }
 #auditBody input:focus, .drawer input:focus, .modal input:focus, #auditBody select:focus, .drawer select:focus, .modal select:focus, #auditBody textarea:focus, .drawer textarea:focus, .modal textarea:focus{
@@ -173,7 +184,12 @@
 }
 #auditBody textarea, .drawer textarea, .modal textarea{ resize: vertical; min-height: 70px; line-height: 1.55; }
 #auditBody select, .drawer select, .modal select{ cursor: pointer; }
+#auditBody input[type=search], .drawer input[type=search], .modal input[type=search]{ -webkit-appearance: none; appearance: none; }
 #auditBody .inline-fields, .drawer .inline-fields, .modal .inline-fields{ display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+#auditBody .inline-fields > select, .drawer .inline-fields > select, .modal .inline-fields > select,
+#auditBody .inline-fields > input, .drawer .inline-fields > input, .modal .inline-fields > input{
+  width: auto; min-width: 160px; max-width: 280px; flex: 1 1 180px;
+}
 #auditBody .inline-fields .field, .drawer .inline-fields .field, .modal .inline-fields .field{ margin-bottom: 0; min-width: 148px; width: auto; flex: 0 1 auto; }
 #auditBody .inline-fields .field.grow, .drawer .inline-fields .field.grow, .modal .inline-fields .field.grow{ flex: 1 1 220px; min-width: 220px; }
 #auditBody .inline-fields .field select, .drawer .inline-fields .field select, .modal .inline-fields .field select,
@@ -202,8 +218,8 @@
 
 /* 提示条 */
 #auditBody .notice, .drawer .notice, .modal .notice{
-  display: flex; gap: 9px; padding: 10px 12px; border-radius: var(--radius);
-  font-size: 12px; line-height: 1.6; margin-bottom: 12px;
+  display: flex; gap: 9px; padding: 11px 14px; border-radius: 12px;
+  font-size: 13px; line-height: 1.6; margin-bottom: 12px;
 }
 #auditBody .notice.info, .drawer .notice.info, .modal .notice.info{ background: var(--info-soft); color: #14556b; border: 1px solid #cbe3ec; }
 #auditBody .notice.warn, .drawer .notice.warn, .modal .notice.warn{ background: var(--warn-soft); color: #7d4c00; border: 1px solid #f0dcb8; }
@@ -211,49 +227,60 @@
 #auditBody .notice.ok, .drawer .notice.ok, .modal .notice.ok{ background: var(--ok-soft); color: #0b5c3b; border: 1px solid #c6e5d7; }
 #auditBody .notice .ni, .drawer .notice .ni, .modal .notice .ni{ flex: 0 0 auto; font-weight: 700; }
 
-/* 抽屉 */
+/* 抽屉，对齐页面弹窗：圆角、浅色标题底、模糊遮罩 */
 .drawer-mask{
-  position: fixed; inset: 0; background: rgba(15,23,42,.34);
+  position: fixed; inset: 0; background: rgba(15, 23, 42, .45); backdrop-filter: blur(2px);
   z-index: 900; opacity: 0; pointer-events: none; transition: opacity .18s;
 }
 .drawer-mask.open{ opacity: 1; pointer-events: auto; }
 .drawer{
-  position: fixed; top: 0; right: 0; bottom: 0; width: 620px; max-width: 94vw;
-  background: var(--panel); box-shadow: var(--shadow-lg); z-index: 901;
-  transform: translateX(100%); transition: transform .22s cubic-bezier(.4,0,.2,1);
+  position: fixed; top: 12px; right: 12px; bottom: 12px; width: 640px; max-width: calc(100vw - 24px);
+  background: #fff; border: 1px solid var(--border); border-radius: 16px; overflow: hidden;
+  box-shadow: 0 24px 64px rgba(15, 23, 42, .22); z-index: 901;
+  transform: translateX(calc(100% + 24px)); transition: transform .22s cubic-bezier(.4,0,.2,1);
   display: flex; flex-direction: column;
 }
 .drawer.open{ transform: translateX(0); }
-.drawer.wide{ width: 900px; }
+.drawer.wide{ width: min(920px, calc(100vw - 24px)); }
 .drawer-head{
-  padding: 13px 16px; border-bottom: 1px solid var(--line);
-  display: flex; align-items: center; gap: 10px; flex: 0 0 auto;
+  padding: 16px 18px; border-bottom: 1px solid var(--border);
+  background: linear-gradient(135deg, #eef7f3, #fff 70%);
+  display: flex; align-items: center; gap: 12px; flex: 0 0 auto;
 }
-.drawer-head h3{ margin: 0; font-size: 14px; font-weight: 600; }
+.drawer-head h3{ margin: 0; font-size: 16px; font-weight: 700; letter-spacing: -.02em; }
 .drawer-head .spacer{ flex: 1; }
-.drawer-body{ padding: 16px; overflow-y: auto; flex: 1; }
+.drawer-body{ padding: 16px 18px; overflow-y: auto; flex: 1; background: #f6f8fb; }
 .drawer-foot{
-  padding: 11px 16px; border-top: 1px solid var(--line);
-  display: flex; gap: 8px; justify-content: flex-end; flex: 0 0 auto; background: var(--panel-2);
+  padding: 12px 18px; border-top: 1px solid var(--border);
+  display: flex; gap: 8px; justify-content: flex-end; flex: 0 0 auto; background: #fbfcfd;
 }
+.drawer .panel, .modal .panel{ box-shadow: 0 1px 2px rgba(15, 23, 42, .04); }
 
 /* 模态 */
 .modal-mask{
-  position: fixed; inset: 0; background: rgba(15,23,42,.34);
-  z-index: 950; display: flex; align-items: center; justify-content: center;
+  position: fixed; inset: 0; background: rgba(15, 23, 42, .45); backdrop-filter: blur(2px);
+  z-index: 950; display: flex; align-items: center; justify-content: center; padding: 20px 14px;
   opacity: 0; pointer-events: none; transition: opacity .16s;
 }
 .modal-mask.open{ opacity: 1; pointer-events: auto; }
 .modal{
-  background: var(--panel); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);
-  width: 560px; max-width: 94vw; max-height: 88vh; display: flex; flex-direction: column;
+  background: #fff; border: 1px solid var(--border); border-radius: 16px; overflow: hidden;
+  box-shadow: 0 24px 64px rgba(15, 23, 42, .22);
+  width: min(640px, 100%); max-height: min(88vh, 820px); display: flex; flex-direction: column;
   transform: scale(.97); transition: transform .16s;
 }
 .modal-mask.open .modal{ transform: scale(1); }
-.modal.wide{ width: 780px; }
-.modal-head{ padding: 14px 17px; border-bottom: 1px solid var(--line); font-size: 14px; font-weight: 600; }
-.modal-body{ padding: 17px; overflow-y: auto; }
-.modal-foot{ padding: 12px 17px; border-top: 1px solid var(--line); display: flex; gap: 8px; justify-content: flex-end; }
+.modal.wide{ width: min(760px, 100%); }
+.modal-head{
+  padding: 16px 18px; border-bottom: 1px solid var(--border); font-size: 16px; font-weight: 700;
+  background: linear-gradient(135deg, #eef7f3, #fff 70%); letter-spacing: -.02em;
+}
+.modal-body{ padding: 16px 18px; overflow-y: auto; }
+.modal > .modal-body{ background: #f6f8fb; }
+.modal-foot{
+  padding: 12px 18px; border-top: 1px solid var(--border);
+  display: flex; gap: 8px; justify-content: flex-end; background: #fbfcfd;
+}
 
 /* Toast */
 .toasts{ position: fixed; top: 16px; right: 16px; z-index: 1200; display: flex; flex-direction: column; gap: 8px; }
@@ -288,12 +315,11 @@
 
 /* ---------------- 决策树 ---------------- */
 #auditBody .tree-toolbar, .drawer .tree-toolbar, .modal .tree-toolbar{
-  display: flex; align-items: center; gap: 8px; padding: 9px 12px;
-  border-bottom: 1px solid var(--line-2); background: var(--panel-2); flex-wrap: wrap;
+  display: flex; align-items: center; gap: 8px; padding: 12px 16px;
+  border-bottom: 1px solid #eef2f6; background: #fff; flex-wrap: wrap;
 }
 #auditBody .tree-canvas, .drawer .tree-canvas, .modal .tree-canvas{
-  padding: 18px; overflow: auto; background:
-    radial-gradient(circle at 1px 1px, #e5e9ee 1px, transparent 0) 0 0/16px 16px;
+  padding: 18px; overflow: auto; background: #f7f9fc;
   max-height: 66vh;
 }
 #auditBody .tree-h, .drawer .tree-h, .modal .tree-h{ display: flex; flex-direction: column; gap: 8px; }
@@ -302,11 +328,11 @@
 #auditBody .tnode, .drawer .tnode, .modal .tnode{
   position: relative; display: flex; align-items: center; gap: 9px;
   border: 1px solid var(--line); border-left: 3px solid var(--muted);
-  background: var(--panel); border-radius: var(--radius);
-  padding: 7px 11px; cursor: pointer; transition: all .12s;
-  box-shadow: var(--shadow); max-width: 100%;
+  background: var(--panel); border-radius: 12px;
+  padding: 9px 12px; cursor: pointer; transition: border-color .12s, background .12s;
+  box-shadow: none; max-width: 100%;
 }
-#auditBody .tnode:hover, .drawer .tnode:hover, .modal .tnode:hover{ border-color: var(--brand-2); box-shadow: 0 3px 10px rgba(16,24,40,.1); }
+#auditBody .tnode:hover, .drawer .tnode:hover, .modal .tnode:hover{ border-color: #c5d0de; background: #fff; }
 #auditBody .tnode.branch, .drawer .tnode.branch, .modal .tnode.branch{ border-left-color: #7c3aed; background: linear-gradient(90deg,#faf8ff,#fff 60%); }
 #auditBody .tnode.leaf, .drawer .tnode.leaf, .modal .tnode.leaf{ border-left-color: var(--ok); }
 #auditBody .tnode.fallback, .drawer .tnode.fallback, .modal .tnode.fallback{ border-left-color: var(--warn); background: linear-gradient(90deg,#fffbf3,#fff 60%); }
@@ -352,9 +378,9 @@
 /* 条件展示 */
 #auditBody .cond-list, .drawer .cond-list, .modal .cond-list{ display: flex; flex-direction: column; gap: 4px; }
 #auditBody .cond, .drawer .cond, .modal .cond{
-  display: flex; align-items: flex-start; gap: 6px; font-size: 11.5px;
-  padding: 4px 8px; border-radius: 4px; background: var(--panel-2);
-  border: 1px solid var(--line-2); line-height: 1.55;
+  display: flex; align-items: flex-start; gap: 8px; font-size: 13px;
+  padding: 8px 12px; border-radius: 10px; background: #fff;
+  border: 1px solid var(--line); line-height: 1.6;
 }
 #auditBody .cond.pass, .drawer .cond.pass, .modal .cond.pass{ background: var(--ok-soft); border-color: #c6e5d7; }
 #auditBody .cond.fail, .drawer .cond.fail, .modal .cond.fail{ background: var(--danger-soft); border-color: #eec9c6; }
@@ -408,7 +434,7 @@
 #auditBody .step-line .sl-note, .drawer .step-line .sl-note, .modal .step-line .sl-note{ color: var(--ink-3); font-size: 11px; margin-top: 2px; }
 
 /* 键值列表 */
-#auditBody .kv, .drawer .kv, .modal .kv{ display: grid; grid-template-columns: 150px 1fr; gap: 0; font-size: 12.5px; }
+#auditBody .kv, .drawer .kv, .modal .kv{ display: grid; grid-template-columns: 150px 1fr; gap: 0; font-size: 13px; }
 #auditBody .kv .k, .drawer .kv .k, .modal .kv .k{
   padding: 6px 10px 6px 0; color: var(--ink-3); font-size: 11.5px;
   border-bottom: 1px solid var(--line-2);
@@ -427,9 +453,9 @@
 }
 #auditBody .clause .ct, .drawer .clause .ct, .modal .clause .ct{ font-size: 12.5px; font-weight: 600; margin-bottom: 5px; display: flex; align-items: center; gap: 7px; }
 #auditBody .clause .ctext, .drawer .clause .ctext, .modal .clause .ctext{
-  font-size: 12px; line-height: 1.75; color: var(--ink-2);
-  background: var(--panel); padding: 9px 11px; border-radius: 5px;
-  border: 1px solid var(--line-2); margin: 7px 0;
+  font-size: 14px; line-height: 1.85; color: var(--ink);
+  background: var(--panel); padding: 14px 16px; border-radius: 10px;
+  border: 1px solid var(--line-2); margin: 0 0 10px;
 }
 #auditBody .clause .cmeta, .drawer .clause .cmeta, .modal .clause .cmeta{ font-size: 11px; color: var(--ink-3); display: flex; gap: 12px; flex-wrap: wrap; }
 
@@ -470,13 +496,14 @@
 
 /* 字段块 */
 #auditBody .fblock, .drawer .fblock, .modal .fblock{
-  border: 1px solid var(--line); border-radius: var(--radius);
-  padding: 10px 12px; margin-bottom: 9px; background: var(--panel);
+  border: 1px solid #e6ebf2; border-radius: 12px;
+  padding: 16px; margin-bottom: 0; background: #fff;
 }
-#auditBody .fblock .fh, .drawer .fblock .fh, .modal .fblock .fh{ display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; flex-wrap: wrap; }
-#auditBody .fblock .fname, .drawer .fblock .fname, .modal .fblock .fname{ font-size: 12.5px; font-weight: 600; }
-#auditBody .fblock .fcode, .drawer .fblock .fcode, .modal .fblock .fcode{ font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
-#auditBody .fblock .fmean, .drawer .fblock .fmean, .modal .fblock .fmean{ font-size: 11.5px; color: var(--ink-2); line-height: 1.6; }
+#auditBody .grid .fblock, .drawer .grid .fblock, .modal .grid .fblock{ height: 100%; }
+#auditBody .fblock .fh, .drawer .fblock .fh, .modal .fblock .fh{ display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+#auditBody .fblock .fname, .drawer .fblock .fname, .modal .fblock .fname{ font-size: 14px; font-weight: 650; }
+#auditBody .fblock .fcode, .drawer .fblock .fcode, .modal .fblock .fcode{ font-family: var(--mono); font-size: 12px; color: var(--ink-3); }
+#auditBody .fblock .fmean, .drawer .fblock .fmean, .modal .fblock .fmean{ font-size: 13px; color: #5c6778; line-height: 1.6; }
 #auditBody .fblock .fmeta, .drawer .fblock .fmeta, .modal .fblock .fmeta{ font-size: 11px; color: var(--ink-3); margin-top: 5px; display: flex; gap: 12px; flex-wrap: wrap; }
 #auditBody .fblock .fopts, .drawer .fblock .fopts, .modal .fblock .fopts{ margin-top: 5px; display: flex; gap: 5px; flex-wrap: wrap; }
 

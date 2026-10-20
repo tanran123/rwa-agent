@@ -3,6 +3,7 @@ import { ref } from "vue";
 import { fetchClauses } from "@/api/rule";
 import { useContext } from "@/composables/useContext";
 import AsyncView from "@/components/AsyncView.vue";
+import Drawer from "@/components/Drawer.vue";
 
 const { session } = useContext();
 const jur = ref("");
@@ -27,7 +28,7 @@ const load = () => fetchClauses({ jurisdiction: jur.value, q: q.value });
           <table class="tbl compact">
             <thead><tr><th>条款</th><th>标题</th><th>地区</th><th>被引用</th></tr></thead>
             <tbody>
-              <tr v-for="row in data" :key="row.id" class="clickable" @click="open = row">
+              <tr v-for="row in data" :key="row.id" class="clickable" :class="{ sel: open && open.id === row.id }" @click="open = row">
                 <td class="mono">{{ row.clause }}</td>
                 <td>{{ row.title }}</td>
                 <td>{{ row.jurisdiction }}</td>
@@ -37,14 +38,23 @@ const load = () => fetchClauses({ jurisdiction: jur.value, q: q.value });
           </table>
         </div>
       </div>
-      <div v-if="open" class="panel" style="margin-top: 12px">
-        <div class="panel-head"><h3>{{ open.clause }} {{ open.title }}</h3></div>
-        <div class="panel-body">
-          <p>{{ open.text }}</p>
-          <p class="dim">{{ open.doc }} · {{ open.source }}</p>
-          <p v-if="open.referencedBy.length">引用规则：{{ open.referencedBy.join("、") }}</p>
-        </div>
-      </div>
     </template>
   </AsyncView>
+  <Drawer :open="!!open" :title="open ? open.clause + ' ' + open.title : ''" wide @close="open = null">
+    <div v-if="open" class="panel">
+      <div class="panel-body">
+        <div class="clause">
+          <div class="ctext">{{ open.text }}</div>
+          <div class="cmeta">
+            <span v-if="open.doc">制度：{{ open.doc }}<template v-if="open.docVersion">（{{ open.docVersion }}）</template></span>
+            <span v-if="open.scope">适用：{{ open.scope }}</span>
+            <span v-if="open.effectiveFrom">生效：{{ open.effectiveFrom }}</span>
+            <span v-if="open.source">来源：{{ open.source }}</span>
+            <span>地区：{{ open.jurisdiction }}</span>
+          </div>
+        </div>
+        <p v-if="open.referencedBy.length">引用规则：{{ open.referencedBy.join("、") }}</p>
+      </div>
+    </div>
+  </Drawer>
 </template>

@@ -1,6 +1,6 @@
 # 计算留痕
 
-文件：`交付/exposure-weight-decision/rwa_agent/calc_trace.py`。`save_trace_file` 在 `data/traces/` 写两份文件，文件名是工作簿主文件名加 `-计算留痕`。主文件名里除字母、数字、中文、点、连字符以外的字符换成下划线。
+文件：`agent/subagents/weight/calc/calc_trace.py`。留痕写在仓库根目录 `output/traces/`。`save_trace_file` 在那里写两份文件，文件名是工作簿主文件名加 `-计算留痕`。主文件名里除字母、数字、中文、点、连字符以外的字符换成下划线。
 
 ## 一行里的步骤
 

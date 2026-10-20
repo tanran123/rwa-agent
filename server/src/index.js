@@ -5,6 +5,7 @@ import bodyParser from "koa-bodyparser";
 import { query } from "./db.js";
 import { auditWorkbook, measureDemo } from "./measure.js";
 import { paperView, uploadSamples } from "./paper.js";
+import { createEad, listEad, trialEad, updateEad } from "./ead.js";
 
 const app = new Koa();
 const router = new Router({ prefix: "/api" });
@@ -250,14 +251,20 @@ router.get("/weights", async (ctx) => {
 });
 
 router.get("/ead-rules", async (ctx) => {
-  const side = ctx.query.side === "off" ? "off" : "on";
-  const rows = await query("SELECT * FROM ead_rule WHERE side = ? ORDER BY id", [side]);
-  ctx.body = rows.map((row) => ({
-    ...(json(row.body) || {}),
-    id: row.id,
-    side: row.side,
-    status: row.status
-  }));
+  ctx.body = await listEad(ctx.query.side === "off" ? "off" : "on");
+});
+
+router.post("/ead-rules", async (ctx) => {
+  const side = ctx.request.body && ctx.request.body.side === "off" ? "off" : "on";
+  ctx.body = await createEad(side, ctx.request.body || {});
+});
+
+router.put("/ead-rules/:id", async (ctx) => {
+  ctx.body = await updateEad(ctx.params.id, ctx.request.body || {});
+});
+
+router.post("/ead-trial", async (ctx) => {
+  ctx.body = trialEad(ctx.request.body || {});
 });
 
 router.get("/ccf", async (ctx) => {

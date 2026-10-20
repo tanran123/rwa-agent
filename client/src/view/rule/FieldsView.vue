@@ -36,7 +36,7 @@ const current = () => products.value.find((item) => item.code === code.value) ||
             <span class="fname">{{ item.label }}</span>
             <span class="fcode">{{ item.code }}</span>
           </div>
-          <div class="fmean" style="font-size: 11px">{{ item.desc }}</div>
+          <div class="fmean">{{ item.desc }}</div>
           <div class="fmeta">
             <span>{{ item.fieldCount }} 个标准字段</span>
             <span>{{ item.system }}</span>

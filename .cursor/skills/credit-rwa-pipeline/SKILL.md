@@ -1,12 +1,12 @@
 ---
 name: credit-rwa-pipeline
 description: >-
-  按固定顺序做风险暴露权重决策，以及后续的表外转换系数、缓释和风险加权资产。在用户说按顺序计算、跑流水线、算一整张工作簿，或修改交付/exposure-weight-decision/rwa_agent/pipeline.py、rwa_agent/steps 时使用。
+  按固定顺序做风险暴露权重决策，以及后续的表外转换系数、缓释和风险加权资产。在用户说按顺序计算、跑流水线、算一整张工作簿，或修改 agent/subagents、交付/exposure-weight-decision/rwa_agent/pipeline.py 时使用。
 ---
 
 # 风险暴露权重决策流水线
 
-程序在 `交付/exposure-weight-decision`。整表计算只走这条命令：
+每一步的程序在 `agent/subagents/步骤名/`。名单仍在 `交付/exposure-weight-decision`。整表计算只走这条命令：
 
 ```bash
 python -m rwa_agent.pipeline 你的工作簿.xlsx
@@ -24,7 +24,7 @@ python -m rwa_agent.pipeline 你的工作簿.xlsx
 
 ## 加一步
 
-1. 新建 `rwa_agent/steps/步骤名.py`，提供 `run(context) -> context`。
+1. 新建 `agent/subagents/步骤名/program.py`，提供 `run(context) -> context`。这一步的说明和工具放在同目录 `__init__.py`。
 2. 从上一步留下的 `trace_file` 读取留痕，只追加本阶段的步骤。缺必要字段时设置 `context["stopped"] = True` 和 `context["stop_reason"]`，不要补一个数继续往后算。
 3. 确认 `run` 可用后，把步骤名按监管计算顺序追加到 `STEPS`。
 4. 在 `.cursor/skills/` 为这一步单独写技能。说明里只写这一阶段的触发词和规则文件。

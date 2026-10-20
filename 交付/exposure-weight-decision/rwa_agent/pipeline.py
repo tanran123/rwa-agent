@@ -2,39 +2,19 @@
 
 from __future__ import annotations
 
-import importlib
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 # 已实现的步骤才会执行。后续按这个位置接上：
 # ccf 只处理表外，crm 拆缓释且不改原权重，rwa 按留痕汇总。
 STEPS = ["weight"]
 
 
-def _load(name: str) -> Callable[[dict], dict]:
-    try:
-        module = importlib.import_module(f"rwa_agent.steps.{name}")
-    except ModuleNotFoundError as exc:
-        raise RuntimeError(f"流水线步骤 {name} 还没有实现") from exc
-    run = getattr(module, "run", None)
-    if not callable(run):
-        raise RuntimeError(f"流水线步骤 {name} 没有 run")
-    return run
-
-
 def run_pipeline(source: Path, dest: Path | None = None) -> dict[str, Any]:
-    runners = [(name, _load(name)) for name in STEPS]
-    context: dict[str, Any] = {
-        "source": str(Path(source)),
-        "dest": str(Path(dest)) if dest else None,
-        "steps_ran": [],
-    }
-    for name, run in runners:
-        context = run(context)
-        context["steps_ran"].append(name)
-        if context.get("stopped"):
-            break
-    return context
+    from rwa_agent._agent_path import REPO  # noqa: F401
+    from agent.pipeline import run_pipeline as run
+
+    return run(source, dest)
 
 
 if __name__ == "__main__":
