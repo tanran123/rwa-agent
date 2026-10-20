@@ -13,6 +13,9 @@ import uuid
 from pathlib import Path
 
 APP_DIR = Path(__file__).resolve().parent
+ARCHIVE = APP_DIR / "archive"
+if str(ARCHIVE) not in sys.path:
+    sys.path.insert(0, str(ARCHIVE))
 if str(APP_DIR) not in sys.path:
     sys.path.insert(0, str(APP_DIR))
 
@@ -33,18 +36,19 @@ def _load_local_env() -> None:
 
 _load_local_env()
 
-from flask import Flask, jsonify, request, send_file
+from flask import Flask, jsonify, request, send_file, send_from_directory
 
 from rwa_agent.agent import field_catalog, inspect_workbook, list_type_columns, run_with_mappings, write_rwa_workbook
 from rwa_agent.compare import compare_module, module_catalog, write_comparison
 from rwa_agent.exposure_class import prototype_flow
-from rwa_agent.paper_calc import load_or_compute, write_annotated_source
+from rwa_agent.paper_calc import load_or_compute, price_open_facts, write_annotated_source
 from rwa_agent.working_paper import load_working_paper
 from rwa_agent.library import calculation_rules, ensure_library, load_library, reset_rule, save_rule
 from rwa_agent.rule_calc import run_authored
 from rwa_agent.rule_graph import load_graph, save_graph
 from rwa_agent.exp_flow_gen import analyze_flow_gaps_local, generate_product_flow
 from rwa_agent.mapper import suggest_field_map, suggest_mappings
+from agent.harness import reply as agent_reply
 from rwa_agent.rule_chat import discuss_rules, lookup_basis
 from rwa_agent.rule_learn import learn_from_excel
 from rwa_agent.weknora import ask as weknora_ask
@@ -89,7 +93,28 @@ def _result_path(work_dir: Path, filename: str) -> Path:
 @app.get("/rwa-prototype")
 @app.get("/RWA原型.html")
 def index():
-    response = send_file(APP_DIR / "web" / "index.html")
+    response = send_file(ARCHIVE / "web" / "index.html")
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.get("/css/<path:filename>")
+def web_css(filename: str):
+    response = send_from_directory(ARCHIVE / "web" / "css", filename)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.get("/js/<path:filename>")
+def web_js(filename: str):
+    response = send_from_directory(ARCHIVE / "web" / "js", filename)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.get("/data/<path:filename>")
+def web_data(filename: str):
+    response = send_from_directory(ARCHIVE / "web" / "data", filename)
     response.headers["Cache-Control"] = "no-store"
     return response
 
@@ -296,6 +321,21 @@ def working_paper_file():
     )
 
 
+CLASS_DOC_PATH = (
+    APP_DIR / "交付" / "exposure-weight-decision" / "knowledge" / "权重法风险暴露分类.json"
+)
+
+
+@app.get("/api/exposure-class.json")
+def exposure_class_json():
+    """分类流程图直接读取的规则原文。"""
+    if not CLASS_DOC_PATH.is_file():
+        return jsonify({"error": "找不到权重法风险暴露分类.json"}), 404
+    response = send_file(CLASS_DOC_PATH, mimetype="application/json")
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 @app.get("/api/exposure-class")
 def exposure_class():
     """原型分类画布读取的判定树。顺序和权重来自知识库 JSON。"""
@@ -412,6 +452,18 @@ def rules_basis():
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     return jsonify({"basis": basis})
+
+
+@app.post("/api/agent/chat")
+def agent_chat():
+    data = request.get_json(silent=True) or {}
+    try:
+        result = agent_reply(data.get("messages") or [], data.get("page") or "/")
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    return jsonify(result)
 
 
 @app.post("/api/rules/chat")
@@ -753,6 +805,7 @@ def sheet_map():
         "row_count": data.get("row_count") or data.get("rowCount") or len(rows_in),
         "rows": rows,
         "note": "以下是用户上传的 Excel 内容。行数较多时只附上前面部分，列结构与整表一致。",
+        "confirmed": str(data.get("decisions") or "").strip()[:400],
     }
     try:
         result = suggest_field_map(norm_headers, norm_fields, table)
@@ -761,6 +814,69 @@ def sheet_map():
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     return jsonify(result)
+
+
+@app.post("/api/sheet-clarify")
+def sheet_clarify():
+    """研判之后，模型列出拿不准的数据选择，等用户确认再映射。"""
+    from openpyxl import load_workbook
+
+    from rwa_agent.clarify import clarify_workbook
+
+    data = request.get_json(silent=True) or {}
+    upload_id = str(data.get("uploadId") or "")
+    stored = UPLOADS.get(upload_id)
+    if stored is None:
+        return jsonify({"error": "这本工作簿的研判已经过期，请重新上传。"}), 400
+    path = stored[0]
+    messages = data.get("messages") if isinstance(data.get("messages"), list) else []
+    plan = data.get("plan") if isinstance(data.get("plan"), list) else []
+    note = str(data.get("note") or "")[:500]
+    try:
+        book = load_workbook(path, read_only=True, data_only=True)
+        try:
+            result = clarify_workbook(book, plan, note, messages)
+        finally:
+            book.close()
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    if result.get("ready") and result.get("sheet"):
+        from openpyxl.utils import get_column_letter
+
+        sheet_name = result["sheet"]
+        focus = load_workbook(path, read_only=True, data_only=True)
+        try:
+            if sheet_name in focus.sheetnames:
+                table = _sheet_table(focus[sheet_name], get_column_letter, int(result.get("header_row") or 0))
+                if table.get("columns"):
+                    table["sheet"] = sheet_name
+                    result["table"] = table
+        finally:
+            focus.close()
+    return jsonify(result)
+
+
+@app.post("/api/open-weights")
+def open_weights():
+    """规则树停住、没有固定权重时，让模型在规则允许的档次里选定，再按原规则重算。"""
+    data = request.get_json(silent=True) or {}
+    rows = data.get("rows") if isinstance(data.get("rows"), list) else []
+    try:
+        priced, note = price_open_facts(rows[:80])
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    return jsonify({"rows": priced, "note": note})
+
+
+@app.post("/api/calc-trace")
+def calc_trace():
+    """把本次每一行的计算步骤写成 data/traces 下的 JSON，供以后倒查。"""
+    from rwa_agent.calc_trace import save_trace_file
+
+    data = request.get_json(silent=True) or {}
+    rows = data.get("rows") if isinstance(data.get("rows"), list) else []
+    path = save_trace_file(str(data.get("file") or "计算"), rows)
+    return jsonify({"ok": True, "file": path.name, "rows": len([row for row in rows if isinstance(row, dict)])})
 
 
 @app.post("/api/calc-export")
@@ -794,12 +910,17 @@ def calc_export():
                     "sheet": line.get("sheet") or "",
                     "excel_row": excel_row,
                     "header_row": header_row,
+                    "name": line.get("name") or "",
                     "exposure": line.get("exposure") or line.get("subclass") or "",
                     "weight_text": line.get("weight") or "",
                     "ead": line.get("ead") if isinstance(line.get("ead"), (int, float)) else None,
                     "rwa": line.get("rwa") if isinstance(line.get("rwa"), (int, float)) else None,
                     "trace": line.get("trace") or "",
+                    "steps": line.get("steps") if isinstance(line.get("steps"), list) else [],
                 })
+            from rwa_agent.calc_trace import save_trace_file
+
+            save_trace_file(filename or "计算", rows)
             buf = io.BytesIO()
             write_annotated_source({"process_rows": rows}, buf, Path(source))
             buf.seek(0)

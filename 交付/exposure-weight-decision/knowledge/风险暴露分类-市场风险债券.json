@@ -1,0 +1,294 @@
+{
+  "name": "market_risk_bond_reporting_rules",
+  "label": "市场风险——债券业务专项填报规则",
+  "version": "1.0.0",
+  "description": "适用于 AMCM 市场风险报表下债券及利率衍生工具的填报与资本因子计算。",
+  "fields": [
+    {
+      "name": "instrument_type",
+      "label": "金融工具类型",
+      "options": [
+        { "code": "bond", "label": "债券" },
+        { "code": "bond_derivative", "label": "债券衍生工具（期货/远期）" },
+        { "code": "interest_rate_derivative", "label": "利率衍生工具（互换/期权/远期）" }
+      ]
+    },
+    {
+      "name": "issuer_category",
+      "label": "发行主体类别",
+      "options": [
+        { "code": "macao_government", "label": "澳门政府/AMCM" },
+        { "code": "oecd_sovereign", "label": "OECD 国家/香港政府" },
+        { "code": "other_sovereign_local", "label": "非OECD国家政府（本币计价）" },
+        { "code": "other_sovereign_fx", "label": "非OECD国家政府（外币计价）" },
+        { "code": "public_sector_entity", "label": "公共部门实体" },
+        { "code": "multilateral_development_bank", "label": "多边开发银行" },
+        { "code": "bank", "label": "银行" },
+        { "code": "corporate", "label": "公司" }
+      ]
+    },
+    {
+      "name": "issue_rating",
+      "label": "特定债项外部评级",
+      "options": [
+        { "code": "investment_grade", "label": "投资级（至少两家认可机构，或一家认可且无低于投资级）" },
+        { "code": "below_investment_grade", "label": "低于投资级" },
+        { "code": "unrated", "label": "未评级" }
+      ]
+    },
+    {
+      "name": "residual_maturity_months",
+      "label": "剩余期限（月）",
+      "type": "number"
+    },
+    {
+      "name": "next_repricing_months",
+      "label": "距离下一重定价日（月）",
+      "type": "number",
+      "description": "仅对浮动利率债券有效"
+    },
+    {
+      "name": "position_type",
+      "label": "头寸方向",
+      "options": [
+        { "code": "long", "label": "多头" },
+        { "code": "short", "label": "空头" }
+      ]
+    },
+    {
+      "name": "coupon_type",
+      "label": "票面利率类型",
+      "options": [
+        { "code": "fixed", "label": "固定利率" },
+        { "code": "floating", "label": "浮动利率" }
+      ]
+    },
+    {
+      "name": "delta",
+      "label": "期权Delta值",
+      "type": "number",
+      "description": "期权转化为标的头寸的比例"
+    }
+  ],
+  "rules": [
+    {
+      "name": "part_1_specific_risk",
+      "label": "Part I: 特定风险填报",
+      "description": "仅适用于表内债务证券及债务衍生工具（如债券期货）。对应 AMCM PDF 表 1。",
+      "when": {
+        "all": [
+          { "field": "instrument_type", "op": "in", "match": ["bond", "bond_derivative"] }
+        ]
+      },
+      "children": [
+        {
+          "name": "zero_risk_weight_group",
+          "label": "0% 特定风险资本因子",
+          "when": {
+            "any": [
+              { "field": "issuer_category", "op": "in", "match": ["macao_government", "oecd_sovereign"] },
+              { "field": "issuer_category", "op": "eq", "match": "other_sovereign_local" }
+            ]
+          },
+          "value": 0
+        },
+        {
+          "name": "non_corporate_issuers",
+          "label": "非公司类发行主体",
+          "when": {
+            "all": [
+              { "field": "issuer_category", "op": "in", "match": ["other_sovereign_fx", "public_sector_entity", "multilateral_development_bank", "bank"] }
+            ]
+          },
+          "children": [
+            {
+              "name": "nc_short_term",
+              "label": "剩余期限 ≤ 6个月",
+              "when": { "all": [{ "field": "residual_maturity_months", "op": "lte", "match": 6 }] },
+              "value": 0.0025
+            },
+            {
+              "name": "nc_medium_term",
+              "label": "剩余期限 > 6个月 且 ≤ 24个月",
+              "when": { "all": [{ "field": "residual_maturity_months", "op": "gt", "match": 6 }, { "field": "residual_maturity_months", "op": "lte", "match": 24 }] },
+              "value": 0.01
+            },
+            {
+              "name": "nc_long_term",
+              "label": "剩余期限 > 24个月",
+              "when": { "all": [{ "field": "residual_maturity_months", "op": "gt", "match": 24 }] },
+              "value": 0.016
+            }
+          ]
+        },
+        {
+          "name": "corporate_investment_grade",
+          "label": "公司类投资级债券",
+          "when": {
+            "all": [
+              { "field": "issuer_category", "op": "eq", "match": "corporate" },
+              { "field": "issue_rating", "op": "eq", "match": "investment_grade" }
+            ]
+          },
+          "children": [
+            {
+              "name": "corp_ig_short_term",
+              "label": "剩余期限 ≤ 6个月",
+              "when": { "all": [{ "field": "residual_maturity_months", "op": "lte", "match": 6 }] },
+              "value": 0.0025
+            },
+            {
+              "name": "corp_ig_medium_term",
+              "label": "剩余期限 > 6个月 且 ≤ 24个月",
+              "when": { "all": [{ "field": "residual_maturity_months", "op": "gt", "match": 6 }, { "field": "residual_maturity_months", "op": "lte", "match": 24 }] },
+              "value": 0.01
+            },
+            {
+              "name": "corp_ig_long_term",
+              "label": "剩余期限 > 24个月",
+              "when": { "all": [{ "field": "residual_maturity_months", "op": "gt", "match": 24 }] },
+              "value": 0.016
+            }
+          ]
+        },
+        {
+          "name": "all_other_debt_securities",
+          "label": "所有其他债务证券（未评级或低于投资级）",
+          "when": {
+            "any": [
+              { "field": "issuer_category", "op": "eq", "match": "corporate" },
+              { "field": "issue_rating", "op": "in", "match": ["below_investment_grade", "unrated"] }
+            ]
+          },
+          "value": 0.08
+        }
+      ]
+    },
+    {
+      "name": "part_2_general_market_risk_fixed",
+      "label": "Part II: 一般市场风险填报（固定利率债券）",
+      "description": "按剩余期限划分时间阶梯，此处简化为档位输出。",
+      "when": {
+        "all": [
+          { "field": "instrument_type", "op": "eq", "match": "bond" },
+          { "field": "coupon_type", "op": "eq", "match": "fixed" }
+        ]
+      },
+      "children": [
+        {
+          "name": "fixed_up_to_1_month",
+          "label": "1个月或以下",
+          "when": { "all": [{ "field": "residual_maturity_months", "op": "lte", "match": 1 }] },
+          "value": "time_band_1"
+        },
+        {
+          "name": "fixed_1_to_3_months",
+          "label": "1至3个月",
+          "when": { "all": [{ "field": "residual_maturity_months", "op": "gt", "match": 1 }, { "field": "residual_maturity_months", "op": "lte", "match": 3 }] },
+          "value": "time_band_2"
+        },
+        {
+          "name": "fixed_3_to_6_months",
+          "label": "3至6个月",
+          "when": { "all": [{ "field": "residual_maturity_months", "op": "gt", "match": 3 }, { "field": "residual_maturity_months", "op": "lte", "match": 6 }] },
+          "value": "time_band_3"
+        }
+      ]
+    },
+    {
+      "name": "part_2_general_market_risk_floating",
+      "label": "Part II: 一般市场风险填报（浮动利率债券）",
+      "description": "按距离下一重定价日的期限划分时间阶梯。",
+      "when": {
+        "all": [
+          { "field": "instrument_type", "op": "eq", "match": "bond" },
+          { "field": "coupon_type", "op": "eq", "match": "floating" }
+        ]
+      },
+      "children": [
+        {
+          "name": "floating_repricing_3_to_6_months",
+          "label": "3至6个月",
+          "when": { "all": [{ "field": "next_repricing_months", "op": "gt", "match": 3 }, { "field": "next_repricing_months", "op": "lte", "match": 6 }] },
+          "value": "time_band_3"
+        }
+      ]
+    },
+    {
+      "name": "part_2_derivatives_decomposition",
+      "label": "Part II: 衍生工具拆分为零息债券",
+      "description": "所有衍生工具需转化为多头/空头零息债券，进入时间阶梯。",
+      "when": {
+        "all": [
+          { "field": "instrument_type", "op": "in", "match": ["bond_derivative", "interest_rate_derivative"] }
+        ]
+      },
+      "children": [
+        {
+          "name": "derivative_options",
+          "label": "期权类（按 Delta 加权）",
+          "when": {
+            "all": [
+              { "field": "position_type", "op": "in", "match": ["long", "short"] },
+              { "field": "delta", "op": "gt", "match": 0 }
+            ]
+          },
+          "value": "apply_delta_weighting_and_slot_to_time_band"
+        }
+      ]
+    }
+  ],
+  "excel": [
+    {
+      "field": "issuer_category",
+      "columns": ["发行人类别"],
+      "values": {
+        "澳门政府": "macao_government",
+        "OECD 政府/央行": "oecd_sovereign",
+        "香港政府": "oecd_sovereign",
+        "公共部门实体": "public_sector_entity",
+        "多边开发银行": "multilateral_development_bank",
+        "银行": "bank",
+        "公司": "corporate"
+      }
+    },
+    {
+      "field": "issue_rating",
+      "columns": ["评级"],
+      "values": {
+        "投资级": "investment_grade",
+        "AAA": "investment_grade",
+        "AA+": "investment_grade",
+        "BBB-": "investment_grade",
+        "低于投资级": "below_investment_grade",
+        "未评级": "unrated"
+      }
+    },
+    {
+      "field": "position_type",
+      "columns": ["长/短仓"],
+      "values": {
+        "长仓": "long",
+        "多头": "long",
+        "短仓": "short",
+        "空头": "short"
+      }
+    },
+    {
+      "field": "coupon_type",
+      "columns": ["票息类型"],
+      "values": {
+        "固定": "fixed",
+        "浮动": "floating"
+      }
+    }
+  ],
+  "remark": [
+    "若债券已存在特定债项评级，则不得再次确认信用增级缓释效果（不得重复填报）。",
+    "只有发行主体、票息、币种、到期日完全一致的多头与空头头寸才能相互抵消。",
+    "利率互换（IRS）：收取固定利率端视作多头固定端零息债券，支付固定利率端视作空头固定端零息债券，浮动端按重定价日入档。",
+    "FRA、期货等衍生工具需拆分为多头长端零息债券与空头短端零息债券，分别填报时间阶梯。",
+    "期权需乘以 Delta 系数折算，买入看涨/卖出看跌视作多头，买入看跌/卖出看涨视作空头。",
+    "AMCM 发行的不打算交易的政策性金融票据（Monetary bills）不计入交易账户债券头寸。"
+  ]
+}

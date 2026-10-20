@@ -1,15 +1,13 @@
-# 市场风险 RWA
+# 信用风险 RWA
 
-澳门金管局口径下的信用风险和市场风险计算服务。上传明细工作簿后，先对应类型和表头，再按规则重算风险权重、RWA 和资本。
+当前产品分四块：
 
-计算结果在本地按公式重算。通义千问只负责两件事：根据表头给出字段映射建议，以及在规则对话里说明或修改规则参数。写入规则库之前需要确认。
+- `client/`：Vue 前端
+- `server/`：Koa 接口，读 MySQL
+- `sql/`：库表。先执行 `001_schema.sql`，再执行 `002_seed.sql`
+- `agent/`：风险暴露权重智能体。计算包在 `交付/exposure-weight-decision`，由 `app.py` 在 8766 提供 `/api/agent/chat`
 
-## 目录
-
-- `app.py`：网页服务
-- `rwa_agent/`：字段、公式、规则参数、表头建议、规则对话
-- `knowledge/`：规则库的 Markdown。启动、打开页面和计算前都会重新读取
-- `web/`：页面
+`archive/` 放以前的页面原型、市场风险规则包、底稿缓存和样例工作簿。页面样式、模拟债项和规则对话仍会读这里面的文件。
 
 ## 运行
 
@@ -18,14 +16,12 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-python app.py
+
+cd client && npm install && npm run dev
+cd server && npm install && npm start
+.venv/bin/python app.py
 ```
 
-浏览器打开 http://127.0.0.1:8766 。
+前端开发地址默认 http://127.0.0.1:5173 ，接口 http://127.0.0.1:8780 ，智能体 http://127.0.0.1:8766 。
 
-密钥写在 `.env` 的 `DASHSCOPE_API_KEY`。启动时按这个顺序读取，已经有值的变量不会被后面的文件覆盖：
-
-1. 上一级目录的 `.env`（本仓库的父目录）
-2. 本目录的 `.env`（与 `app.py` 同级，由 `.env.example` 复制）
-
-本目录还没有 `.env` 时，先执行上面的 `cp .env.example .env`，再把密钥写进去。填好之后，字段映射和规则对话才会调用模型。`QWEN_API_KEY` 也可以，会在 `DASHSCOPE_API_KEY` 为空时使用。
+数据库连接写在 `server/.env`：`MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_USER`、`MYSQL_PASSWORD`、`MYSQL_DATABASE`。模型密钥写在仓库根目录 `.env` 的 `DASHSCOPE_API_KEY`。这两份文件不要提交。

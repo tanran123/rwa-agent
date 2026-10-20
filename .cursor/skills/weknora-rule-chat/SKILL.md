@@ -2,13 +2,13 @@
 name: weknora-rule-chat
 description: >-
   维护本仓库的微信知识库（WeKnora）与规则对话。在用户提到规则对话、规则库、知识库、
-  WeKnora、微信知识库、上传文档，或修改 rwa_agent/weknora.py、rwa_agent/rule_chat.py、
+  WeKnora、微信知识库、上传文档，或修改 archive/rwa_agent/weknora.py、archive/rwa_agent/rule_chat.py、
   /api/rules/chat、/api/weknora 时使用。
 ---
 
 # 微信知识库规则对话
 
-规则对话只问微信知识库。通义千问仍只用于表头映射（`rwa_agent/mapper.py`）和 Excel 学规则（`rwa_agent/rule_learn.py`）。
+规则对话只问微信知识库。通义千问仍只用于表头映射（`archive/rwa_agent/mapper.py`）和 Excel 学规则（`archive/rwa_agent/rule_learn.py`）。
 
 ## 调用
 
@@ -25,7 +25,7 @@ description: >-
 
 库的 id 以 `list_bases()` 为准，不要写死。当前库名是「网页笔记」和「微信转发」。
 
-本地调用前先让进程加载 `.env`（导入 `app` 即可）。单独跑 `rwa_agent.weknora` 时，已有环境变量优先，未设置会报「未配置微信知识库 API Key」。
+本地调用前先让进程加载 `.env`（导入 `app` 即可）。单独跑 `rwa_agent.weknora` 时（包在 `archive/rwa_agent`），已有环境变量优先，未设置会报「未配置微信知识库 API Key」。
 
 ## 回答边界
 
@@ -41,8 +41,8 @@ description: >-
 
 ## 改代码之后
 
-服务在 `http://127.0.0.1:8766`，用 `.venv/bin/python app.py`，debug 关闭。改 Python 要先停掉监听再启动。退出码 143 是这次主动停进程，不是崩溃。`web/` 的 HTML、CSS、JS 刷新即生效。
+服务在 `http://127.0.0.1:8766`，用 `.venv/bin/python app.py`，debug 关闭。改 Python 要先停掉监听再启动。退出码 143 是这次主动停进程，不是崩溃。`archive/web/` 的 HTML、CSS、JS 刷新即生效。
 
 验证用 `GET /health`、`node --check` 和接口请求。不要在回复里打印密钥。没有浏览器时说明没点过页面。
 
-监管口径以 `knowledge/` 和已有解析结果为准。不要编造条文号或填报说明的行。
+监管口径以 `archive/knowledge/` 和已有解析结果为准。不要编造条文号或填报说明的行。
