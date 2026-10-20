@@ -4,7 +4,7 @@
 
 ## 一行里的步骤
 
-`paper_calc._calculate_sheet` 为每一笔先放事实，再放分类，再放敞口和风险加权资产。
+`agent/subagents/weight/calc/paper_calc.py` 的 `_calculate_sheet` 为每一笔先放事实，再放分类，再放敞口和风险加权资产。
 
 1. 阶段「取值」：事实里不以 `_` 开头、且不是空的每一项各一步。`field` 和 `actual` 都是该字段的值。
 2. 阶段「分类」：`condition_steps` 把走到的每个节点的 `all` / `any` 摊平。每条条件一步，带规则名、字段、比较、规则值、实际值、是否命中。节点没有条件时写一步说明：要么是同层其余都未命中所以落入这一档，要么是进入这一档。

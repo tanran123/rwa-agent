@@ -13,9 +13,6 @@ import uuid
 from pathlib import Path
 
 APP_DIR = Path(__file__).resolve().parent
-ARCHIVE = APP_DIR / "archive"
-if str(ARCHIVE) not in sys.path:
-    sys.path.insert(0, str(ARCHIVE))
 if str(APP_DIR) not in sys.path:
     sys.path.insert(0, str(APP_DIR))
 
@@ -36,24 +33,24 @@ def _load_local_env() -> None:
 
 _load_local_env()
 
-from flask import Flask, jsonify, request, send_file, send_from_directory
+from flask import Flask, jsonify, request, send_file
 
-from rwa_agent.agent import field_catalog, inspect_workbook, list_type_columns, run_with_mappings, write_rwa_workbook
-from rwa_agent.compare import compare_module, module_catalog, write_comparison
-from rwa_agent.exposure_class import prototype_flow
-from rwa_agent.paper_calc import load_or_compute, price_open_facts, write_annotated_source
-from rwa_agent.working_paper import load_working_paper
-from rwa_agent.library import calculation_rules, ensure_library, load_library, reset_rule, save_rule
-from rwa_agent.rule_calc import run_authored
-from rwa_agent.rule_graph import load_graph, save_graph
-from rwa_agent.exp_flow_gen import analyze_flow_gaps_local, generate_product_flow
-from rwa_agent.mapper import suggest_field_map, suggest_mappings
+from agent.subagents.rwa.market.agent import field_catalog, inspect_workbook, list_type_columns, run_with_mappings, write_rwa_workbook
+from agent.subagents.rwa.market.compare import compare_module, module_catalog, write_comparison
+from agent.subagents.weight.calc.exposure_class import prototype_flow
+from agent.subagents.weight.paper.paper_calc import load_or_compute, price_open_facts, write_annotated_source
+from agent.subagents.weight.paper.working_paper import load_working_paper
+from knowledge.local.library import calculation_rules, ensure_library, load_library, reset_rule, save_rule
+from agent.subagents.rwa.market.rule_calc import run_authored
+from knowledge.local.rule_graph import load_graph, save_graph
+from agent.subagents.weight.paper.exp_flow_gen import analyze_flow_gaps_local, generate_product_flow
+from agent.subagents.rwa.market.mapper import suggest_field_map, suggest_mappings
 from agent.harness import reply as agent_reply
-from rwa_agent.rule_chat import discuss_rules, lookup_basis
-from rwa_agent.rule_learn import learn_from_excel
-from rwa_agent.weknora import ask as weknora_ask
-from rwa_agent.weknora import list_bases as weknora_bases
-from rwa_agent.weight_tables import ingest_weight_workbook, weight_catalog
+from knowledge.weknora.rule_chat import discuss_rules, lookup_basis
+from knowledge.local.rule_learn import learn_from_excel
+from knowledge.weknora.weknora import ask as weknora_ask
+from knowledge.weknora.weknora import list_bases as weknora_bases
+from agent.subagents.rwa.market.weight_tables import ingest_weight_workbook, weight_catalog
 
 ensure_library()
 
@@ -87,36 +84,6 @@ def _result_name(filename: str) -> str:
 
 def _result_path(work_dir: Path, filename: str) -> Path:
     return work_dir / ("calculated" + _result_suffix(filename))
-
-
-@app.get("/")
-@app.get("/rwa-prototype")
-@app.get("/RWA原型.html")
-def index():
-    response = send_file(ARCHIVE / "web" / "index.html")
-    response.headers["Cache-Control"] = "no-store"
-    return response
-
-
-@app.get("/css/<path:filename>")
-def web_css(filename: str):
-    response = send_from_directory(ARCHIVE / "web" / "css", filename)
-    response.headers["Cache-Control"] = "no-store"
-    return response
-
-
-@app.get("/js/<path:filename>")
-def web_js(filename: str):
-    response = send_from_directory(ARCHIVE / "web" / "js", filename)
-    response.headers["Cache-Control"] = "no-store"
-    return response
-
-
-@app.get("/data/<path:filename>")
-def web_data(filename: str):
-    response = send_from_directory(ARCHIVE / "web" / "data", filename)
-    response.headers["Cache-Control"] = "no-store"
-    return response
 
 
 @app.get("/health")
@@ -322,7 +289,7 @@ def working_paper_file():
 
 
 CLASS_DOC_PATH = (
-    APP_DIR / "交付" / "exposure-weight-decision" / "knowledge" / "权重法风险暴露分类.json"
+    APP_DIR / "agent" / "subagents" / "weight" / "knowledge" / "权重法风险暴露分类.json"
 )
 
 
@@ -697,7 +664,7 @@ def sheet_preview():
     kept = False
     try:
         upload.save(input_path)
-        from rwa_agent.paper_calc import plan_workbook_sheets
+        from agent.subagents.weight.paper.paper_calc import plan_workbook_sheets
 
         plan_book = load_workbook(input_path, read_only=True, data_only=True)
         try:
@@ -821,7 +788,7 @@ def sheet_clarify():
     """研判之后，模型列出拿不准的数据选择，等用户确认再映射。"""
     from openpyxl import load_workbook
 
-    from rwa_agent.clarify import clarify_workbook
+    from agent.subagents.weight.paper.clarify import clarify_workbook
 
     data = request.get_json(silent=True) or {}
     upload_id = str(data.get("uploadId") or "")
@@ -870,8 +837,8 @@ def open_weights():
 
 @app.post("/api/calc-trace")
 def calc_trace():
-    """把本次每一行的计算步骤写成 data/traces 下的 JSON，供以后倒查。"""
-    from rwa_agent.calc_trace import save_trace_file
+    """把本次每一行的计算步骤写成 output/traces 下的 JSON，供以后倒查。"""
+    from agent.subagents.weight.paper.calc_trace import save_trace_file
 
     data = request.get_json(silent=True) or {}
     rows = data.get("rows") if isinstance(data.get("rows"), list) else []
@@ -886,8 +853,8 @@ def calc_export():
     lines = data.get("lines") if isinstance(data.get("lines"), list) else []
     source_lines = [line for line in lines if isinstance(line, dict) and line.get("excel_row") not in (None, "")]
     if source_lines:
-        from rwa_agent.paper_calc import write_annotated_source
-        from rwa_agent.working_paper import PAPER_PATH
+        from agent.subagents.weight.paper.paper_calc import write_annotated_source
+        from agent.subagents.weight.paper.working_paper import PAPER_PATH
 
         upload_id = str(data.get("uploadId") or "")
         stored = UPLOADS.get(upload_id) if upload_id else None
@@ -918,7 +885,7 @@ def calc_export():
                     "trace": line.get("trace") or "",
                     "steps": line.get("steps") if isinstance(line.get("steps"), list) else [],
                 })
-            from rwa_agent.calc_trace import save_trace_file
+            from agent.subagents.weight.paper.calc_trace import save_trace_file
 
             save_trace_file(filename or "计算", rows)
             buf = io.BytesIO()

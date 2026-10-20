@@ -1,12 +1,12 @@
 # 通义千问提示词
 
-调用在 `agent/subagents/weight/calc/model.py` 的 `_complete`。模型默认 `qwen-plus`，地址默认 `https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions`，`temperature` 为 0。密钥读 `交付/exposure-weight-decision/.env` 的 `DASHSCOPE_API_KEY`，没有则读 `QWEN_API_KEY`。`QWEN_BASE_URL`、`QWEN_MODEL` 可以覆盖默认值。
+调用在 `agent/subagents/weight/calc/model.py` 的 `_complete`。模型默认 `qwen-plus`，地址默认 `https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions`，`temperature` 为 0。密钥读仓库根目录 `.env` 的 `DASHSCOPE_API_KEY`，没有则读 `QWEN_API_KEY`。`QWEN_BASE_URL`、`QWEN_MODEL` 可以覆盖默认值。
 
 返回正文用 `_extract_json` 取出一个 JSON 对象。改下面任一段时，同时改对应的 Python 函数和本文件。
 
 ## 1. 选哪些表逐笔算
 
-函数：`paper_calc.py` 的 `_plan_system`。调用：`plan_workbook_sheets`。
+函数：`agent/subagents/weight/calc/paper_calc.py` 的 `_plan_system`。调用：`plan_workbook_sheets`。底稿页的 `agent/subagents/weight/paper/paper_calc.py` 不走这条提示。
 
 用户消息是 `{"sheets":[{"sheet":"表名","rows":[{"row":行号,"cells":["单元格",...]}]}]}`。每张表最多看前 30 行、前 18 列，挑出至少 4 个非空单元格的行，最多 3 行，每行最多 8 个单元格、每个截到 28 字。
 
@@ -28,7 +28,7 @@
 
 ## 2. 表头对到分类字段
 
-函数：`model.py` 的 `_complete_system`。调用：`suggest_complete_map`，由 `paper_calc._map_sheet` 使用。
+函数：`agent/subagents/weight/calc/model.py` 的 `_complete_system`。调用：`suggest_complete_map`，由 `agent/subagents/weight/calc/paper_calc.py` 的 `_map_sheet` 使用。
 
 只在 `_strong_bind` 没有对上账面余额、并且这张表有数据行时才调用。已知底稿通常走固定列名，不会进这里。
 
@@ -60,7 +60,7 @@
 
 ## 3. 规则停住后补条件
 
-函数：`paper_calc.py` 的 `_open_weight_system`。调用：`_ask_open_weights`，由 `_fill_open_weights` 使用。
+函数：`agent/subagents/weight/calc/paper_calc.py` 的 `_open_weight_system`。调用：`_ask_open_weights`，由 `_fill_open_weights` 使用。
 
 只处理权重还不是数字、并且 `_open_kind` 认得出种类的行。种类和允许的 `choice`：
 

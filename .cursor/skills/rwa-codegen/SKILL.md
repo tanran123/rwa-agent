@@ -8,10 +8,10 @@ description: >-
 
 用户提出一个功能时，先读仓库根目录 `AGENTS.md`，再按它点名的说明写文件。
 
-1. 读 `AGENTS.md` 和 `README.md`，判断改 `client/`、`server/` 还是 `agent/`。用户只给一句片段时，自己对上现有页面、接口和库表，不要让用户补菜单或表名。
-2. 打开对应的 `client/README.md`、`server/README.md` 或 `agent/README.md`，只按里面的清单落文件。
+1. 读 `AGENTS.md` 和 `README.md`，判断改 `client/`、`server/`、`agent/` 还是 `knowledge/`。用户只给一句片段时，自己对上现有页面、接口和库表，不要让用户补菜单或表名。
+2. 打开对应的 `client/README.md`、`server/README.md`、`agent/README.md` 或 `knowledge/README.md`，只按里面的清单落文件。本地规则包在 `knowledge/local/`，微信知识库对话在 `knowledge/weknora/`。
 3. 写字段、路径、列名或样式类之前，打开 `AGENTS.md` 里「什么必须从文件里抄」对应的源文件。本轮没打开的名字不要写进代码。
 4. 跨层时顺序是库表、接口、前端 API、页面和菜单。
 5. 回复里列出文件路径、对应清单的哪一条，以及核对过的源文件。源文件里没有的值不要补，写明缺什么。
 
-不要把新功能放进 `archive/`。不要编造权重、条款号或金额。不要把密钥写进代码。
+不要编造权重、条款号或金额。不要把密钥写进代码。

@@ -5,7 +5,7 @@ description: 信用风险计算的固定顺序。问做到哪一步、某一步�
 
 # 计算顺序
 
-顺序固定为 weight、ccf、crm、rwa。只有写进交付目录流水线 `STEPS` 的步骤会执行。
+顺序固定为 weight、ccf、crm、rwa。只有写进 `agent/pipeline.py` 的 `STEPS` 的步骤会执行。
 
 - weight：风险暴露权重判断，按分类取权重和敞口。
 - ccf：表外转换系数，等值金额 = 名义金额 × 转换系数。

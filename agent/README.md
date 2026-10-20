@@ -1,30 +1,50 @@
 # 智能体
 
-目录按 deepagents 的项目布局。总控的提示在 `AGENTS.md`，配置在 `agent.json`。每个子智能体目录里有自己的 `agent.json` 和 `AGENTS.md`。技能在 `skills/<名字>/SKILL.md`。
+目录按 deepagents 的项目布局。总控的提示在 `AGENTS.md`，配置在 `agent.json`。每个计算步骤目录里有自己的 `agent.json` 和 `AGENTS.md`。技能在 `skills/<名字>/SKILL.md`。
 
 页面通过 `POST /api/agent/chat` 进来。Koa 转到 Flask，Flask 调用 `harness.reply`。总控只派发，不自己算数。
 
-生成一步之前先看根目录 `README.md`。分类 JSON 在 `交付/exposure-weight-decision/knowledge/`。留痕在仓库根目录 `output/traces/`，结果工作簿在 `output/workbooks/`。不要把分类 JSON 复制进子智能体目录。
+生成一步之前先看根目录 `README.md`。分类 JSON 在 `subagents/weight/knowledge/`。留痕在仓库根目录 `output/traces/`，结果工作簿在 `output/workbooks/`。不要再复制一份分类 JSON。
 
-## 目录
+这里有五块，互不替代：
+
+| 块 | 路径 | 做什么 |
+| --- | --- | --- |
+| 总控 | 本目录根上的 Python | 对话、派发、打开页面。 |
+| 流水线 | `subagents/weight`、`ccf`、`crm`、`rwa` | 信用风险按顺序计算。名单在 `pipeline.py` 的 `STEPS`，当前只有 `weight`。 |
+| 底稿页 | `subagents/weight/paper/` | 读同目录 `底稿模型计算.json`。不进 `STEPS`。 |
+| 规则库 | 仓库根目录 `knowledge/` | 本地规则在 `local/`，微信知识库对话在 `weknora/`。见 `knowledge/README.md`。 |
+| 市场风险 | `subagents/rwa/market/` | 回购和市场风险公式。不进 `STEPS`。信用风险汇总仍是 `rwa/program.py`。 |
+
+## 总控
 
 | 路径 | 作用 |
 | --- | --- |
 | `agent.json` | 总控的名字、说明和模型。 |
 | `AGENTS.md` | 总控提示词。`harness.py` 启动时读这一份。 |
-| `skills/calculation-order/SKILL.md` | 计算顺序。总控和子智能体都能读。 |
 | `harness.py` | 组装 deepagents，处理对话，返回 `{ reply, pages }`。 |
 | `layout.py` | 读取 `agent.json` 和 `AGENTS.md`。 |
-| `chat.py` | 通义模型。密钥读仓库根目录 `.env`，没有再读交付目录 `.env`。 |
-| `pipeline.py` | 读取交付目录 `rwa_agent/pipeline.py` 里的 `STEPS`，按名单调用 `program.run`。 |
+| `chat.py` | 通义模型。密钥读仓库根目录 `.env`。 |
+| `pipeline.py` | `STEPS` 名单。按名单调用 `program.run`。 |
 | `pages.py` | 总控打开页面。只在用户要看页面时用。 |
+| `paths.py` | 仓库根目录。留痕目录从这里找。 |
+| `skills/calculation-order/SKILL.md` | 计算顺序。总控和子智能体都能读。 |
 | `subagents/__init__.py` | `ORDER`。顺序是 weight、ccf、crm、rwa，不能调换。 |
-| `subagents/weight/` | 风险暴露权重判断。当前名单里只有这一步会跑工作簿。 |
-| `subagents/ccf/` | 表外转换系数。程序还没实现，问到就停住。 |
-| `subagents/crm/` | 缓释。程序还没实现，问到就停住，也不改原来的权重。 |
-| `subagents/rwa/` | 按留痕汇总风险加权资产。程序还没实现，问到就停住。 |
 
-## weight
+## 流水线
+
+在仓库根目录执行 `python -m agent.pipeline 工作簿.xlsx`。`STEPS` 里没有的步骤停住。
+
+| 步骤 | 目录 | 现在 |
+| --- | --- | --- |
+| `weight` | `subagents/weight/` | 会跑工作簿。实现是 `program.py`，计算在 `calc/`。 |
+| `ccf` | `subagents/ccf/` | 表外转换系数。`program.run` 停住。 |
+| `crm` | `subagents/crm/` | 缓释。`program.run` 停住，也不改原来的权重。 |
+| `rwa` | `subagents/rwa/` | 按留痕汇总。`program.run` 停住。 |
+
+`ccf` 只处理表外，等值金额 = 名义金额 × 转换系数。`crm` 把覆盖部分和未覆盖部分拆开。`rwa` 按留痕汇总。这三步不要在对话或工具里编造系数、拆分或另一套金额。
+
+### weight/calc
 
 | 路径 | 作用 |
 | --- | --- |
@@ -35,9 +55,42 @@
 | `weight/calc/exposure_class.py` | 把分类 JSON 收成决策树。 |
 | `weight/calc/calc_trace.py` | 写计算留痕。文件在仓库根目录 `output/traces/`。 |
 | `weight/calc/model.py` | 用通义把表头对到分类字段。 |
-| `weight/calc/paths.py` | `ROOT` 指向交付目录，用来找分类 JSON 和 `.env`。`OUTPUT` 指向仓库根目录 `output/`，留痕在 `traces/`，结果工作簿在 `workbooks/`。 |
+| `weight/calc/paths.py` | `ROOT` 指向 `weight/`，用来找分类 JSON。密钥在仓库根目录 `.env`。`OUTPUT` 指向仓库根目录 `output/`。 |
+| `weight/knowledge/` | 分类规则。计算读 `权重法风险暴露分类.json`。写法见同目录 `风险暴露分类配置说明.md`。 |
+| `weight/samples/` | 试算底稿。 |
 
-交付目录里的 `rwa_agent/paper_calc.py`、`exposure_class.py`、`calc_trace.py`、`model.py`、`steps/weight.py` 只转到这里。命令 `python -m rwa_agent.pipeline 工作簿.xlsx` 仍在交付目录执行，实际跑的是 `weight/program.py`。
+### weight/paper
+
+底稿页用的权重计算。Flask 的底稿接口读这里。缓存是同目录 `底稿模型计算.json`。
+
+| 路径 | 作用 |
+| --- | --- |
+| `paper/paper_calc.py` | 把底稿明细对到分类字段，再按决策树计算。 |
+| `paper/working_paper.py` | 从信用风险底稿读出已经算好的风险加权资产。 |
+| `paper/calc_trace.py` | 把这次底稿计算写成 `output/traces/`。 |
+| `paper/clarify.py` | 底稿里拿不准的列，交给模型提问。 |
+| `paper/exp_flow_gen.py` | 按产品字段生成分类流程，并标出缺的字段。 |
+
+### ccf 和 crm
+
+各有 `agent.json`、`AGENTS.md`、`__init__.py`、`program.py`。问到就停住。不要在这里补系数或拆分。
+
+### rwa
+
+`program.py` 按留痕汇总。这一步还没进 `STEPS`，`run` 停住。
+
+`rwa/market/` 是回购和市场风险的公式计算，给 Flask 的上传和对比接口用。
+
+| 路径 | 作用 |
+| --- | --- |
+| `market/agent.py` | 选定公式包并计算。 |
+| `market/formulas.py` | 正回购、外汇互换、回购利率、利率互换、外汇净敞口。 |
+| `market/fields.py` | 公式用的字段和表头别名。 |
+| `market/reference.py` | 公式里的参照表。 |
+| `market/rule_calc.py` | 按已写好的规则和映射列计算。 |
+| `market/mapper.py` | 把上传表头对到公式字段。 |
+| `market/weight_tables.py` | 从上传工作簿收集到的权重。 |
+| `market/compare.py` | 把计算结果收成监管报表并对比。 |
 
 ## 一个子智能体里有什么
 
@@ -56,13 +109,13 @@
 
 ## 写计算步骤时以哪个文件为准
 
-`STEPS` 只看 `交付/exposure-weight-decision/rwa_agent/pipeline.py`。当前文件里没有的步骤名，就还不能执行。不要在对话、工具或前端里补一个系数或金额。
+`STEPS` 只看 `agent/pipeline.py`。当前文件里没有的步骤名，就还不能执行。不要在对话、工具或前端里补一个系数或金额。
 
-分类条件和权重只改 `交付/exposure-weight-decision/knowledge/权重法风险暴露分类.json` 里用户点名的规则。`when` 的 `field` 和 `match` 用该文件 `options` 里已有的 `code`。空单元格保持不命中，不要为了算完填一个权重。
+分类条件和权重只改 `subagents/weight/knowledge/权重法风险暴露分类.json` 里用户点名的规则。`when` 的 `field` 和 `match` 用该文件 `options` 里已有的 `code`。空单元格保持不命中，不要为了算完填一个权重。
 
 子智能体的说明写在该目录 `agent.json` 的 `description`，提示写在该目录 `AGENTS.md`。`__init__.py` 只保留工具函数和 `spec()`，并从 `agent/layout.py` 的 `subagent_prompt` 读取这两份文件。
 
-`run(context)` 缺路径或缺少必要字段时，设置 `stopped` 和 `stop_reason` 后返回。不要估算敞口或风险加权资产。`ead_yi` 和 `rwa_yi` 只从 `run_workbook` 的返回值抄过来。
+`run(context)` 缺路径或缺少必要字段时，设置 `stopped` 和 `stop_reason` 后返回。不要估算敞口或风险加权资产。`ead_yi` 和 `rwa_yi` 只从 `run_workbook` 的返回值抄过来。流水线这一步的 `run_workbook` 在 `weight/calc/paper_calc.py`。
 
 能打开的页面只有 `agent/pages.py` 的 `PAGES`：`/engine`、`/results`、`/wizard`。不要给 `open_page` 增加没在前端路由里出现的路径。
 
@@ -71,7 +124,5 @@
 1. 新建 `subagents/<名字>/`，放入 `agent.json`、`AGENTS.md`、`program.py` 和 `__init__.py`。
 2. 把这一步加进 `subagents/__init__.py` 的 `ORDER`，位置按监管计算顺序。
 3. 在总控 `AGENTS.md` 里写明什么问题交给它。
-4. `program.run` 能用真实输入跑通之后，才把名字追加到交付目录 `rwa_agent/pipeline.py` 的 `STEPS`。没跑通不要写进名单。
+4. `program.run` 能用真实输入跑通之后，才把名字追加到 `agent/pipeline.py` 的 `STEPS`。没跑通不要写进名单。
 5. 改完 Python 执行 `pm2 restart rwa-agent`。进程里的图是启动时建的，不重启仍是旧的。
-
-`ccf` 只处理表外，等值金额 = 名义金额 × 转换系数。`crm` 把覆盖部分和未覆盖部分拆开，不改原来的风险权重。`rwa` 按留痕汇总。这三步的 `run` 现在只停住。不要在对话或工具里编造系数、拆分或另一套金额。

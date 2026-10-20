@@ -5,7 +5,7 @@ import { fileURLToPath } from "url";
 
 const require = createRequire(import.meta.url);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const { writeXlsx } = require(path.join(root, "archive/web/js/lib/xlsx-writer.js"));
+const { writeXlsx } = require(path.join(root, "server/lib/xlsx-writer.cjs"));
 let cached = null;
 
 function round2(value) {
@@ -73,12 +73,12 @@ function suggestMapping(productCode, headers, master) {
 
 export function measureDemo() {
   if (cached) return cached;
-  const master = require(path.join(root, "archive/web/data/master_data.js"));
-  const mock = require(path.join(root, "archive/web/data/mock_loans.js"));
-  const pipeline = require(path.join(root, "archive/web/js/lib/pipeline.js"));
+  const master = require(path.join(root, "server/data/master_data.cjs"));
+  const mock = require(path.join(root, "server/data/mock_loans.cjs"));
+  const pipeline = require(path.join(root, "server/lib/pipeline.cjs"));
   global.MASTER = master;
   const doc = JSON.parse(readFileSync(
-    path.join(root, "交付/exposure-weight-decision/knowledge/权重法风险暴露分类.json"),
+    path.join(root, "agent/subagents/weight/knowledge/权重法风险暴露分类.json"),
     "utf8"
   ));
   const out = pipeline.measureBatch(mock.MOCK_LOANS, {

@@ -1,23 +1,17 @@
-"""Run the steps named in the delivery pipeline, in that order."""
+"""Run the named steps in order. Only names in STEPS may run."""
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from typing import Any
 
 from langchain_core.tools import tool
 
-DELIVERY = Path(__file__).resolve().parents[1] / "交付" / "exposure-weight-decision"
-_STEPS_FILE = DELIVERY / "rwa_agent" / "pipeline.py"
+STEPS = ["weight"]
 
 
 def active_steps() -> list[str]:
-    text = _STEPS_FILE.read_text(encoding="utf-8")
-    found = re.search(r"^STEPS\s*=\s*\[(.*?)\]", text, re.M | re.S)
-    if not found:
-        return []
-    return re.findall(r'"([^"]+)"', found.group(1))
+    return list(STEPS)
 
 
 def run_pipeline(source: Path, dest: Path | None = None) -> dict[str, Any]:
@@ -50,3 +44,16 @@ def pipeline_steps() -> str:
     lines = [item.program.status() for item in ORDER]
     lines.append("当前顺序：" + " → ".join(active))
     return "\n".join(lines)
+
+
+if __name__ == "__main__":
+    import sys
+
+    if len(sys.argv) < 2:
+        raise SystemExit("用法: python -m agent.pipeline 工作簿.xlsx [结果.xlsx]")
+    done = run_pipeline(Path(sys.argv[1]), Path(sys.argv[2]) if len(sys.argv) > 2 else None)
+    if done.get("stopped"):
+        raise SystemExit(done.get("stop_reason") or "计算停住了")
+    print(done.get("annotated") or "")
+    print(done.get("trace_file") or "")
+    print("敞口", done.get("ead_yi"), "亿  风险加权资产", done.get("rwa_yi"), "亿")

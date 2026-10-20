@@ -3,7 +3,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const cachePath = path.join(root, "archive/knowledge/底稿模型计算.json");
+const cachePath = path.join(root, "agent/subagents/weight/paper/底稿模型计算.json");
 let cached = null;
 let samples = null;
 
@@ -50,7 +50,7 @@ export function paperView(offset = 0, limit = 80) {
 
 export function uploadSamples() {
   if (samples) return samples;
-  const src = readFileSync(path.join(root, "archive/web/js/data.js"), "utf8");
+  const src = readFileSync(path.join(root, "server/data/data.js"), "utf8");
   const start = src.indexOf("const SAMPLE_UPLOAD");
   const end = src.indexOf("const VERSIONS");
   if (start < 0 || end < 0) throw new Error("找不到内置上传样例");

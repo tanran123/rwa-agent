@@ -8,6 +8,4 @@ __pycache__/
 .DS_Store
 *.xlsx
 *.xlsm
-data/traces/
-**/data/traces/
 output/

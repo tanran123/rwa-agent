@@ -1,4 +1,4 @@
-"""调用通义千问，把明细表的列对到分类字段。密钥从交付目录的 .env 读取。"""
+"""调用通义千问，把明细表的列对到分类字段。密钥从仓库根目录的 .env 读取。"""
 
 from __future__ import annotations
 
@@ -7,11 +7,10 @@ import re
 import urllib.error
 import urllib.request
 
-from agent.subagents.weight.calc.paths import ROOT
+from agent.subagents.weight.calc.paths import ENV_PATH
 
 QWEN_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 QWEN_MODEL = "qwen-plus"
-ENV_PATH = ROOT / ".env"
 
 
 def suggest_complete_map(headers: list[dict], fields: list[dict], table: dict | None = None) -> dict[str, dict]:

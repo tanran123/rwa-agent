@@ -7,12 +7,9 @@ from pathlib import Path
 
 from langchain_openai import ChatOpenAI
 
-from agent.pipeline import DELIVERY
-
-
 def load_env() -> None:
     root = Path(__file__).resolve().parents[1]
-    for env_path in (root / ".env", DELIVERY / ".env"):
+    for env_path in (root / ".env",):
         if not env_path.is_file():
             continue
         for line in env_path.read_text(encoding="utf-8").splitlines():

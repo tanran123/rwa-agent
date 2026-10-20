@@ -1,6 +1,6 @@
-@import "../../../archive/web/css/base.css";
-@import "../../../archive/web/css/exposure.css";
-@import "../../../archive/web/css/calc.css";
-@import "../../../archive/web/css/config.css";
-@import "../../../archive/web/css/audit-ui.css";
-@import "../../../archive/web/css/agent.css";
+@import "./css/base.css";
+@import "./css/exposure.css";
+@import "./css/calc.css";
+@import "./css/config.css";
+@import "./css/audit-ui.css";
+@import "./css/agent.css";

@@ -1,16 +1,16 @@
 # paper_calc 怎么算
 
-文件：`agent/subagents/weight/calc/paper_calc.py`。分类树来自同目录 `exposure_class.prototype_flow()`，见 `references/exposure-class.md`。留痕见 `references/calc-trace.md`。三次模型调用的提示词见 `references/prompts.md`。交付目录里的 `rwa_agent/paper_calc.py` 只是转到这里。
+文件：`agent/subagents/weight/calc/paper_calc.py`。分类树来自同目录 `exposure_class.prototype_flow()`，见 `references/exposure-class.md`。留痕见 `references/calc-trace.md`。三次模型调用的提示词见 `references/prompts.md`。
 
 ## 入口
 
-`python -m rwa_agent.paper_calc 工作簿.xlsx [结果.xlsx]` 调用 `run_workbook`。它不读缓存。
+`python -m agent.subagents.weight.calc.paper_calc 工作簿.xlsx [结果.xlsx]` 调用 `run_workbook`。它不读缓存。
 
 1. `compute_working_paper` 算出全部行。
 2. `save_trace_file` 写出仓库根目录 `output/traces/工作簿名-计算留痕.json` 和同名 `.md`。
 3. `write_annotated_source` 把源工作簿复制一份，写上分类结果。没有逐笔行或源文件不存在时，改走 `write_result_workbook`（汇总、分类结果、分表、字段对应）。
 
-`load_or_compute` 是另一条路。底稿不比 `knowledge/底稿模型计算.json` 新，且缓存里有同一 `file`、`sheets`、`process_rows`、`sheet_plan` 时直接读缓存；否则重算并覆盖缓存。命令行不走它。不要手改这份缓存。
+`load_or_compute` 是另一条路。底稿不比 `agent/subagents/weight/knowledge/底稿模型计算.json` 新，且缓存里有同一 `file`、`sheets`、`process_rows`、`sheet_plan` 时直接读缓存；否则重算并覆盖缓存。命令行不走它。不要手改这份缓存。底稿页用的缓存在 `agent/subagents/weight/paper/底稿模型计算.json`。
 
 流水线步骤 `agent/subagents/weight/program.py` 的 `run` 只把 `context["source"]` 交给 `run_workbook`，再把 `annotated`、`trace_file`、`ead_yi`、`rwa_yi` 放回 context。
 

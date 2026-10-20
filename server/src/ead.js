@@ -5,9 +5,9 @@ import { query } from "./db.js";
 
 const require = createRequire(import.meta.url);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const pipeline = require(path.join(root, "archive/web/js/lib/pipeline.js"));
-const master = require(path.join(root, "archive/web/data/master_data.js"));
-const mock = require(path.join(root, "archive/web/data/mock_loans.js"));
+const pipeline = require(path.join(root, "server/lib/pipeline.cjs"));
+const master = require(path.join(root, "server/data/master_data.cjs"));
+const mock = require(path.join(root, "server/data/mock_loans.cjs"));
 
 function json(value) {
   if (value == null) return null;

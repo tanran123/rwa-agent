@@ -2,7 +2,7 @@
 
 这个文件给 Cursor、DeepSeek 和其他编程助手用。用户说要加功能时，按这里写代码。
 
-`agent/` 是算权重的智能体，不负责改页面和接口。写代码的是当前这个编程助手。
+`agent/` 是计算智能体，不负责改页面和接口。目录以 `agent/README.md` 为准。写代码的是当前这个编程助手。
 
 用户加功能时往往只给一句片段。自己对上现有页面、接口和库表，按根目录 `README.md` 的「加功能时怎么说」做完。只有源文件里没有那个名字时才停下来问。
 
@@ -10,13 +10,14 @@
 
 ## 协作
 
-结构约定在四份说明里。先读说明，再打开要对齐的源文件，最后才改代码。说明里没有的目录不要新建。改了目录或清单，同时改对应的说明。
+结构约定在五份说明里：根目录 `README.md`、`client/README.md`、`server/README.md`、`agent/README.md`、`knowledge/README.md`。先读说明，再打开要对齐的源文件，最后才改代码。说明里没有的目录不要新建。改了目录或清单，同时改对应的说明。
 
-1. 读 `README.md`，判断功能属于前端、后端还是计算智能体。
+1. 读 `README.md`，判断功能属于前端、后端、计算智能体还是规则库。
 2. 只打开要改的那一层，并按其中的清单落文件：
    - 页面、菜单、表格：`client/README.md`
    - 接口、库表：`server/README.md`，列名以 `sql/001_schema.sql` 为准
    - 权重、转换系数、缓释、汇总：`agent/README.md`
+   - 本地规则包：`knowledge/local/`。微信知识库对话：`knowledge/weknora/`。清单在 `knowledge/README.md`。
 3. 一层不够时按这个顺序：库表、接口、前端 API、页面和菜单。计算步骤不走这四步，按 `agent/README.md` 单独加目录。
 4. 写每一处引用之前，打开被引用的文件，确认名字已经在里面。路由、函数、表列、组件属性和 CSS 类都要能在源文件里指到。
 5. 做完后列出新建和修改的文件，并写明对应清单里的哪一条。拿不准的值不要写进代码，放在回复里说明源文件没有这一项。
@@ -32,12 +33,13 @@
 | 返回字段 | 同一个路由函数里的 `ctx.body`。页面只用这里出现过的键。库里有、响应里没有的列，页面不能直接读。 |
 | 表和列 | `sql/001_schema.sql` 的 `CREATE TABLE`。SQL 只用这里的列名。新列先改这个文件。 |
 | 加载和报错 | `client/src/components/AsyncView.vue`。属性只有 `load`。插槽给出 `data` 和 `reload`。 |
-| 样式类名 | `archive/web/css/` 里已经出现的类。没有的类不要写进模板，除非同时在对应 css 里加上。 |
-| 计算步骤名单 | `交付/exposure-weight-decision/rwa_agent/pipeline.py` 的 `STEPS`。不要凭记忆写成还包含 `ccf`、`crm`、`rwa`。 |
-| 分类规则和权重 | `交付/exposure-weight-decision/knowledge/权重法风险暴露分类.json`。只改用户点名的那一条，不要顺手补权重。 |
-| 试算底稿 | `交付/exposure-weight-decision/samples/`。 |
+| 样式类名 | `client/src/assets/css/` 里已经出现的类。没有的类不要写进模板，除非同时在对应 css 里加上。 |
+| 计算步骤名单 | `agent/pipeline.py` 的 `STEPS`。不要凭记忆写成还包含 `ccf`、`crm`、`rwa`。 |
+| 分类规则和权重 | `agent/subagents/weight/knowledge/权重法风险暴露分类.json`。只改用户点名的那一条，不要顺手补权重。 |
+| 本地规则包 | `knowledge/local/`。微信知识库对话在 `knowledge/weknora/`，不拿本地 Markdown 当回答。 |
+| 试算底稿 | `agent/subagents/weight/samples/`。 |
 | 计算留痕 | 仓库根目录 `output/traces/`。 |
-| 结果工作簿 | 仓库根目录 `output/workbooks/`。底稿在交付目录以外时，写在底稿旁边。 |
+| 结果工作簿 | 仓库根目录 `output/workbooks/`。底稿不在权重步骤目录里时，写在底稿旁边。 |
 | 子智能体提示 | 该目录的 `agent.json` 和 `AGENTS.md`。不要把提示词写回 Python 字符串。 |
 | 智能体返回 | `agent/harness.py` 的 `reply`。只有 `reply` 和 `pages`。`pages[].path` 只能是 `agent/pages.py` 里 `PAGES` 已有的键。 |
 
@@ -63,6 +65,6 @@
 
 不要编造权重、条款号、客户名、金额、字段编码或监管条文。演示数字只从已经打开的源文件或接口实现里引用。
 
-不要把新功能写进 `archive/`。不要在前端或 Koa 里另写一套权重。`ccf`、`crm`、`rwa` 的 `program.run` 还没实现时，不要把它们写进 `STEPS`，也不要补一个数让流水线继续。
+不要在前端或 Koa 里另写一套权重。`ccf`、`crm`、`rwa` 的 `program.run` 还没实现时，不要把它们写进 `STEPS`，也不要补一个数让流水线继续。
 
 密钥不要写进代码，也不要提交 `.env`。

@@ -10,8 +10,10 @@ Koa 2，前缀 `/api`，默认 `http://127.0.0.1:8780`。数据在 MySQL，连�
 | --- | --- |
 | `src/index.js` | 全部 HTTP 路由，以及行数据到 JSON 的形状。 |
 | `src/db.js` | 读取 `.env`，导出 `query(sql, params)`。 |
-| `src/measure.js` | `GET /measure` 和审计底稿。用 `archive/web` 里的模拟债项和流水线，分类规则读交付目录的权重法 JSON。 |
-| `src/paper.js` | `GET /working-paper` 和上传样例。底稿读 `archive/knowledge/底稿模型计算.json`，样例读 `archive/web/js/data.js`。 |
+| `src/measure.js` | `GET /measure` 和审计底稿。模拟债项在 `data/`，计量在 `lib/`，分类规则读 `agent/subagents/weight/knowledge/权重法风险暴露分类.json`。 |
+| `src/paper.js` | `GET /working-paper` 和上传样例。底稿读 `agent/subagents/weight/paper/底稿模型计算.json`，样例读 `data/data.js`。 |
+| `lib/` | 计量流水线 `pipeline.cjs`、`engine.cjs`，以及审计底稿用的 `xlsx-writer.cjs`。 |
+| `data/` | 模拟主数据、模拟债项、上传样例和种子规则原文。 |
 | `.env.example` | 数据库变量名。真实密码只写在 `.env`。 |
 | `../sql/001_schema.sql` | 建库建表。先执行这一份。 |
 | `../sql/002_seed.sql` | 初始数据。由 `tools/build-seed.mjs` 生成，不要手改大段内容。 |
@@ -51,7 +53,7 @@ Koa 2，前缀 `/api`，默认 `http://127.0.0.1:8780`。数据在 MySQL，连�
 
 日期用文件顶部的 `date()`，JSON 列用 `json()`。参数用 `query(sql, [占位值])`。`query` 定义在 `src/db.js`，不要再创建连接池。
 
-`/measure` 的笔数和金额由 `src/measure.js` 算出来。不要在路由或页面里写死另一套合计。`/working-paper` 只读 `archive/knowledge/底稿模型计算.json`，不要在请求里重算。
+`/measure` 的笔数和金额由 `src/measure.js` 算出来。不要在路由或页面里写死另一套合计。`/working-paper` 只读 `agent/subagents/weight/paper/底稿模型计算.json`，不要在请求里重算。
 
 ## 加一个接口
 

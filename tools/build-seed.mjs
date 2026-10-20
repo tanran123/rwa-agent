@@ -9,10 +9,10 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(import.meta.url);
-const MASTER = require(join(root, "archive/web/data/master_data.js"));
-const rulesSrc = readFileSync(join(root, "archive/web/js/config/rules.js"), "utf8");
+const MASTER = require(join(root, "server/data/master_data.cjs"));
+const rulesSrc = readFileSync(join(root, "server/data/rules.js"), "utf8");
 const classDoc = JSON.parse(readFileSync(
-  join(root, "交付/exposure-weight-decision/knowledge/权重法风险暴露分类.json"),
+  join(root, "agent/subagents/weight/knowledge/权重法风险暴露分类.json"),
   "utf8"
 ));
 
@@ -182,7 +182,7 @@ lines.push(insert("field_mapping",
 
 lines.push(
   "INSERT INTO exposure_document (id, name, title, source_file, body) VALUES ("
-  + [1, classDoc.name, classDoc.title, "交付/exposure-weight-decision/knowledge/权重法风险暴露分类.json", JSON.stringify(classDoc)].map(q).join(", ")
+  + [1, classDoc.name, classDoc.title, "agent/subagents/weight/knowledge/权重法风险暴露分类.json", JSON.stringify(classDoc)].map(q).join(", ")
   + ");"
 );
 

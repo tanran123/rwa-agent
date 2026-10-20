@@ -21,7 +21,7 @@ Vue 3 + Vue Router + Vuex + axios。开发服务把 `/api` 代理到 `http://127
 | `src/view/` | 一个路由一个 `.vue`。按菜单再分子目录。 |
 | `src/components/` | 多页共用的抽屉、瀑布、加载、智能体停靠栏。 |
 | `src/utils/` | 纯函数：菜单、规则文案、瀑布布局。 |
-| `src/assets/main.css` | 引入 `archive/web/css/` 里的样式。新样式加在那些 css 里，或只写在单个组件上。 |
+| `src/assets/main.css` | 引入 `src/assets/css/` 里的样式。新样式加在那些 css 里，或只写在单个组件上。 |
 
 ## view 子目录
 
@@ -43,7 +43,7 @@ Vue 3 + Vue Router + Vuex + axios。开发服务把 `/api` 代理到 `http://127
 
 `session` 只有 `store/index.js` 里的那些字段。地区下拉用 `session.jurisdictions` 的 `code` 和 `label`，与条款页相同。
 
-样式只用 `archive/web/css/` 里已有的类，例如 `panel`、`panel-head`、`panel-body`、`tbl`、`compact`、`inline-fields`、`notice`、`danger`、`mono`、`dim`、`clickable`、`sub`。要新类就同时改对应的 css。
+样式只用 `src/assets/css/` 里已有的类，例如 `panel`、`panel-head`、`panel-body`、`tbl`、`compact`、`inline-fields`、`notice`、`danger`、`mono`、`dim`、`clickable`、`sub`。要新类就同时改对应的 css。
 
 ## 加一个页面
 

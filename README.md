@@ -1,6 +1,6 @@
 # 信用风险 RWA
 
-生成代码之前先读 `AGENTS.md`。它约定编程助手怎么和下面这些说明协作：先读本文件判断功能属于前端、后端还是智能体，再打开对应目录里的 `README.md`，按清单落文件。不要把新产品功能写进 `archive/`。Cursor 会通过 `.cursor/skills/rwa-codegen/` 走同一套步骤。DeepSeek 或其他助手打开本仓库时，也从 `AGENTS.md` 开始。
+生成代码之前先读 `AGENTS.md`。它约定编程助手怎么和下面这些说明协作：先读本文件判断功能属于前端、后端还是智能体，再打开对应目录里的 `README.md`，按清单落文件。Cursor 会通过 `.cursor/skills/rwa-codegen/` 走同一套步骤。DeepSeek 或其他助手打开本仓库时，也从 `AGENTS.md` 开始。
 
 加功能时直接说想要的效果，一两句就够。右下角的 AI 只做权重计算，不改页面和接口。
 
@@ -11,28 +11,25 @@
 | `client/` | Vue 前端。页面、菜单、调用接口。说明见 `client/README.md`。 |
 | `server/` | Koa 接口，读 MySQL。说明见 `server/README.md`。 |
 | `sql/` | 库表。`001_schema.sql` 建表，`002_seed.sql` 灌数。表的用途写在后端说明里。 |
-| `agent/` | 风险暴露权重智能体。总控和四个计算子智能体。说明见 `agent/README.md`。 |
-| `app.py` | Flask。只负责把 `/api/agent/chat`、`/api/rules/chat` 交给 Python。页面数据不写在这里。 |
-| `交付/exposure-weight-decision/` | 权重法分类规则、试算底稿和计算入口。细分见下面「交付目录和计算结果」。 |
+| `agent/` | 计算智能体。总控、流水线、底稿页和市场风险公式见 `agent/README.md`。 |
+| `knowledge/` | 规则库。本地规则在 `local/`，微信知识库对话在 `weknora/`。说明见 `knowledge/README.md`。 |
+| `app.py` | Flask。把 `/api/agent/chat`、`/api/rules/chat` 交给 Python，并提供底稿和规则库接口。 |
 | `output/` | 每次计算写出的留痕和结果工作簿。不提交。 |
-| `archive/` | 旧页面原型、市场风险规则包、底稿缓存、样例。前端样式和模拟债项仍会读这里。新功能不要加进来。 |
-| `tools/build-seed.mjs` | 从主数据和分类 JSON 重新生成 `sql/002_seed.sql`。 |
+| `tools/build-seed.mjs` | 从 `server/data/master_data.cjs` 和分类 JSON 重新生成 `sql/002_seed.sql`。 |
 | `ecosystem.config.cjs`、`start.sh` | 用 PM2 启动智能体和接口。 |
 
-## 交付目录和计算结果
+## 分类规则和计算结果
 
-`交付/exposure-weight-decision/` 只放规则、试算底稿和计算入口。每次跑出来的文件写到仓库根目录 `output/`。更细的表在 `交付/exposure-weight-decision/README.md`。
+分类规则和试算底稿放在权重这一步旁边。每次跑出来的文件写到仓库根目录 `output/`。
 
 | 放哪里 | 内容 |
 | --- | --- |
-| `交付/exposure-weight-decision/knowledge/` | 分类规则。计算读 `权重法风险暴露分类.json`。 |
-| `交付/exposure-weight-decision/rwa_agent/` | 计算入口，转到 `agent/subagents/weight/`。 |
-| `交付/exposure-weight-decision/samples/` | 试算底稿。 |
-| `交付/exposure-weight-decision/.env` | 通义密钥。不提交。 |
+| `agent/subagents/weight/knowledge/` | 分类规则。计算读 `权重法风险暴露分类.json`。 |
+| `agent/subagents/weight/samples/` | 试算底稿。 |
 | `output/traces/` | 计算留痕，JSON 和 Markdown。 |
-| `output/workbooks/` | 交付目录里的底稿算完后的结果工作簿。 |
+| `output/workbooks/` | 试算底稿算完后的结果工作簿。 |
 
-底稿放在交付目录以外时，结果工作簿写在那个文件旁边，文件名是 `工作簿名_风险暴露分类.xlsx`。留痕仍写到 `output/traces/`。
+底稿不在 `agent/subagents/weight/` 里面时，结果工作簿写在那个文件旁边，文件名是 `工作簿名_风险暴露分类.xlsx`。留痕仍写到 `output/traces/`。整表计算在仓库根目录执行 `python -m agent.pipeline 工作簿.xlsx`，走 `agent/subagents/weight/calc/`。底稿页走 `agent/subagents/weight/paper/`，读同目录 `底稿模型计算.json`。
 
 ## 请求怎么走
 
@@ -52,7 +49,9 @@
 
 说的是列表、保存、导出、批次：改 `server/src/index.js`，查询放在现有模块或新建 `server/src/` 下的一个文件。前端在 `client/src/api/` 加对应函数。
 
-说的是风险暴露权重、转换系数、缓释、风险加权资产汇总：改 `agent/subagents/` 里对应的那一步。分类规则只改 `交付/exposure-weight-decision/knowledge/权重法风险暴露分类.json`。不要在前端或接口里另写一套权重。
+说的是风险暴露权重、转换系数、缓释、风险加权资产汇总：改 `agent/subagents/` 里对应的那一步。分类规则只改 `agent/subagents/weight/knowledge/权重法风险暴露分类.json`。不要在前端或接口里另写一套权重。
+
+说的是本地规则包：改 `knowledge/local/`。说的是规则对话或微信知识库：改 `knowledge/weknora/`。
 
 跨两层时按这个顺序生成文件：库表、接口、前端 API、页面和菜单。智能体步骤不经过这四步，按 `agent/README.md` 单独加目录。
 
