@@ -1,0 +1,175 @@
+{
+  "name": "表内 EAD 计算配置",
+  "side": "on",
+  "version": "MO-SA-2026.1",
+  "products": [
+    {
+      "code": "corp_loan",
+      "rules": [
+        {
+          "id": "EAD-ON-001",
+          "name": "表内债权类 EAD",
+          "inputs": [
+            "balance"
+          ],
+          "formula": "EAD = 账面余额",
+          "steps": [
+            "取该笔债项的账面本金余额 balance",
+            "按精度 2 位小数保留，舍入方式为四舍五入"
+          ],
+          "condition": "适用于所有表内债权类业务",
+          "precision": 2,
+          "rounding": "四舍五入",
+          "resultField": "on_balance_ead",
+          "clause": "CL-MO-060",
+          "status": "published",
+          "params": []
+        }
+      ]
+    },
+    {
+      "code": "personal_loan",
+      "rules": [
+        {
+          "id": "EAD-ON-002",
+          "name": "表内债权类 EAD",
+          "inputs": [
+            "balance"
+          ],
+          "formula": "EAD = 账面余额",
+          "steps": [
+            "取该笔债项的账面本金余额 balance",
+            "按精度 2 位小数保留，舍入方式为四舍五入"
+          ],
+          "condition": "适用于所有表内债权类业务",
+          "precision": 2,
+          "rounding": "四舍五入",
+          "resultField": "on_balance_ead",
+          "clause": "CL-MO-060",
+          "status": "published",
+          "params": []
+        }
+      ]
+    },
+    {
+      "code": "bond",
+      "rules": [
+        {
+          "id": "EAD-ON-003",
+          "name": "表内债权类 EAD",
+          "inputs": [
+            "balance"
+          ],
+          "formula": "EAD = 账面余额",
+          "steps": [
+            "取该笔债项的账面本金余额 balance",
+            "按精度 2 位小数保留，舍入方式为四舍五入"
+          ],
+          "condition": "适用于所有表内债权类业务",
+          "precision": 2,
+          "rounding": "四舍五入",
+          "resultField": "on_balance_ead",
+          "clause": "CL-MO-060",
+          "status": "published",
+          "params": []
+        }
+      ]
+    },
+    {
+      "code": "ib_call",
+      "rules": [
+        {
+          "id": "EAD-ON-004",
+          "name": "表内债权类 EAD",
+          "inputs": [
+            "balance"
+          ],
+          "formula": "EAD = 账面余额",
+          "steps": [
+            "取该笔债项的账面本金余额 balance",
+            "按精度 2 位小数保留，舍入方式为四舍五入"
+          ],
+          "condition": "适用于所有表内债权类业务",
+          "precision": 2,
+          "rounding": "四舍五入",
+          "resultField": "on_balance_ead",
+          "clause": "CL-MO-060",
+          "status": "published",
+          "params": []
+        }
+      ]
+    },
+    {
+      "code": "ib_time",
+      "rules": [
+        {
+          "id": "EAD-ON-005",
+          "name": "表内债权类 EAD",
+          "inputs": [
+            "balance"
+          ],
+          "formula": "EAD = 账面余额",
+          "steps": [
+            "取该笔债项的账面本金余额 balance",
+            "按精度 2 位小数保留，舍入方式为四舍五入"
+          ],
+          "condition": "适用于所有表内债权类业务",
+          "precision": 2,
+          "rounding": "四舍五入",
+          "resultField": "on_balance_ead",
+          "clause": "CL-MO-060",
+          "status": "published",
+          "params": []
+        }
+      ]
+    },
+    {
+      "code": "due_from_bank",
+      "rules": [
+        {
+          "id": "EAD-ON-006",
+          "name": "表内债权类 EAD",
+          "inputs": [
+            "balance"
+          ],
+          "formula": "EAD = 账面余额",
+          "steps": [
+            "取该笔债项的账面本金余额 balance",
+            "按精度 2 位小数保留，舍入方式为四舍五入"
+          ],
+          "condition": "适用于所有表内债权类业务",
+          "precision": 2,
+          "rounding": "四舍五入",
+          "resultField": "on_balance_ead",
+          "clause": "CL-MO-060",
+          "status": "published",
+          "params": []
+        }
+      ]
+    },
+    {
+      "code": "other_credit",
+      "rules": [
+        {
+          "id": "EAD-ON-007",
+          "name": "表内权益类 EAD",
+          "inputs": [
+            "balance"
+          ],
+          "formula": "EAD = 账面价值",
+          "steps": [
+            "取股权投资的账面价值 balance",
+            "不扣减减值准备（权重已体现风险）"
+          ],
+          "condition": "适用于股权投资等权益类表内业务",
+          "precision": 2,
+          "rounding": "四舍五入",
+          "resultField": "on_balance_ead",
+          "clause": "CL-MO-060",
+          "status": "published",
+          "params": []
+        }
+      ]
+    }
+  ]
+}
