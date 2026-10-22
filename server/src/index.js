@@ -7,6 +7,7 @@ import { auditWorkbook, measureDemo } from "./measure.js";
 import { paperView, uploadSamples } from "./paper.js";
 import { trialEad } from "./ead.js";
 import { checkEadFormula, readEadConfig, saveEadConfig } from "./eadConfig.js";
+import { readCrmConfig, saveCrmConfig } from "./crmConfig.js";
 import { copyExposureDoc, exposureChat, exposureDoc, exposureDocs, saveExposureChat, saveExposureDoc } from "./exposureDocs.js";
 
 const app = new Koa();
@@ -287,6 +288,14 @@ router.post("/ead-formula/check", async (ctx) => {
 
 router.post("/ead-trial", async (ctx) => {
   ctx.body = await trialEad(ctx.request.body || {});
+});
+
+router.get("/crm-config", async (ctx) => {
+  ctx.body = await readCrmConfig();
+});
+
+router.put("/crm-config", async (ctx) => {
+  ctx.body = await saveCrmConfig((ctx.request.body || {}).config);
 });
 
 router.get("/ccf", async (ctx) => {

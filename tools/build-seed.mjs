@@ -51,6 +51,19 @@ const CRM_RULES = extractValue(rulesSrc, "CRM_RULES");
 const BANK_GRID = extractValue(rulesSrc, "BANK_GRID");
 const MO_WEIGHTS = extractValue(rulesSrc, "MO_WEIGHTS");
 
+/** 合格缓释物字典的默认骨架。每个产品一份，可在「信用风险缓释配置」页逐产品增删改。 */
+const DEFAULT_CRM_ELIGIBLE_TYPES = [
+  { code: "cash", name: "现金及本机构发行的存款证",
+    note: "现金，以及由承担该交易对手暴露的填報機構本身所發行之存款證或類似工具，存放於該填報機構。（第 80(a) 段）" },
+  { code: "gold", name: "黄金", note: "黄金。（第 80(b) 段）" },
+  { code: "gov_bond", name: "主权债务证券",
+    note: "由主權發行、且信用品質級別為第 4 級或以上的債務證券。（第 80(c) 段）" },
+  { code: "pse_bond", name: "公共部门实体债务证券",
+    note: "由公共部門實體（PSEs）發行、且信用品質級別為第 4 級或以上的債務證券。（第 80(d) 段）" },
+  { code: "guarantee", name: "第三方保证",
+    note: "由合格保證人（主權、PSE、銀行，或其他風險權重為 20% 或更佳且低於交易對手風險權重之實體）提供之保證。（第 84–85 段）" }
+];
+
 const PARAMS = [
   ["LTV_RES_50", "居住房地产", "LTV 分界 50%", "50%", "%", "居住用房地产权重条件引用。不依赖现金流且不超过此值、依赖现金流且不超过此值，各走一条权重。"],
   ["LTV_RES_100", "居住房地产", "LTV 分界 100%", "100%", "%", "居住用房地产权重条件引用。超过此值时，不依赖现金流改为查交易对手，依赖现金流另有一条固定权重。"],
@@ -280,6 +293,17 @@ lines.push(insert("crm_rule",
     item.id, item.type, item.tool, item.substitute, item.floorParam || "",
     JSON.stringify(item.constraints || {}), item.pri
   ])));
+
+/** 每个产品一份默认合格缓释物字典。crm_product_config / crm_slot_column 不灌种子。 */
+const crmEligibleRows = [];
+MASTER.PRODUCT_TYPES.forEach((product) => {
+  DEFAULT_CRM_ELIGIBLE_TYPES.forEach((type, index) => {
+    crmEligibleRows.push([product.code, type.code, type.name, type.note, index + 1]);
+  });
+});
+lines.push(insert("crm_eligible_type",
+  ["product_code", "code", "name", "note", "seq"],
+  crmEligibleRows));
 
 const productRules = [];
 Object.entries(MASTER.PRODUCT_EXPOSURE_RULES).forEach(([product, list]) => {

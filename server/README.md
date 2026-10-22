@@ -14,6 +14,7 @@ Koa 2，前缀 `/api`，默认 `http://127.0.0.1:8780`。数据在 MySQL，连�
 | `src/measure.js` | `GET /measure` 和审计底稿。模拟债项在 `data/`，计量在 `lib/`，分类规则读 `agent/subagents/weight/knowledge/权重法风险暴露分类.json`，EAD 配置读 `ead_product_config`、`ead_product_rule`。 |
 | `src/paper.js` | `GET /working-paper` 和上传样例。底稿读 `agent/subagents/weight/paper/底稿模型计算.json`，样例读 `data/data.js`。 |
 | `src/eadConfig.js` | `GET`/`PUT /ead-config` 和 `POST /ead-formula/check`。读写 `ead_product_config`、`ead_product_rule`，产品清单查 `product_type`，公式校验用 `lib/formula.cjs`。 |
+| `src/crmConfig.js` | `GET`/`PUT /crm-config`。读写 `crm_product_config`、`crm_slot_column`、`crm_eligible_type`，产品清单查 `product_type`，可绑定的源表列从 `product_field` 的 `source_field` 推导（计算字段和占位符不算）。 |
 | `lib/formula.cjs` | EAD 公式的词法、语法分析、校验和求值。页面和计算共用这一份。 |
 | `lib/` | 计量流水线 `pipeline.cjs`、`engine.cjs`，以及审计底稿用的 `xlsx-writer.cjs`。 |
 | `data/` | 模拟主数据、模拟债项、上传样例和种子规则原文。 |
@@ -34,6 +35,7 @@ Koa 2，前缀 `/api`，默认 `http://127.0.0.1:8780`。数据在 MySQL，连�
 | POST | `/exposure-tree/copy`、`/exposure-tree/propose`、`/exposure-tree/save` | 添加页签时复制通用。对话先说明当前规则，确认后询问是否保存，保存才写入。没在对话里出现的权重不写入。 |
 | GET、POST | `/exposure-tree/chat` | 按分类 name 读取或保存决策树对话。内容写在仓库根目录 `决策树对话.json`，不提交。 |
 | GET、PUT | `/ead-config` | 表内外 EAD 计算配置。读写在 `ead_product_config`、`ead_product_rule` 两张表；保存前整份校验产品 code、公式语法、字段范围和适用条件，对不上就报错不写。 |
+| GET、PUT | `/crm-config` | 信用风险缓释配置。读写在 `crm_product_config`、`crm_slot_column`、`crm_eligible_type` 三张表；保存前整份校验产品 code、笔数上限（1–6）、列名是否属于该产品的源表列、同属性内与同一笔内的列名冲突、字典编码是否重复，对不上就报错不写。三个属性（`crm_type`/`crm_value`/`crm_weight`）都是必选：第 1 笔必须填满，其余笔要么整笔留空、要么三个都填。 |
 | POST | `/ead-formula/check` | 校验一条公式：语法，以及引用字段是否属于该产品的标准字段。公式编辑器实时调它。 |
 | POST | `/ead-trial` | 按配置的公式试算一条规则。 | 
 | GET | `/ccf` | 转换系数。 |
@@ -47,9 +49,11 @@ Koa 2，前缀 `/api`，默认 `http://127.0.0.1:8780`。数据在 MySQL，连�
 
 ## 表
 
-`jurisdiction`、`customer`、`org_unit` 是客户和机构。`rule_version`、`clause_doc`、`clause_ref`、`rule_param` 是规则版本、条款和共用参数。`product_type`、`product_field`、`field_mapping` 是产品和字段。`exposure_document` 存权重法分类 JSON。`weight_rule`、`bank_grade_row`、`mo_weight_row` 是权重表。`ead_product_config`、`ead_product_rule` 是按产品的 EAD 配置和公式。`ccf_rule`、`crm_rule`、`product_exposure_rule` 是转换系数、缓释和产品规则。`measure_batch`、`measure_line` 是批次和逐笔结果。`assistant_turn` 是规则助手对话。
+`jurisdiction`、`customer`、`org_unit` 是客户和机构。`rule_version`、`clause_doc`、`clause_ref`、`rule_param` 是规则版本、条款和共用参数。`product_type`、`product_field`、`field_mapping` 是产品和字段。`exposure_document` 存权重法分类 JSON。`weight_rule`、`bank_grade_row`、`mo_weight_row` 是权重表。`ead_product_config`、`ead_product_rule` 是按产品的 EAD 配置和公式。`ccf_rule`、`crm_rule`、`product_exposure_rule` 是转换系数、缓释和产品规则。`crm_product_config`、`crm_slot_column`、`crm_eligible_type` 是按产品的缓释配置、逐笔列名绑定和合格缓释物字典。`measure_batch`、`measure_line` 是批次和逐笔结果。`assistant_turn` 是规则助手对话。
 
 表内 / 表外 EAD 计算规则在 `ead_product_config`、`ead_product_rule`。一个产品只能选表内或表外。`tools/build-seed.mjs` 按产品公式生成这两张表的种子，公式先过 `lib/formula.cjs`。
+
+缓释配置在 `crm_product_config`、`crm_slot_column`、`crm_eligible_type`。`crm_slot_column` 的 `attr` 只有 `crm_type` / `crm_value` / `crm_weight` 三个值，`slot` 是第几笔。种子只灌 `crm_eligible_type` 的默认 5 类字典（每个产品一份），另外两张表不灌：没有行时按「无需配置、无绑定」返回，产品的默认状态就是无需配置。字典与「是否需要配置」无关，两种状态都照常保存 —— 标为无需配置只清列名绑定。
 
 新表写进 `sql/001_schema.sql`，并在文件开头的 `DROP TABLE` 里按依赖顺序补上。种子数据需要跟着变时，改 `tools/build-seed.mjs` 再生成 `002_seed.sql`。
 

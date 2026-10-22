@@ -15,6 +15,9 @@ DROP TABLE IF EXISTS assistant_turn;
 DROP TABLE IF EXISTS measure_line;
 DROP TABLE IF EXISTS measure_batch;
 DROP TABLE IF EXISTS product_exposure_rule;
+DROP TABLE IF EXISTS crm_eligible_type;
+DROP TABLE IF EXISTS crm_slot_column;
+DROP TABLE IF EXISTS crm_product_config;
 DROP TABLE IF EXISTS crm_rule;
 DROP TABLE IF EXISTS ccf_rule;
 DROP TABLE IF EXISTS ead_product_rule;
@@ -235,6 +238,33 @@ CREATE TABLE crm_rule (
   floor_param VARCHAR(32) NOT NULL DEFAULT '',
   constraints_json JSON NOT NULL,
   priority INT NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 信用风险缓释配置：按产品配置。产品清单读 product_type，可选源表列读 product_field。
+CREATE TABLE crm_product_config (
+  product_code VARCHAR(32) NOT NULL PRIMARY KEY,
+  needed TINYINT NOT NULL DEFAULT 1,
+  reason VARCHAR(255) NOT NULL DEFAULT '',
+  max_slots TINYINT NOT NULL DEFAULT 1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 逐笔列名绑定。attr 只有 crm_type / crm_value / crm_weight 三个值。
+CREATE TABLE crm_slot_column (
+  product_code VARCHAR(32) NOT NULL,
+  attr VARCHAR(16) NOT NULL,
+  slot TINYINT NOT NULL,
+  column_name VARCHAR(80) NOT NULL,
+  PRIMARY KEY (product_code, attr, slot)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 产品的合格缓释物字典。字典外的类型视为不合格，缓释不予认定。
+CREATE TABLE crm_eligible_type (
+  product_code VARCHAR(32) NOT NULL,
+  code VARCHAR(32) NOT NULL,
+  name VARCHAR(128) NOT NULL,
+  note VARCHAR(255) NOT NULL DEFAULT '',
+  seq INT NOT NULL DEFAULT 1,
+  PRIMARY KEY (product_code, code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE product_exposure_rule (
