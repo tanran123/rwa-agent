@@ -350,58 +350,8 @@ const FIELD_MAPPINGS = {
   ],
 };
 
-/* ======================= 表内 EAD 计算规则 ========================= */
-const EAD_ON_RULES = [
-  { id: 'EAD-ON-001', name: '表内债权类 EAD', products: ['对公贷款', '个人贷款', '债券投资', '同业活期', '同业定期', '存放同业'],
-    productCodes: ['corp_loan', 'personal_loan', 'bond', 'ib_call', 'ib_time', 'due_from_bank'],
-    version: 'MO-SA-2026.1', status: 'published',
-    inputs: ['债项余额(balance)', '减值准备(impairment)'],
-    formula: 'EAD = 债项余额 − 减值准备',
-    steps: ['取该笔债项的账面本金余额 balance', '取该笔债项已计提的损失准备 impairment', '按精度 2 位小数相减，舍入方式为四舍五入'],
-    condition: '适用于所有表内债权类业务', precision: 2, rounding: '四舍五入',
-    resultField: 'on_balance_ead', clause: 'CL-MO-060',
-    params: [{ name: '减值准备', value: '按行内减值台账', basis: '已计提的损失准备，未计提填 0' }] },
-  { id: 'EAD-ON-002', name: '表内权益类 EAD', products: ['其他信用风险暴露'],
-    productCodes: ['other_credit'],
-    version: 'MO-SA-2026.1', status: 'published',
-    inputs: ['账面价值(balance)'],
-    formula: 'EAD = 账面价值',
-    steps: ['取股权投资的账面价值', '不扣减减值准备（权重已体现风险）'],
-    condition: '适用于股权投资等权益类表内业务', precision: 2, rounding: '四舍五入',
-    resultField: 'on_balance_ead', clause: 'CL-MO-060',
-    params: [] },
-];
-
-/* ======================= 表外 EAD 计算规则 ========================= */
-const EAD_OFF_RULES = [
-  { id: 'EAD-OFF-001', name: '表外授信类 EAD（一年以内贷款承诺）', products: ['表外授信及承诺'],
-    productCodes: ['off_bs'],
-    version: 'MO-SA-2026.1', status: 'published', ccf: 0.2,
-    inputs: ['表内已提用金额(onbalance_amount)', '表外未提用金额(offbalance_amount)', '信用转换系数(ccf)'],
-    formula: 'EAD = 表内已提用金额 + 表外未提用金额 × CCF',
-    steps: ['取已提用并计入表内的金额', '取未提用金额', '未提用金额 × 20%', '两项相加，保留 2 位小数'],
-    condition: '原始期限一年以内的贷款承诺', precision: 2, rounding: '四舍五入',
-    resultField: 'off_balance_ead', clause: 'CL-MO-064',
-    params: [{ name: '信用转换系数 CCF', value: '0.2', basis: '一年以内贷款承诺档位' }] },
-  { id: 'EAD-OFF-002', name: '表外授信类 EAD（一年以上贷款承诺）', products: ['表外授信及承诺'],
-    productCodes: ['off_bs'],
-    version: 'MO-SA-2026.1', status: 'published', ccf: 0.5,
-    inputs: ['表内已提用金额(onbalance_amount)', '表外未提用金额(offbalance_amount)', '信用转换系数(ccf)'],
-    formula: 'EAD = 表内已提用金额 + 表外未提用金额 × CCF',
-    steps: ['取已提用金额', '取未提用金额', '未提用金额 × 50%', '两项相加，保留 2 位小数'],
-    condition: '原始期限一年以上的贷款承诺', precision: 2, rounding: '四舍五入',
-    resultField: 'off_balance_ead', clause: 'CL-MO-064',
-    params: [{ name: '信用转换系数 CCF', value: '0.5', basis: '一年以上贷款承诺档位' }] },
-  { id: 'EAD-OFF-003', name: '表外授信类 EAD（信用证）', products: ['表外授信及承诺'],
-    productCodes: ['off_bs'],
-    version: 'MO-SA-2026.1', status: 'draft', ccf: 0.2,
-    inputs: ['表外余额(offbalance_amount)', '信用转换系数(ccf)'],
-    formula: 'EAD = 表外余额 × CCF',
-    steps: ['取信用证未使用金额', '乘以 20%'],
-    condition: '跟单信用证及备用信用证', precision: 2, rounding: '四舍五入',
-    resultField: 'off_balance_ead', clause: 'CL-MO-064',
-    params: [{ name: '信用转换系数 CCF', value: '0.2', basis: '信用证档位' }] },
-];
+/* 表内 / 表外 EAD 计算规则不在这里。唯一数据源是
+   agent/subagents/ead/knowledge/ 下的 表内EAD计算配置.json 和 表外EAD计算配置.json。 */
 
 /* ======================= 产品专属暴露分类规则 ====================== */
 /* 这些是"产品视角"的规则子集，与规则集 JSON 中的条目一一对应。
@@ -543,7 +493,7 @@ const NL_ASSISTANT_SCRIPT = [
 const MASTER_DATA = {
   JURISDICTIONS, RULE_VERSIONS, RULE_TYPES, RULE_STATUS, CLAUSES,
   PRODUCT_TYPES, PRODUCT_FIELDS, FIELD_MAPPINGS,
-  EAD_ON_RULES, EAD_OFF_RULES, PRODUCT_EXPOSURE_RULES, GENERIC_RULES,
+  PRODUCT_EXPOSURE_RULES, GENERIC_RULES,
   BATCHES, NL_ASSISTANT_SCRIPT,
 };
 

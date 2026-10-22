@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import json
+import re
+
 from agent.chat import model
 from agent.layout import ROOT, SKILLS, coordinator_prompt, project
 from agent.pages import PAGES, open_page
 from agent.pipeline import pipeline_steps
 
 _GRAPH = None
+
+_FENCE = re.compile(r"```json\s*(.*?)```", re.S)
 
 
 def graph():
@@ -34,7 +39,19 @@ def graph():
     return _GRAPH
 
 
-def reply(messages: list[dict], page: str) -> dict:
+def draft_of(text: str) -> dict | None:
+    """取回复里 ```json 代码块那份修订草稿。取不到就返回 None。"""
+    match = _FENCE.search(text or "")
+    if not match:
+        return None
+    try:
+        data = json.loads(match.group(1).strip())
+    except (ValueError, TypeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def reply(messages: list[dict], page: str, config: dict | None = None) -> dict:
     cleaned = []
     for item in messages[-8:]:
         role = item.get("role")
@@ -43,10 +60,18 @@ def reply(messages: list[dict], page: str) -> dict:
             cleaned.append({"role": role, "content": content})
     if not cleaned or cleaned[-1]["role"] != "user":
         raise ValueError("请先输入要沟通的内容")
-    cleaned[-1] = {
-        "role": "user",
-        "content": "当前页面是 " + (page or "/") + "。" + cleaned[-1]["content"],
-    }
+    tail = cleaned[-1]["content"]
+    if config:
+        cleaned[-1] = {
+            "role": "user",
+            "content": (
+                "当前页面是 " + (page or "/") + "。这是当前的 EAD 配置 JSON："
+                + json.dumps(config, ensure_ascii=False)
+                + "。请按这条修订意见改：" + tail
+            ),
+        }
+    else:
+        cleaned[-1] = {"role": "user", "content": "当前页面是 " + (page or "/") + "。" + tail}
     result = graph().invoke({"messages": cleaned}, config={"recursion_limit": 40})
     text = ""
     paths = []
@@ -61,7 +86,11 @@ def reply(messages: list[dict], page: str) -> dict:
             text = content.strip()
     if not text:
         text = "这次没有形成回答。"
+    draft = draft_of(text) if config else None
+    if draft is not None:
+        text = _FENCE.sub("（修订草稿见下方，确认后才写入文件）", text, count=1).strip()
     return {
         "reply": text[:4000],
         "pages": [{"path": path, "label": PAGES[path]} for path in paths],
+        "draft": draft,
     }

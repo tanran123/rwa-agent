@@ -4,7 +4,7 @@
 
 页面通过 `POST /api/agent/chat` 进来。Koa 转到 Flask，Flask 调用 `harness.reply`。总控只派发，不自己算数。
 
-生成一步之前先看根目录 `README.md`。分类 JSON 在 `subagents/weight/knowledge/`。留痕在仓库根目录 `output/traces/`，结果工作簿在 `output/workbooks/`。不要再复制一份分类 JSON。
+生成一步之前先看根目录 `README.md`。分类 JSON 在 `subagents/weight/knowledge/`。表内和表外 EAD 配置在 `subagents/ead/knowledge/`，由页面读写，不进 `STEPS`。留痕在仓库根目录 `output/traces/`，结果工作簿在 `output/workbooks/`。不要再复制一份分类 JSON。
 
 这里有五块，互不替代：
 
@@ -22,7 +22,7 @@
 | --- | --- |
 | `agent.json` | 总控的名字、说明和模型。 |
 | `AGENTS.md` | 总控提示词。`harness.py` 启动时读这一份。 |
-| `harness.py` | 组装 deepagents，处理对话，返回 `{ reply, pages }`。 |
+| `harness.py` | 组装 deepagents，处理对话，返回 `{ reply, pages }`。EAD 页带上配置时，回复里的 JSON 草稿放在 `draft`。 |
 | `layout.py` | 读取 `agent.json` 和 `AGENTS.md`。 |
 | `chat.py` | 通义模型。密钥读仓库根目录 `.env`。 |
 | `pipeline.py` | `STEPS` 名单。按名单调用 `program.run`。 |

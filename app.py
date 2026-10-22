@@ -438,7 +438,7 @@ def exposure_tree_propose():
 def agent_chat():
     data = request.get_json(silent=True) or {}
     try:
-        result = agent_reply(data.get("messages") or [], data.get("page") or "/")
+        result = agent_reply(data.get("messages") or [], data.get("page") or "/", data.get("config"))
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     except Exception as exc:

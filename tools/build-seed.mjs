@@ -205,15 +205,8 @@ lines.push(insert("mo_weight_row",
   ["id", "bucket", "weights_json", "note"],
   MO_WEIGHTS.map((item) => [item.id, item.bucket, JSON.stringify(item.weights), item.note || ""])));
 
-function eadRows(list, side) {
-  return list.map((item) => [
-    item.id, side, item.name, item.version, item.status, item.formula,
-    item.condition, item.ccf == null ? null : item.ccf, item.clause, JSON.stringify(item)
-  ]);
-}
-lines.push(insert("ead_rule",
-  ["id", "side", "name", "version", "status", "formula", "condition_text", "ccf", "clause_id", "body"],
-  eadRows(MASTER.EAD_ON_RULES, "on").concat(eadRows(MASTER.EAD_OFF_RULES, "off"))));
+/* ead_rule 不在这里灌数。表内 / 表外 EAD 计算规则的唯一数据源是
+   agent/subagents/ead/knowledge/ 下的两个配置文件，由 Koa 直接读写。 */
 
 lines.push(insert("ccf_rule",
   ["id", "type_name", "cond_text", "ccf", "priority", "conds_json"],

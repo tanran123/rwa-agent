@@ -2,6 +2,7 @@ import { createRequire } from "module";
 import { readFileSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { readEadRules } from "./eadConfig.js";
 
 const require = createRequire(import.meta.url);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -83,8 +84,8 @@ export function measureDemo() {
   ));
   const out = pipeline.measureBatch(mock.MOCK_LOANS, {
     ruleset: doc,
-    eadOnRules: master.EAD_ON_RULES,
-    eadOffRules: master.EAD_OFF_RULES,
+    eadOnRules: readEadRules("on"),
+    eadOffRules: readEadRules("off"),
     detectRules: mock.PRODUCT_DETECT_RULES
   });
   const products = {};
@@ -116,8 +117,8 @@ export function measureDemo() {
       headerRow: 14,
       headers: mock.RAW_SHEET_HEADERS,
       fieldCount: Array.isArray(doc.fields) ? doc.fields.length : 0,
-      eadOn: (master.EAD_ON_RULES || []).length,
-      eadOff: (master.EAD_OFF_RULES || []).length,
+      eadOn: readEadRules("on").length,
+      eadOff: readEadRules("off").length,
       loans: detected,
       mappings
     },

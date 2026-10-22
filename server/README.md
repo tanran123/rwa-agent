@@ -11,8 +11,9 @@ Koa 2，前缀 `/api`，默认 `http://127.0.0.1:8780`。数据在 MySQL，连�
 | `src/index.js` | 全部 HTTP 路由，以及行数据到 JSON 的形状。 |
 | `src/exposureDocs.js` | 读仓库根目录分类 JSON：通用、贷款、债券，以及后来新增的 `*风险暴露.json`。确认写入和每个产品的决策树对话也在这里。 |
 | `src/db.js` | 读取 `.env`，导出 `query(sql, params)`。 |
-| `src/measure.js` | `GET /measure` 和审计底稿。模拟债项在 `data/`，计量在 `lib/`，分类规则读 `agent/subagents/weight/knowledge/权重法风险暴露分类.json`。 |
+| `src/measure.js` | `GET /measure` 和审计底稿。模拟债项在 `data/`，计量在 `lib/`，分类规则读 `agent/subagents/weight/knowledge/权重法风险暴露分类.json`，EAD 规则读 `agent/subagents/ead/knowledge/` 的两个配置。 |
 | `src/paper.js` | `GET /working-paper` 和上传样例。底稿读 `agent/subagents/weight/paper/底稿模型计算.json`，样例读 `data/data.js`。 |
+| `src/eadConfig.js` | `GET`/`PUT /ead-config`。读写 `agent/subagents/ead/knowledge/` 的两个 EAD 配置 JSON，产品类型和标准字段查 `product_type`、`product_field`。 |
 | `lib/` | 计量流水线 `pipeline.cjs`、`engine.cjs`，以及审计底稿用的 `xlsx-writer.cjs`。 |
 | `data/` | 模拟主数据、模拟债项、上传样例和种子规则原文。 |
 | `.env.example` | 数据库变量名。真实密码只写在 `.env`。 |
@@ -31,13 +32,13 @@ Koa 2，前缀 `/api`，默认 `http://127.0.0.1:8780`。数据在 MySQL，连�
 | GET | `/exposure-classes`、`/exposure-class`、`/weights`、`/crm`、`/product-rules` | 分类 JSON 页签、单份分类、权重表、缓释、产品专属规则。`/exposure-class?name=` 读对应文件；不带 name 时仍读库里的权重法分类。 |
 | POST | `/exposure-tree/copy`、`/exposure-tree/propose`、`/exposure-tree/save` | 添加页签时复制通用。对话先说明当前规则，确认后询问是否保存，保存才写入。没在对话里出现的权重不写入。 |
 | GET、POST | `/exposure-tree/chat` | 按分类 name 读取或保存决策树对话。内容写在仓库根目录 `决策树对话.json`，不提交。 |
-| GET、POST、PUT | `/ead-rules`、`/ead-rules/:id` | 表内外 EAD。新建和修改写入 `ead_rule`。 | 
+| GET、PUT | `/ead-config` | 表内外 EAD 计算配置。读写 `agent/subagents/ead/knowledge/` 的两个 JSON；保存前用 `product_type`、`product_field` 校验产品 code 和标准字段，对不上就报错不写。 |
 | POST | `/ead-trial` | 用现有 `computeEad` 试算一条规则。 | 
 | GET | `/ccf` | 转换系数。 |
 | GET、POST | `/batches`、`/batches/:id/lines` | 计量批次和明细。 |
 | GET | `/measure`、`/working-paper`、`/upload-samples`、`/audit.xlsx` | 31 笔模拟计量、信用风险底稿缓存、上传样例、审计工作簿。 |
 | GET | `/assistant` | 规则助手历史。 |
-| POST | `/agent/chat` | 原样转发到 Flask `8766`。这里不实现智能体。决策树对话的提议也转发到 Flask，写入留在 `/exposure-tree/save`。 |
+| POST | `/agent/chat` | 原样转发到 Flask `8766`。这里不实现智能体。EAD 页会把当前配置一并带上，修订草稿由 Flask 返回。决策树对话的提议也转发到 Flask，写入留在 `/exposure-tree/save`。 |
 | POST | `/rules/chat` | 原样转发到 Flask 的规则对话。 |
 
 成功时响应体就是数据。失败时 `{ "error": "原因" }`，并带上相应状态码。
@@ -45,6 +46,8 @@ Koa 2，前缀 `/api`，默认 `http://127.0.0.1:8780`。数据在 MySQL，连�
 ## 表
 
 `jurisdiction`、`customer`、`org_unit` 是客户和机构。`rule_version`、`clause_doc`、`clause_ref`、`rule_param` 是规则版本、条款和共用参数。`product_type`、`product_field`、`field_mapping` 是产品和字段。`exposure_document` 存权重法分类 JSON。`weight_rule`、`bank_grade_row`、`mo_weight_row` 是权重表。`ead_rule`、`ccf_rule`、`crm_rule`、`product_exposure_rule` 是 EAD、转换系数、缓释和产品规则。`measure_batch`、`measure_line` 是批次和逐笔结果。`assistant_turn` 是规则助手对话。
+
+`ead_rule` 表还在。表内 / 表外 EAD 计算规则的读写走 `agent/subagents/ead/knowledge/` 下的两个配置文件，由 `src/eadConfig.js` 直接读写。`tools/build-seed.mjs` 不再往 `ead_rule` 灌数。
 
 新表写进 `sql/001_schema.sql`，并在文件开头的 `DROP TABLE` 里按依赖顺序补上。种子数据需要跟着变时，改 `tools/build-seed.mjs` 再生成 `002_seed.sql`。
 

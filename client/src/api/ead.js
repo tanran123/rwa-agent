@@ -1,10 +1,8 @@
 import request from './request'
 
-export const fetchEadRules = (side) => request.get('/ead-rules', { params: { side } })
+export const fetchEadConfig = (side) => request.get('/ead-config', { params: { side } })
 
-export const createEadRule = (rule) => request.post('/ead-rules', rule)
-
-export const updateEadRule = (id, rule) => request.put('/ead-rules/' + id, rule)
+export const saveEadConfig = (side, config) => request.put('/ead-config', { side, config })
 
 export const trialEad = (body) => request.post('/ead-trial', body)
 
