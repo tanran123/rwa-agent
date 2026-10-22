@@ -124,7 +124,7 @@ function insert(table, columns, tuples) {
 }
 
 const lines = [];
-lines.push("-- 由 tools/build-seed.mjs 从现有主数据和权重法风险暴露分类.json 生成");
+lines.push("-- 由 tools/build-seed.mjs 从现有主数据、权重法风险暴露分类.json，以及根目录四份分类 JSON 生成");
 lines.push("-- 先执行 001_schema.sql");
 lines.push("USE rwa;");
 lines.push("SET NAMES utf8mb4;");
@@ -194,11 +194,52 @@ lines.push(insert("field_mapping",
   ["product_code", "std_field", "std_code", "src_system", "src_field", "via", "status", "hit_rate", "sample"],
   maps));
 
-lines.push(
-  "INSERT INTO exposure_document (id, name, title, source_file, body) VALUES ("
-  + [1, classDoc.name, classDoc.title, "agent/subagents/weight/knowledge/权重法风险暴露分类.json", JSON.stringify(classDoc)].map(q).join(", ")
-  + ");"
-);
+function locateJson(text) {
+  const start = text.indexOf("{");
+  if (start < 0) throw new Error("文件里没有 JSON");
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  for (let i = start; i < text.length; i += 1) {
+    const c = text[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === "\\") esc = true;
+      else if (c === "\"") inStr = false;
+      continue;
+    }
+    if (c === "\"") inStr = true;
+    else if (c === "{") depth += 1;
+    else if (c === "}") {
+      depth -= 1;
+      if (depth === 0) return JSON.parse(text.slice(start, i + 1));
+    }
+  }
+  throw new Error("JSON 没有结束");
+}
+
+const TREE_DOCS = [
+  { id: 2, seq: 1, label: "通用", file: "通用信用风险暴露划分规则.md" },
+  { id: 3, seq: 2, label: "贷款", file: "贷款风险暴露.md" },
+  { id: 4, seq: 3, label: "债券", file: "债券风险暴露.md" },
+  { id: 5, seq: 4, label: "市场化债券", file: "市场化债券风险暴露.json" }
+];
+
+const exposureRows = [[
+  1, classDoc.name, classDoc.title, "", 0,
+  "agent/subagents/weight/knowledge/权重法风险暴露分类.json",
+  JSON.stringify(classDoc)
+]];
+TREE_DOCS.forEach((item) => {
+  const text = readFileSync(join(root, item.file), "utf8");
+  const document = item.file.endsWith(".json") ? JSON.parse(text) : locateJson(text);
+  exposureRows.push([
+    item.id, document.name, document.title, item.label, item.seq, item.file, JSON.stringify(document)
+  ]);
+});
+lines.push(insert("exposure_document",
+  ["id", "name", "title", "label", "seq", "source_file", "body"],
+  exposureRows));
 
 lines.push(insert("rule_param",
   ["id", "grp", "name", "value", "unit", "used_for"],

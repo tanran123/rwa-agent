@@ -212,7 +212,8 @@ router.get("/field-mappings", async (ctx) => {
 });
 
 router.get("/exposure-classes", async (ctx) => {
-  ctx.body = exposureDocs().map((item) => ({
+  const rows = await exposureDocs();
+  ctx.body = rows.map((item) => ({
     name: item.name,
     title: item.title,
     label: item.label
@@ -222,7 +223,7 @@ router.get("/exposure-classes", async (ctx) => {
 router.get("/exposure-class", async (ctx) => {
   const name = String(ctx.query.name || "");
   if (name) {
-    const doc = exposureDoc(name);
+    const doc = await exposureDoc(name);
     if (!doc) ctx.throw(404, "没有这份分类 JSON");
     ctx.body = {
       name: doc.name,
@@ -386,7 +387,7 @@ router.get("/assistant", async (ctx) => {
 router.post("/exposure-tree/propose", async (ctx) => {
   const body = ctx.request.body || {};
   const name = String(body.name || "");
-  const item = name ? exposureDoc(name) : exposureDocs()[0];
+  const item = name ? await exposureDoc(name) : (await exposureDocs())[0];
   if (!item) ctx.throw(404, "没有这份分类 JSON");
   try {
     const response = await fetch("http://127.0.0.1:8766/api/exposure-tree/propose", {
@@ -400,8 +401,8 @@ router.post("/exposure-tree/propose", async (ctx) => {
     });
     const text = await response.text();
     let payload;
-    try { payload = text ? JSON.parse(text) : { error: "决策树对话没有返回" }; }
-    catch { payload = { error: "决策树对话没有返回可读内容" }; }
+    try { payload = text ? JSON.parse(text) : { error: "服务异常" }; }
+    catch { payload = { error: "服务异常" }; }
     if (payload && payload.action === "update") payload.action = "draft";
     if (payload && payload.action === "draft" && payload.document) {
       payload.document.name = item.name;
@@ -410,25 +411,26 @@ router.post("/exposure-tree/propose", async (ctx) => {
     ctx.status = response.status;
     ctx.body = payload;
   } catch (err) {
+    console.error(err);
     ctx.status = 502;
-    ctx.body = { error: "决策树对话没开，或暂时连不上。" };
+    ctx.body = { error: "服务异常" };
   }
 });
 
 router.get("/exposure-tree/chat", async (ctx) => {
-  ctx.body = exposureChat(String(ctx.query.name || ""));
+  ctx.body = await exposureChat(String(ctx.query.name || ""));
 });
 
 router.post("/exposure-tree/chat", async (ctx) => {
-  ctx.body = saveExposureChat(ctx.request.body || {});
+  ctx.body = await saveExposureChat(ctx.request.body || {});
 });
 
 router.post("/exposure-tree/copy", async (ctx) => {
-  ctx.body = copyExposureDoc(ctx.request.body || {});
+  ctx.body = await copyExposureDoc(ctx.request.body || {});
 });
 
 router.post("/exposure-tree/save", async (ctx) => {
-  ctx.body = saveExposureDoc(ctx.request.body || {});
+  ctx.body = await saveExposureDoc(ctx.request.body || {});
 });
 
 router.post("/agent/chat", async (ctx) => {
@@ -440,13 +442,14 @@ router.post("/agent/chat", async (ctx) => {
     });
     const text = await response.text();
     let body;
-    try { body = text ? JSON.parse(text) : { error: "智能体没有返回" }; }
-    catch { body = { error: "智能体没有返回可读内容" }; }
+    try { body = text ? JSON.parse(text) : { error: "服务异常" }; }
+    catch { body = { error: "服务异常" }; }
     ctx.status = response.status;
     ctx.body = body;
   } catch (err) {
+    console.error(err);
     ctx.status = 502;
-    ctx.body = { error: "智能体服务没开，或暂时连不上。" };
+    ctx.body = { error: "服务异常" };
   }
 });
 
@@ -459,13 +462,14 @@ router.post("/rules/chat", async (ctx) => {
     });
     const text = await response.text();
     let body;
-    try { body = text ? JSON.parse(text) : { error: "规则对话没有返回" }; }
-    catch { body = { error: "规则对话没有返回可读内容" }; }
+    try { body = text ? JSON.parse(text) : { error: "服务异常" }; }
+    catch { body = { error: "服务异常" }; }
     ctx.status = response.status;
     ctx.body = body;
   } catch (err) {
+    console.error(err);
     ctx.status = 502;
-    ctx.body = { error: "规则对话服务没开，或暂时连不上。" };
+    ctx.body = { error: "服务异常" };
   }
 });
 
@@ -475,10 +479,10 @@ app.use(async (ctx, next) => {
   try {
     await next();
   } catch (err) {
-    const status = err.status || 500;
+    const status = Number(err.status) || 500;
     ctx.status = status;
-    ctx.body = { error: status === 500 ? "数据库还没连上，或表还没建。" : err.message };
-    if (status === 500) console.error(err);
+    if (status >= 500) console.error(err);
+    ctx.body = { error: status >= 500 ? "服务异常" : (err.message || "服务异常") };
   }
 });
 app.use(router.routes());

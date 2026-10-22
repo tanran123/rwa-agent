@@ -149,8 +149,11 @@ CREATE TABLE exposure_document (
   id INT NOT NULL PRIMARY KEY,
   name VARCHAR(64) NOT NULL,
   title VARCHAR(64) NOT NULL,
+  label VARCHAR(64) NOT NULL DEFAULT '',
+  seq INT NOT NULL DEFAULT 0,
   source_file VARCHAR(160) NOT NULL,
-  body JSON NOT NULL
+  body JSON NOT NULL,
+  UNIQUE KEY uq_exposure_document_name (name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE rule_param (

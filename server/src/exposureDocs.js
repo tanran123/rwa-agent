@@ -1,63 +1,31 @@
-import { readdirSync, readFileSync, writeFileSync } from "fs";
+import { readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
+import { query } from "./db.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
 
-const FILES = [
-  { file: "通用信用风险暴露划分规则.md", label: "通用" },
-  { file: "贷款风险暴露.md", label: "贷款" },
-  { file: "债券风险暴露.md", label: "债券" }
-];
-
-function locateJson(text) {
-  const start = text.indexOf("{");
-  if (start < 0) throw new Error("文件里没有 JSON");
-  let depth = 0;
-  let inStr = false;
-  let esc = false;
-  for (let i = start; i < text.length; i += 1) {
-    const c = text[i];
-    if (inStr) {
-      if (esc) esc = false;
-      else if (c === "\\") esc = true;
-      else if (c === "\"") inStr = false;
-      continue;
-    }
-    if (c === "\"") inStr = true;
-    else if (c === "{") depth += 1;
-    else if (c === "}") {
-      depth -= 1;
-      if (depth === 0) return { start, end: i + 1, document: JSON.parse(text.slice(start, i + 1)) };
-    }
-  }
-  throw new Error("JSON 没有结束");
+function documentOf(value) {
+  if (value == null) return null;
+  if (typeof value === "string") return JSON.parse(value);
+  return value;
 }
 
-function extraFiles() {
-  return readdirSync(ROOT)
-    .filter((name) => name.endsWith("风险暴露.json"))
-    .sort()
-    .map((file) => ({ file, label: file.slice(0, -"风险暴露.json".length) }));
-}
-
-let cache = null;
-
-function readOne(item) {
-  const located = locateJson(readFileSync(join(ROOT, item.file), "utf8"));
+function present(row) {
   return {
-    name: located.document.name,
-    title: located.document.title,
-    label: item.label,
-    sourceFile: item.file,
-    document: located.document
+    name: row.name,
+    title: row.title,
+    label: row.label,
+    sourceFile: row.source_file,
+    document: documentOf(row.body)
   };
 }
 
-export function exposureDocs() {
-  if (cache) return cache;
-  cache = FILES.concat(extraFiles()).map(readOne);
-  return cache;
+const LIST_SQL = "SELECT name, title, label, source_file, body FROM exposure_document WHERE seq > 0 ORDER BY seq, id";
+
+export async function exposureDocs() {
+  const rows = await query(LIST_SQL);
+  return rows.map(present);
 }
 
 const OPS = { eq: true, in: true, gt: true, gte: true, lt: true, lte: true };
@@ -140,10 +108,23 @@ function checkDocument(document) {
   document.rules.forEach(walk);
 }
 
-export function copyExposureDoc(body) {
+async function nextSlot() {
+  const rows = await query("SELECT COALESCE(MAX(id), 0) AS id, COALESCE(MAX(seq), 0) AS seq FROM exposure_document");
+  return { id: Number(rows[0].id) + 1, seq: Number(rows[0].seq) + 1 };
+}
+
+async function insertDoc(label, document) {
+  const slot = await nextSlot();
+  await query(
+    "INSERT INTO exposure_document (id, name, title, label, seq, source_file, body) VALUES (?, ?, ?, ?, ?, ?, CAST(? AS JSON))",
+    [slot.id, document.name, document.title, label, slot.seq, label + "风险暴露.json", JSON.stringify(document)]
+  );
+}
+
+export async function copyExposureDoc(body) {
   const label = String((body && body.label) || "").trim();
   if (!label || /[\\/]/.test(label) || label.includes(".")) reject("页签名不能包含路径");
-  const rows = exposureDocs();
+  const rows = await exposureDocs();
   const source = rows[0];
   if (!source) reject("没有通用分类");
   if (rows.some((item) => item.label === label)) reject("已经有这个页签");
@@ -152,16 +133,15 @@ export function copyExposureDoc(body) {
   while (rows.some((item) => item.name === name)) name += "x";
   document.name = name;
   document.title = label;
-  writeFileSync(join(ROOT, label + "风险暴露.json"), JSON.stringify(document, null, 2) + "\n");
-  cache = null;
+  await insertDoc(label, document);
   return { name, title: document.title, label, first: false };
 }
 
-export function saveExposureDoc(body) {
+export async function saveExposureDoc(body) {
   const action = body && body.action;
   const document = body && body.document;
   const said = (body && body.messages || []).map((item) => String(item || "")).join("\n");
-  const rows = exposureDocs();
+  const rows = await exposureDocs();
   let existing = rows.find((item) => item.name === (document && document.name));
   if (action === "update") {
     const pinned = body.name ? rows.find((item) => item.name === body.name) : rows[0];
@@ -189,25 +169,21 @@ export function saveExposureDoc(body) {
     if (!mentioned(said, node.value)) reject("「" + node.label + "」的权重没有出现在对话里，先不要写入");
   });
   if (action === "update") {
-    const file = join(ROOT, existing.sourceFile);
-    if (existing.sourceFile.endsWith(".md")) {
-      const text = readFileSync(file, "utf8");
-      const located = locateJson(text);
-      writeFileSync(file, text.slice(0, located.start) + JSON.stringify(document, null, 2) + text.slice(located.end));
-    } else {
-      writeFileSync(file, JSON.stringify(document, null, 2) + "\n");
-    }
+    const result = await query(
+      "UPDATE exposure_document SET title = ?, body = CAST(? AS JSON) WHERE name = ? AND seq > 0",
+      [document.title, JSON.stringify(document), document.name]
+    );
+    if (!result.affectedRows) reject("没有这份分类 JSON");
   } else if (action === "add") {
     if (existing) reject("已经有这份分类 JSON");
     const label = String(body.label || "").trim();
     if (!label || /[\\/]/.test(label) || label.includes(".")) reject("页签名不能包含路径");
     if (rows.some((item) => item.label === label)) reject("已经有这个页签");
-    writeFileSync(join(ROOT, label + "风险暴露.json"), JSON.stringify(document, null, 2) + "\n");
+    await insertDoc(label, document);
   } else {
     reject("这次没有要写入的分类");
   }
-  cache = null;
-  const saved = exposureDocs();
+  const saved = await exposureDocs();
   const item = saved.find((row) => row.name === document.name);
   return {
     name: item.name,
@@ -217,8 +193,12 @@ export function saveExposureDoc(body) {
   };
 }
 
-export function exposureDoc(name) {
-  return exposureDocs().find((item) => item.name === name) || null;
+export async function exposureDoc(name) {
+  const rows = await query(
+    "SELECT name, title, label, source_file, body FROM exposure_document WHERE name = ? AND seq > 0",
+    [name]
+  );
+  return rows[0] ? present(rows[0]) : null;
 }
 
 const CHAT_FILE = join(ROOT, "决策树对话.json");
@@ -232,8 +212,8 @@ function readChats() {
   }
 }
 
-function chatItem(name) {
-  const rows = exposureDocs();
+async function chatItem(name) {
+  const rows = await exposureDocs();
   const item = name ? rows.find((row) => row.name === name) : rows[0];
   if (!item) reject("没有这份分类 JSON");
   return item;
@@ -252,8 +232,8 @@ function chatMessage(item) {
   };
 }
 
-export function exposureChat(name) {
-  const item = chatItem(String(name || ""));
+export async function exposureChat(name) {
+  const item = await chatItem(String(name || ""));
   const row = readChats()[item.name] || {};
   const messages = Array.isArray(row.messages) ? row.messages.map(chatMessage).filter(Boolean) : [];
   const draft = row.draft && row.draft.document && typeof row.draft.document === "object"
@@ -262,8 +242,8 @@ export function exposureChat(name) {
   return { name: item.name, messages, draft };
 }
 
-export function saveExposureChat(body) {
-  const item = chatItem(String((body && body.name) || ""));
+export async function saveExposureChat(body) {
+  const item = await chatItem(String((body && body.name) || ""));
   const messages = ((body && body.messages) || []).map(chatMessage).filter(Boolean).slice(-40);
   const draftBody = body && body.draft;
   const draft = draftBody && draftBody.document && typeof draftBody.document === "object"
