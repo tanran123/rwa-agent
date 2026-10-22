@@ -1,0 +1,1579 @@
+{
+  "fields": [
+    {
+      "label": "工具",
+      "meaning": "这笔资产是什么形态。现金及等价物、债权、股权三选一。表内贷款、债券、存放同业、按揭均填 claim。",
+      "name": "instrument_type",
+      "note": "现金类须先于债权判定；股权在本框架中无独立类别，最终落入其他表内敞口。",
+      "options": [
+        {
+          "code": "cash",
+          "label": "现金及现金等价物"
+        },
+        {
+          "code": "claim",
+          "label": "债权"
+        },
+        {
+          "code": "equity",
+          "label": "股权"
+        }
+      ],
+      "source": "column",
+      "type": "enum"
+    },
+    {
+      "label": "是否逾期",
+      "meaning": "该敞口是否已逾期。以住宅物业全额担保的债权单独走住宅按揭分支，不并入逾期贷款。",
+      "name": "is_past_due",
+      "note": "逾期贷款类别仅覆盖逾期超过 90 天的无抵押部分。",
+      "options": [
+        {
+          "code": "yes",
+          "label": "是"
+        },
+        {
+          "code": "no",
+          "label": "否"
+        }
+      ],
+      "source": "calc",
+      "type": "enum"
+    },
+    {
+      "label": "交易对手",
+      "meaning": "债务人的主体性质。主权、公共部门实体、多边开发银行、银行、公司、个人均看此字段。",
+      "name": "counterparty_type",
+      "options": [
+        {
+          "code": "msar_sovereign",
+          "label": "澳门特区政府或AMCM"
+        },
+        {
+          "code": "foreign_sovereign",
+          "label": "其他主权国家中央政府或中央银行"
+        },
+        {
+          "code": "pse",
+          "label": "公共部门实体"
+        },
+        {
+          "code": "mo_public_enterprise",
+          "label": "澳门公共企业"
+        },
+        {
+          "code": "urban_renewal_co",
+          "label": "都更公司"
+        },
+        {
+          "code": "cn_mof",
+          "label": "内地财政部"
+        },
+        {
+          "code": "cn_local_government",
+          "label": "内地地方政府"
+        },
+        {
+          "code": "mdb",
+          "label": "多边开发银行或国际组织"
+        },
+        {
+          "code": "bank",
+          "label": "银行"
+        },
+        {
+          "code": "cn_policy_bank",
+          "label": "内地开发性金融机构或政策性银行"
+        },
+        {
+          "code": "corporate",
+          "label": "公司"
+        },
+        {
+          "code": "individual",
+          "label": "个人"
+        }
+      ],
+      "source": "column",
+      "type": "enum"
+    },
+    {
+      "label": "以当地货币计价并融资",
+      "meaning": "该债权是否以债务人所辖司法辖区的本币计价且以该货币融资。用于主权及内地债券的优惠判定。",
+      "name": "is_local_currency_funded",
+      "note": "对 MSAR 债权即指以 MOP 计价并融资。",
+      "options": [
+        {
+          "code": "yes",
+          "label": "是"
+        },
+        {
+          "code": "no",
+          "label": "否"
+        }
+      ],
+      "source": "column",
+      "type": "enum"
+    },
+    {
+      "label": "信用质量等级",
+      "meaning": "长期外部信用评估映射后的信用质量等级，1 至 6。映射规则见评级等级表。",
+      "name": "credit_quality_grade",
+      "note": "未评级填 unrated。多个评估映射至不同权数时按多评级规则取较高者。",
+      "options": [
+        {
+          "code": "1",
+          "label": "等级1"
+        },
+        {
+          "code": "2",
+          "label": "等级2"
+        },
+        {
+          "code": "3",
+          "label": "等级3"
+        },
+        {
+          "code": "4",
+          "label": "等级4"
+        },
+        {
+          "code": "5",
+          "label": "等级5"
+        },
+        {
+          "code": "6",
+          "label": "等级6"
+        },
+        {
+          "code": "unrated",
+          "label": "未评级"
+        }
+      ],
+      "source": "column",
+      "type": "enum"
+    },
+    {
+      "label": "短期信用质量等级",
+      "meaning": "短期外部信用评估映射后的信用质量等级，I 至 IV。仅用于短期债权的发行特定评级判定。",
+      "name": "short_term_grade",
+      "note": "短期评估不得用于支持未评级长期敞口，除非另有规定。",
+      "options": [
+        {
+          "code": "I",
+          "label": "等级I"
+        },
+        {
+          "code": "II",
+          "label": "等级II"
+        },
+        {
+          "code": "III",
+          "label": "等级III"
+        },
+        {
+          "code": "IV",
+          "label": "等级IV"
+        }
+      ],
+      "source": "column",
+      "type": "enum"
+    },
+    {
+      "label": "原到期月数",
+      "meaning": "债权的合约原到期期限，以月计。用于银行短期债权的优惠权数判定。",
+      "name": "original_maturity_months",
+      "note": "预期会续期致实际到期超过 3 个月者，不符合优惠待遇。",
+      "source": "column",
+      "type": "number",
+      "unit": "month"
+    },
+    {
+      "label": "是否属表4机构清单",
+      "meaning": "该多边开发银行或国际组织是否列于适用 0% 风险权数的机构清单（BIS、IMF、ECB 等 18 家）。",
+      "name": "is_mdb_zero_list",
+      "options": [
+        {
+          "code": "yes",
+          "label": "是"
+        },
+        {
+          "code": "no",
+          "label": "否"
+        }
+      ],
+      "source": "column",
+      "type": "enum"
+    },
+    {
+      "label": "PSE所在辖区主权等级",
+      "meaning": "公共部门实体所在国家或辖区的主权发行人评级所映射的信用质量等级。用于 PSE 权数判定。",
+      "name": "sovereign_grade_of_pse",
+      "note": "主权无发行人评级时填 unrated。",
+      "options": [
+        {
+          "code": "1",
+          "label": "等级1"
+        },
+        {
+          "code": "2",
+          "label": "等级2"
+        },
+        {
+          "code": "3",
+          "label": "等级3"
+        },
+        {
+          "code": "4",
+          "label": "等级4"
+        },
+        {
+          "code": "5",
+          "label": "等级5"
+        },
+        {
+          "code": "6",
+          "label": "等级6"
+        },
+        {
+          "code": "unrated",
+          "label": "无发行人评级"
+        }
+      ],
+      "source": "calc",
+      "type": "enum"
+    },
+    {
+      "label": "是否获准用本币评级",
+      "meaning": "未评级敞口按同债务人已评级敞口或发行人评级推导权数时，该敞口是否以本国货币计价，从而可用本国货币评级。",
+      "name": "is_quasi_sovereign_rating",
+      "options": [
+        {
+          "code": "yes",
+          "label": "是"
+        },
+        {
+          "code": "no",
+          "label": "否"
+        }
+      ],
+      "source": "column",
+      "type": "enum"
+    },
+    {
+      "label": "敞口形式属零售",
+      "meaning": "是否属循环信贷及信贷额度、个人定期贷款及租赁、或小企业融资及承诺三种形式之一。",
+      "name": "meets_retail_form",
+      "options": [
+        {
+          "code": "yes",
+          "label": "是"
+        },
+        {
+          "code": "no",
+          "label": "否"
+        }
+      ],
+      "source": "column",
+      "type": "enum"
+    },
+    {
+      "label": "组合充分分散",
+      "meaning": "该零售组合是否充分分散至可降低组合风险的程度。",
+      "name": "is_well_diversified",
+      "options": [
+        {
+          "code": "yes",
+          "label": "是"
+        },
+        {
+          "code": "no",
+          "label": "否"
+        }
+      ],
+      "source": "column",
+      "type": "enum"
+    },
+    {
+      "label": "单一交易对手合计零售敞口",
+      "meaning": "对单一交易对手的合计零售敞口，按未计入信用风险缓释的总债务敞口计算，为表内本金与表外信用等价额之和。",
+      "name": "retail_aggregate_exposure",
+      "note": "绝对门槛为 MOP 1,000 万。单一交易对手指可视为单一受益人的一个或多个实体。评估此项时排除逾期零售贷款。",
+      "source": "calc",
+      "type": "number",
+      "unit": "MOP"
+    },
+    {
+      "label": "是否中小企业贷款",
+      "meaning": "该正常贷款是否属中小企业贷款。用于区分 75% 与 85% 两档权数。",
+      "name": "is_sme_loan",
+      "options": [
+        {
+          "code": "yes",
+          "label": "是"
+        },
+        {
+          "code": "no",
+          "label": "否"
+        }
+      ],
+      "source": "column",
+      "type": "enum"
+    },
+    {
+      "label": "是否借款自用",
+      "meaning": "该住宅物业是否由借款人自用。仅为个人购置住宅物业的按揭贷款可享 50% 权数。",
+      "name": "is_owner_occupied",
+      "options": [
+        {
+          "code": "yes",
+          "label": "是"
+        },
+        {
+          "code": "no",
+          "label": "否"
+        }
+      ],
+      "source": "column",
+      "type": "enum"
+    },
+    {
+      "label": "是否住宅物业全额担保",
+      "meaning": "该债权是否由报告信用机构以住宅物业抵押作全额担保。",
+      "name": "is_fully_secured_by_residential",
+      "options": [
+        {
+          "code": "yes",
+          "label": "是"
+        },
+        {
+          "code": "no",
+          "label": "否"
+        }
+      ],
+      "source": "column",
+      "type": "enum"
+    },
+    {
+      "label": "是否逾期超过90天",
+      "meaning": "该债权是否逾期超过 90 天。用于住宅按揭 100% 与逾期贷款类别的判定。",
+      "name": "is_overdue_90d",
+      "options": [
+        {
+          "code": "yes",
+          "label": "是"
+        },
+        {
+          "code": "no",
+          "label": "否"
+        }
+      ],
+      "source": "calc",
+      "type": "enum"
+    },
+    {
+      "label": "是否无抵押部分",
+      "meaning": "该笔金额是否属逾期贷款扣减特定拨备后的无抵押部分。仅无抵押部分进入逾期贷款类别。",
+      "name": "is_unsecured_portion",
+      "options": [
+        {
+          "code": "yes",
+          "label": "是"
+        },
+        {
+          "code": "no",
+          "label": "否"
+        }
+      ],
+      "source": "calc",
+      "type": "enum"
+    },
+    {
+      "label": "特定拨备占未偿还金额比例",
+      "meaning": "逾期贷款的特定拨备（含部分核销）占信用风险缓释前敞口未偿还金额的比例。20% 写成 0.2。",
+      "name": "provision_ratio_past_due",
+      "source": "calc",
+      "type": "number",
+      "unit": "ratio"
+    },
+    {
+      "label": "现金细类",
+      "meaning": "现金及现金等价物的细分形态。用于区分 0%、20%、100% 三档权数。",
+      "name": "cash_subtype",
+      "options": [
+        {
+          "code": "notes_and_gov_paper",
+          "label": "纸币硬币及政府债务凭证"
+        },
+        {
+          "code": "gold_backed",
+          "label": "由金块负债支持的黄金"
+        },
+        {
+          "code": "cash_in_collection",
+          "label": "收款过程中的现金项目"
+        },
+        {
+          "code": "gold_unbacked",
+          "label": "非由金块负债支持的黄金"
+        }
+      ],
+      "source": "column",
+      "type": "enum"
+    }
+  ],
+  "name": "mo_product_mvj3szqs",
+  "otherwise": {
+    "children": [
+      {
+        "label": "兜底",
+        "name": "unclassified_fallback",
+        "note": "无法归类时按 100% 风险权重处理，并应回溯核查字段填报的完整性。",
+        "value": 1,
+        "when": {
+          "all": []
+        }
+      }
+    ],
+    "label": "未分类暴露",
+    "name": "unclassified",
+    "note": "全部规则树均未命中时的兜底节点。通常意味着必填字段缺失或取值超出枚举范围，应触发数据校验而非直接计量。"
+  },
+  "rules": [
+    {
+      "children": [
+        {
+          "label": "0%档现金",
+          "name": "cash_zero",
+          "note": "纸币及硬币、政府债务凭证、存放于自有金库或以分配方式持有并由金块负债支持的黄金，风险权重 0%。",
+          "value": 0,
+          "when": {
+            "all": [
+              {
+                "field": "cash_subtype",
+                "match": [
+                  "notes_and_gov_paper",
+                  "gold_backed"
+                ],
+                "op": "in"
+              }
+            ]
+          }
+        },
+        {
+          "label": "收款过程中的现金项目",
+          "name": "cash_in_collection_20",
+          "note": "收款过程中的现金项目风险权重 20%。包括向客户购入、将由付款银行结算的贴现支票或汇票。进出口贸易单据在收款过程中持有的，应予排除并按交易对手分配权数。",
+          "value": 0.2,
+          "when": {
+            "all": [
+              {
+                "field": "cash_subtype",
+                "match": "cash_in_collection",
+                "op": "eq"
+              }
+            ]
+          }
+        },
+        {
+          "label": "非由金块负债支持的黄金",
+          "name": "gold_unbacked_100",
+          "note": "非由金块负债支持的黄金风险权重 100%。",
+          "value": 1,
+          "when": {
+            "all": []
+          }
+        }
+      ],
+      "label": "现金及现金等价物",
+      "name": "cash_and_equivalent",
+      "note": "现金类须最先判定。纸币硬币、政府债务凭证、自有金库或分配方式持有且由金块负债支持的黄金均为 0%；收款中现金项目 20%；非由金块负债支持的黄金 100%。为他人保管的黄金不在此申报。",
+      "when": {
+        "all": [
+          {
+            "field": "instrument_type",
+            "match": "cash",
+            "op": "eq"
+          }
+        ]
+      }
+    },
+    {
+      "children": [
+        {
+          "label": "自用且未逾期超90天",
+          "name": "residential_mortgage_50",
+          "note": "由报告信用机构以借款自用住宅物业抵押全额担保、逾期不超过 90 天的贷款，风险权重 50%。仅含个人购置住宅物业的按揭贷款。",
+          "value": 0.5,
+          "when": {
+            "all": [
+              {
+                "field": "is_owner_occupied",
+                "match": "yes",
+                "op": "eq"
+              },
+              {
+                "field": "is_overdue_90d",
+                "match": "no",
+                "op": "eq"
+              }
+            ]
+          }
+        },
+        {
+          "label": "逾期超过90天",
+          "name": "residential_mortgage_overdue_100",
+          "note": "由住宅物业全额担保但逾期超过 90 天的债权，风险权重 100%。",
+          "value": 1,
+          "when": {
+            "all": []
+          }
+        }
+      ],
+      "label": "以住宅物业抵押的债权",
+      "name": "residential_property_secured",
+      "note": "由报告信用机构以住宅物业抵押全额担保的债权。逾期不超过 90 天且为借款自用者 50%；逾期超过 90 天者 100%。须排在逾期贷款之前，因逾期贷款类别明确排除以住宅物业全额担保的债权。",
+      "when": {
+        "all": [
+          {
+            "field": "instrument_type",
+            "match": "claim",
+            "op": "eq"
+          },
+          {
+            "field": "is_fully_secured_by_residential",
+            "match": "yes",
+            "op": "eq"
+          }
+        ]
+      }
+    },
+    {
+      "children": [
+        {
+          "label": "特定拨备不低于20%",
+          "name": "past_due_provision_ge20",
+          "note": "特定拨备不少于缓释前未偿还金额 20% 的，风险权重 100%。",
+          "value": 1,
+          "when": {
+            "all": [
+              {
+                "field": "provision_ratio_past_due",
+                "match": 0.2,
+                "op": "gte"
+              }
+            ]
+          }
+        },
+        {
+          "label": "特定拨备低于20%",
+          "name": "past_due_provision_lt20",
+          "note": "特定拨备少于缓释前未偿还金额 20% 的，风险权重 150%。归类为逾期贷款前已适用 150% 的贷款，归类后仍维持 150%。",
+          "value": 1.5,
+          "when": {
+            "all": []
+          }
+        }
+      ],
+      "label": "逾期贷款",
+      "name": "past_due_loans",
+      "note": "仅覆盖逾期超过 90 天贷款扣减特定拨备后的无抵押部分。以住宅物业全额担保的债权除外，故须排在住宅按揭之后。",
+      "when": {
+        "all": [
+          {
+            "field": "instrument_type",
+            "match": "claim",
+            "op": "eq"
+          },
+          {
+            "field": "is_past_due",
+            "match": "yes",
+            "op": "eq"
+          },
+          {
+            "field": "is_overdue_90d",
+            "match": "yes",
+            "op": "eq"
+          },
+          {
+            "field": "is_unsecured_portion",
+            "match": "yes",
+            "op": "eq"
+          },
+          {
+            "field": "is_fully_secured_by_residential",
+            "match": "no",
+            "op": "eq"
+          }
+        ]
+      }
+    },
+    {
+      "children": [
+        {
+          "label": "MSAR以MOP计价并融资",
+          "name": "sovereign_msar_mop",
+          "note": "对 MSAR 政府或 AMCM、以 MOP 计价并融资的债权，风险权重 0%。",
+          "value": 0,
+          "when": {
+            "all": [
+              {
+                "field": "counterparty_type",
+                "match": "msar_sovereign",
+                "op": "eq"
+              },
+              {
+                "field": "is_local_currency_funded",
+                "match": "yes",
+                "op": "eq"
+              }
+            ]
+          }
+        },
+        {
+          "label": "内地财政部债券",
+          "name": "sovereign_cn_mof",
+          "note": "对内地财政部发行的债券，信用风险权数 0%。依据第 025/B/2025-DSB/AMCM 号（2025.11.20）第 1 项。",
+          "value": 0,
+          "when": {
+            "all": [
+              {
+                "field": "counterparty_type",
+                "match": "cn_mof",
+                "op": "eq"
+              }
+            ]
+          }
+        },
+        {
+          "label": "内地地方政府债券",
+          "name": "sovereign_cn_local_government",
+          "note": "对内地地方政府发行的债券，信用风险权数 20%。依据第 025/B/2025-DSB/AMCM 号第 3 项，已删除「计价单位及资金来源同为人民币」的限缩条件。",
+          "value": 0.2,
+          "when": {
+            "all": [
+              {
+                "field": "counterparty_type",
+                "match": "cn_local_government",
+                "op": "eq"
+              }
+            ]
+          }
+        },
+        {
+          "label": "其他司法辖区本币计价并融资",
+          "name": "sovereign_foreign_local_currency",
+          "note": "对其他司法辖区中央政府或央行、以该辖区本币计价并融资的债权，可按该辖区银行监管当局规定的风险权重。",
+          "weight": {
+            "same_as": "home_supervisor_risk_weight"
+          },
+          "when": {
+            "all": [
+              {
+                "field": "counterparty_type",
+                "match": "foreign_sovereign",
+                "op": "eq"
+              },
+              {
+                "field": "is_local_currency_funded",
+                "match": "yes",
+                "op": "eq"
+              }
+            ]
+          }
+        },
+        {
+          "children": [
+            {
+              "label": "等级1",
+              "name": "sovereign_grade_1",
+              "note": "主权债权等级 1，风险权重 0%。",
+              "value": 0,
+              "when": {
+                "all": [
+                  {
+                    "field": "credit_quality_grade",
+                    "match": "1",
+                    "op": "eq"
+                  }
+                ]
+              }
+            },
+            {
+              "label": "等级2",
+              "name": "sovereign_grade_2",
+              "note": "主权债权等级 2，风险权重 20%。",
+              "value": 0.2,
+              "when": {
+                "all": [
+                  {
+                    "field": "credit_quality_grade",
+                    "match": "2",
+                    "op": "eq"
+                  }
+                ]
+              }
+            },
+            {
+              "label": "等级3",
+              "name": "sovereign_grade_3",
+              "note": "主权债权等级 3，风险权重 50%。",
+              "value": 0.5,
+              "when": {
+                "all": [
+                  {
+                    "field": "credit_quality_grade",
+                    "match": "3",
+                    "op": "eq"
+                  }
+                ]
+              }
+            },
+            {
+              "label": "等级4或5",
+              "name": "sovereign_grade_4_or_5",
+              "note": "主权债权等级 4 或 5，风险权重 100%。",
+              "value": 1,
+              "when": {
+                "all": [
+                  {
+                    "field": "credit_quality_grade",
+                    "match": [
+                      "4",
+                      "5"
+                    ],
+                    "op": "in"
+                  }
+                ]
+              }
+            },
+            {
+              "label": "等级6",
+              "name": "sovereign_grade_6",
+              "note": "主权债权等级 6，风险权重 150%。",
+              "value": 1.5,
+              "when": {
+                "all": [
+                  {
+                    "field": "credit_quality_grade",
+                    "match": "6",
+                    "op": "eq"
+                  }
+                ]
+              }
+            },
+            {
+              "label": "未评级",
+              "name": "sovereign_unrated",
+              "note": "未评级主权债权风险权重 100%。按同债务人已评级敞口或发行人评级推导时，须以本国货币计价方可使用本国货币评级。",
+              "value": 1,
+              "when": {
+                "all": [
+                  {
+                    "field": "is_quasi_sovereign_rating",
+                    "match": "yes",
+                    "op": "eq"
+                  }
+                ]
+              }
+            },
+            {
+              "label": "其他等级",
+              "name": "sovereign_grade_fallback",
+              "note": "未评级及未列明等级的主权债权，风险权重 100%。",
+              "value": 1,
+              "when": {
+                "all": []
+              }
+            }
+          ],
+          "label": "按信用质量等级",
+          "name": "sovereign_by_grade",
+          "when": {
+            "all": []
+          }
+        }
+      ],
+      "label": "主权债权",
+      "name": "sovereign",
+      "note": "对澳门特区政府、AMCM、其他国家中央政府及中央银行、香港特区政府的债权。MSAR 且以 MOP 计价并融资者为 0%。",
+      "when": {
+        "all": [
+          {
+            "field": "instrument_type",
+            "match": "claim",
+            "op": "eq"
+          },
+          {
+            "field": "counterparty_type",
+            "match": [
+              "msar_sovereign",
+              "foreign_sovereign",
+              "cn_mof",
+              "cn_local_government"
+            ],
+            "op": "in"
+          }
+        ]
+      }
+    },
+    {
+      "children": [
+        {
+          "label": "澳门公共企业",
+          "name": "pse_mo_public_enterprise_50",
+          "note": "澳门特区政府财务出资占比达 50% 或以上的公共企业（即列于本局《资产负债月度调查填报指引》附件二的公共企业）的风险敞口，风险权重 50%。都更公司依第 018/B/2020-DSB/AMCM 号为公共目的设立且由特区政府全资持有，权重 50%。",
+          "value": 0.5,
+          "when": {
+            "all": [
+              {
+                "field": "counterparty_type",
+                "match": [
+                  "mo_public_enterprise",
+                  "urban_renewal_co"
+                ],
+                "op": "in"
+              }
+            ]
+          }
+        },
+        {
+          "label": "所在辖区主权等级6",
+          "name": "pse_sovereign_grade_6",
+          "note": "PSE 所在辖区主权发行人评级映射至信用质量等级 6 的，风险权重 150%。",
+          "value": 1.5,
+          "when": {
+            "all": [
+              {
+                "field": "sovereign_grade_of_pse",
+                "match": "6",
+                "op": "eq"
+              }
+            ]
+          }
+        },
+        {
+          "label": "所在辖区主权等级4或5",
+          "name": "pse_sovereign_grade_4_or_5",
+          "note": "PSE 所在辖区主权发行人评级映射至信用质量等级 4 或 5 的，风险权重 100%。",
+          "value": 1,
+          "when": {
+            "all": [
+              {
+                "field": "sovereign_grade_of_pse",
+                "match": [
+                  "4",
+                  "5"
+                ],
+                "op": "in"
+              }
+            ]
+          }
+        },
+        {
+          "label": "所在辖区主权无评级",
+          "name": "pse_sovereign_unrated",
+          "note": "该主权无发行人评级的，风险权重 100%。",
+          "value": 1,
+          "when": {
+            "all": [
+              {
+                "field": "sovereign_grade_of_pse",
+                "match": "unrated",
+                "op": "eq"
+              }
+            ]
+          }
+        },
+        {
+          "label": "一般规则：主权权数再高一档",
+          "name": "pse_next_higher_than_sovereign",
+          "note": "一般规则：按 PSE 所在国家或辖区主权的风险权数再高一档。",
+          "weight": {
+            "same_as": "pse_sovereign_grade_next_higher"
+          },
+          "when": {
+            "all": []
+          }
+        }
+      ],
+      "label": "公共部门实体债权",
+      "name": "pse",
+      "note": "本地 PSE 指载于本局《资产负债月度调查填报指引》附件一清单内的实体，不包括澳门特区政府及 AMCM，该两者走主权类别。",
+      "when": {
+        "all": [
+          {
+            "field": "instrument_type",
+            "match": "claim",
+            "op": "eq"
+          },
+          {
+            "field": "counterparty_type",
+            "match": [
+              "pse",
+              "mo_public_enterprise",
+              "urban_renewal_co"
+            ],
+            "op": "in"
+          }
+        ]
+      }
+    },
+    {
+      "children": [
+        {
+          "label": "表4机构清单",
+          "name": "mdb_zero_list",
+          "note": "表4所列 18 家机构适用 0% 风险权重：BIS、IMF、ECB、欧洲共同体、非洲开发银行、亚洲开发银行、加勒比开发银行、欧洲委员会开发银行、欧洲复兴开发银行、欧洲投资银行、欧洲投资基金、美洲开发银行、伊斯兰开发银行、北欧投资银行、国际免疫融资机制、世界银行集团（含 IBRD、IFC）、欧洲稳定机制、欧洲金融稳定基金。",
+          "value": 0,
+          "when": {
+            "all": [
+              {
+                "field": "is_mdb_zero_list",
+                "match": "yes",
+                "op": "eq"
+              }
+            ]
+          }
+        },
+        {
+          "children": [
+            {
+              "label": "等级1",
+              "name": "mdb_grade_1",
+              "note": "其他 MDB 或国际组织等级 1，风险权重 20%。",
+              "value": 0.2,
+              "when": {
+                "all": [
+                  {
+                    "field": "credit_quality_grade",
+                    "match": "1",
+                    "op": "eq"
+                  }
+                ]
+              }
+            },
+            {
+              "label": "等级2或3",
+              "name": "mdb_grade_2_or_3",
+              "note": "其他 MDB 或国际组织等级 2 或 3，风险权重 50%。",
+              "value": 0.5,
+              "when": {
+                "all": [
+                  {
+                    "field": "credit_quality_grade",
+                    "match": [
+                      "2",
+                      "3"
+                    ],
+                    "op": "in"
+                  }
+                ]
+              }
+            },
+            {
+              "label": "等级4或5",
+              "name": "mdb_grade_4_or_5",
+              "note": "其他 MDB 或国际组织等级 4 或 5，风险权重 100%。",
+              "value": 1,
+              "when": {
+                "all": [
+                  {
+                    "field": "credit_quality_grade",
+                    "match": [
+                      "4",
+                      "5"
+                    ],
+                    "op": "in"
+                  }
+                ]
+              }
+            },
+            {
+              "label": "等级6",
+              "name": "mdb_grade_6",
+              "note": "其他 MDB 或国际组织等级 6，风险权重 150%。",
+              "value": 1.5,
+              "when": {
+                "all": [
+                  {
+                    "field": "credit_quality_grade",
+                    "match": "6",
+                    "op": "eq"
+                  }
+                ]
+              }
+            },
+            {
+              "label": "未评级",
+              "name": "mdb_unrated",
+              "note": "未评级及其他 MDB 或国际组织，风险权重 50%。",
+              "value": 0.5,
+              "when": {
+                "all": []
+              }
+            }
+          ],
+          "label": "其他MDB按等级",
+          "name": "mdb_other_by_grade",
+          "when": {
+            "all": []
+          }
+        }
+      ],
+      "label": "多边开发银行及其他国际组织债权",
+      "name": "mdb_and_international_organization",
+      "note": "列于表4清单的机构适用 0%，其余按信用质量等级映射。",
+      "when": {
+        "all": [
+          {
+            "field": "instrument_type",
+            "match": "claim",
+            "op": "eq"
+          },
+          {
+            "field": "counterparty_type",
+            "match": "mdb",
+            "op": "eq"
+          }
+        ]
+      }
+    },
+    {
+      "children": [
+        {
+          "label": "内地开发性金融机构及政策性银行债券",
+          "name": "bank_cn_policy_bank",
+          "note": "对内地开发性金融机构及内地政策性银行发行的债券（不含次级债权），信用风险权数 0%。依据第 025/B/2025-DSB/AMCM 号第 2 项。",
+          "value": 0,
+          "when": {
+            "all": [
+              {
+                "field": "counterparty_type",
+                "match": "cn_policy_bank",
+                "op": "eq"
+              },
+              {
+                "field": "is_local_currency_funded",
+                "match": "yes",
+                "op": "eq"
+              }
+            ]
+          }
+        },
+        {
+          "children": [
+            {
+              "label": "短期等级I",
+              "name": "bank_short_grade_I",
+              "note": "银行短期债权短期等级 I，风险权重 20%。",
+              "value": 0.2,
+              "when": {
+                "all": [
+                  {
+                    "field": "short_term_grade",
+                    "match": "I",
+                    "op": "eq"
+                  }
+                ]
+              }
+            },
+            {
+              "label": "短期等级II",
+              "name": "bank_short_grade_II",
+              "note": "银行短期债权短期等级 II，风险权重 50%。",
+              "value": 0.5,
+              "when": {
+                "all": [
+                  {
+                    "field": "short_term_grade",
+                    "match": "II",
+                    "op": "eq"
+                  }
+                ]
+              }
+            },
+            {
+              "label": "短期等级III",
+              "name": "bank_short_grade_III",
+              "note": "银行短期债权短期等级 III，风险权重 100%。",
+              "value": 1,
+              "when": {
+                "all": [
+                  {
+                    "field": "short_term_grade",
+                    "match": "III",
+                    "op": "eq"
+                  }
+                ]
+              }
+            },
+            {
+              "label": "短期等级IV",
+              "name": "bank_short_grade_IV",
+              "note": "银行短期债权短期等级 IV，风险权重 150%。",
+              "value": 1.5,
+              "when": {
+                "all": []
+              }
+            }
+          ],
+          "label": "短期债权按发行特定评级",
+          "name": "bank_short_term_by_grade",
+          "when": {
+            "all": [
+              {
+                "field": "original_maturity_months",
+                "match": 3,
+                "op": "lte"
+              }
+            ]
+          }
+        },
+        {
+          "label": "A+至A-一般银行债",
+          "name": "bank_grade_A_to_Aminus_over_3m",
+          "note": "原到期日超过 3 个月、国际信用评级为 A+ 至 A- 范围的一般银行债，信用风险权数 30%。依据第 025/B/2025-DSB/AMCM 号第 5 项。其他一般银行债维持现行水平不变。",
+          "value": 0.3,
+          "when": {
+            "all": [
+              {
+                "field": "credit_quality_grade",
+                "match": "2",
+                "op": "eq"
+              },
+              {
+                "field": "counterparty_type",
+                "match": "bank",
+                "op": "eq"
+              },
+              {
+                "field": "original_maturity_months",
+                "match": 3,
+                "op": "gt"
+              }
+            ]
+          }
+        },
+        {
+          "children": [
+            {
+              "label": "等级1",
+              "name": "bank_grade_1",
+              "note": "银行债权等级 1，风险权重 20%。",
+              "value": 0.2,
+              "when": {
+                "all": [
+                  {
+                    "field": "credit_quality_grade",
+                    "match": "1",
+                    "op": "eq"
+                  }
+                ]
+              }
+            },
+            {
+              "label": "等级2或3",
+              "name": "bank_grade_2_or_3",
+              "note": "银行债权等级 2 或 3，风险权重 50%。",
+              "value": 0.5,
+              "when": {
+                "all": [
+                  {
+                    "field": "credit_quality_grade",
+                    "match": [
+                      "2",
+                      "3"
+                    ],
+                    "op": "in"
+                  }
+                ]
+              }
+            },
+            {
+              "label": "等级4或5",
+              "name": "bank_grade_4_or_5",
+              "note": "银行债权等级 4 或 5，风险权重 100%。",
+              "value": 1,
+              "when": {
+                "all": [
+                  {
+                    "field": "credit_quality_grade",
+                    "match": [
+                      "4",
+                      "5"
+                    ],
+                    "op": "in"
+                  }
+                ]
+              }
+            },
+            {
+              "label": "等级6",
+              "name": "bank_grade_6",
+              "note": "银行债权等级 6，风险权重 150%。",
+              "value": 1.5,
+              "when": {
+                "all": [
+                  {
+                    "field": "credit_quality_grade",
+                    "match": "6",
+                    "op": "eq"
+                  }
+                ]
+              }
+            },
+            {
+              "label": "未评级",
+              "name": "bank_unrated",
+              "note": "未评级银行债权风险权重 50%。但不得给予优于其注册地主权所获风险权数的待遇；若有参考债权具表6下引致 150% 的短期评估，则所有未评级债权一律 150%。",
+              "value": 0.5,
+              "when": {
+                "all": []
+              }
+            }
+          ],
+          "label": "其他银行债权按等级",
+          "name": "bank_by_grade",
+          "when": {
+            "all": []
+          }
+        }
+      ],
+      "label": "银行债权",
+      "name": "bank",
+      "note": "对银行及信用机构的债权。短期债权按发行特定评级，其余按信用质量等级并区分原到期期限。",
+      "when": {
+        "all": [
+          {
+            "field": "instrument_type",
+            "match": "claim",
+            "op": "eq"
+          },
+          {
+            "field": "counterparty_type",
+            "match": [
+              "bank",
+              "cn_policy_bank"
+            ],
+            "op": "in"
+          }
+        ]
+      }
+    },
+    {
+      "children": [
+        {
+          "children": [
+            {
+              "label": "短期等级I",
+              "name": "corporate_short_grade_I",
+              "note": "公司短期债权短期等级 I，风险权重 20%。",
+              "value": 0.2,
+              "when": {
+                "all": [
+                  {
+                    "field": "short_term_grade",
+                    "match": "I",
+                    "op": "eq"
+                  }
+                ]
+              }
+            },
+            {
+              "label": "短期等级II",
+              "name": "corporate_short_grade_II",
+              "note": "公司短期债权短期等级 II，风险权重 50%。",
+              "value": 0.5,
+              "when": {
+                "all": [
+                  {
+                    "field": "short_term_grade",
+                    "match": "II",
+                    "op": "eq"
+                  }
+                ]
+              }
+            },
+            {
+              "label": "短期等级III",
+              "name": "corporate_short_grade_III",
+              "note": "公司短期债权短期等级 III，风险权重 100%。",
+              "value": 1,
+              "when": {
+                "all": [
+                  {
+                    "field": "short_term_grade",
+                    "match": "III",
+                    "op": "eq"
+                  }
+                ]
+              }
+            },
+            {
+              "label": "短期等级IV",
+              "name": "corporate_short_grade_IV",
+              "note": "公司短期债权短期等级 IV，风险权重 150%。",
+              "value": 1.5,
+              "when": {
+                "all": []
+              }
+            }
+          ],
+          "label": "短期债权按发行特定评级",
+          "name": "corporate_short_term_by_grade",
+          "when": {
+            "all": [
+              {
+                "field": "original_maturity_months",
+                "match": 3,
+                "op": "lte"
+              }
+            ]
+          }
+        },
+        {
+          "label": "BBB+至BBB-一般公司债",
+          "name": "corporate_grade_BBB_range",
+          "note": "国际信用评级为 BBB+ 至 BBB- 范围的一般公司债，信用风险权数 75%。依据第 025/B/2025-DSB/AMCM 号第 6 项。其他一般公司债维持现行水平不变。",
+          "value": 0.75,
+          "when": {
+            "all": [
+              {
+                "field": "credit_quality_grade",
+                "match": "3",
+                "op": "eq"
+              },
+              {
+                "field": "original_maturity_months",
+                "match": 3,
+                "op": "gt"
+              }
+            ]
+          }
+        },
+        {
+          "children": [
+            {
+              "label": "等级1",
+              "name": "corporate_grade_1",
+              "note": "公司债权等级 1，风险权重 20%。",
+              "value": 0.2,
+              "when": {
+                "all": [
+                  {
+                    "field": "credit_quality_grade",
+                    "match": "1",
+                    "op": "eq"
+                  }
+                ]
+              }
+            },
+            {
+              "label": "等级2",
+              "name": "corporate_grade_2",
+              "note": "公司债权等级 2，风险权重 50%。",
+              "value": 0.5,
+              "when": {
+                "all": [
+                  {
+                    "field": "credit_quality_grade",
+                    "match": "2",
+                    "op": "eq"
+                  }
+                ]
+              }
+            },
+            {
+              "label": "等级3或4",
+              "name": "corporate_grade_3_or_4",
+              "note": "公司债权等级 3 或 4，风险权重 100%。",
+              "value": 1,
+              "when": {
+                "all": [
+                  {
+                    "field": "credit_quality_grade",
+                    "match": [
+                      "3",
+                      "4"
+                    ],
+                    "op": "in"
+                  }
+                ]
+              }
+            },
+            {
+              "label": "等级5或6",
+              "name": "corporate_grade_5_or_6",
+              "note": "公司债权等级 5 或 6，风险权重 150%。",
+              "value": 1.5,
+              "when": {
+                "all": [
+                  {
+                    "field": "credit_quality_grade",
+                    "match": [
+                      "5",
+                      "6"
+                    ],
+                    "op": "in"
+                  }
+                ]
+              }
+            },
+            {
+              "label": "未评级",
+              "name": "corporate_unrated",
+              "note": "未评级公司债权风险权重 100%。但不得给予优于其注册地主权所获风险权数的待遇；若有参考债权具表9下引致 150% 的短期评估，则同一公司所有未评级债权一律 150%。",
+              "value": 1,
+              "when": {
+                "all": []
+              }
+            }
+          ],
+          "label": "其他公司债权按等级",
+          "name": "corporate_by_grade",
+          "when": {
+            "all": []
+          }
+        }
+      ],
+      "label": "公司债权",
+      "name": "corporate",
+      "note": "对公司（法人）的债权，不包括已归类于监管零售组合的债权。",
+      "when": {
+        "all": [
+          {
+            "field": "instrument_type",
+            "match": "claim",
+            "op": "eq"
+          },
+          {
+            "field": "counterparty_type",
+            "match": "corporate",
+            "op": "eq"
+          }
+        ]
+      }
+    },
+    {
+      "children": [
+        {
+          "label": "超过门槛的中小企业贷款",
+          "name": "retail_sme_over_threshold",
+          "note": "金额超过 MOP 1,000 万的正常中小企业贷款，信用风险权数 85%。系第 012/B/2025-DSB/AMCM 号引入，由原 100% 下调至 85%，第 025/B/2025 号予以延续。",
+          "value": 0.85,
+          "when": {
+            "all": [
+              {
+                "field": "is_sme_loan",
+                "match": "yes",
+                "op": "eq"
+              },
+              {
+                "field": "retail_aggregate_exposure",
+                "match": 10000000,
+                "op": "gt"
+              }
+            ]
+          }
+        },
+        {
+          "label": "不超过门槛的中小企业贷款",
+          "name": "retail_sme_at_or_below_threshold",
+          "note": "金额不超过 MOP 1,000 万的正常中小企业贷款，信用风险权重维持 75%。",
+          "value": 0.75,
+          "when": {
+            "all": [
+              {
+                "field": "is_sme_loan",
+                "match": "yes",
+                "op": "eq"
+              }
+            ]
+          }
+        },
+        {
+          "label": "一般监管零售组合债权",
+          "name": "retail_general_within_threshold",
+          "note": "符合三项准则且单一交易对手合计敞口不超过 MOP 1,000 万的监管零售组合债权，风险权重 75%。",
+          "value": 0.75,
+          "when": {
+            "all": [
+              {
+                "field": "retail_aggregate_exposure",
+                "match": 10000000,
+                "op": "lte"
+              }
+            ]
+          }
+        },
+        {
+          "label": "超出零售门槛的债权",
+          "name": "retail_general_over_threshold",
+          "note": "敞口形式与分散度符合零售特征，但对单一交易对手的合计敞口超过 MOP 1,000 万绝对门槛，不符合监管零售组合准入条件，按公司类或其他表内敞口处理，风险权重 100%。",
+          "value": 1,
+          "when": {
+            "all": []
+          }
+        }
+      ],
+      "label": "监管零售组合",
+      "name": "regulatory_retail",
+      "note": "中小企业贷款按自身金额分 75%/85% 两档，不受单一交易对手绝对门槛限制；一般零售组合须同时满足敞口形式、充分分散、MOP 1,000 万门槛三项准则。证券、符合住宅按揭待遇的按揭贷款、逾期贷款均予排除。",
+      "when": {
+        "all": [
+          {
+            "field": "instrument_type",
+            "match": "claim",
+            "op": "eq"
+          },
+          {
+            "field": "meets_retail_form",
+            "match": "yes",
+            "op": "eq"
+          },
+          {
+            "field": "is_well_diversified",
+            "match": "yes",
+            "op": "eq"
+          }
+        ]
+      }
+    },
+    {
+      "children": [
+        {
+          "label": "股权类资产",
+          "name": "equity_exposure",
+          "note": "股权类资产（含上市及非上市股票）。本框架未单设权益类别，风险权重 100%。",
+          "value": 1,
+          "when": {
+            "all": [
+              {
+                "field": "instrument_type",
+                "match": "equity",
+                "op": "eq"
+              }
+            ]
+          }
+        },
+        {
+          "label": "其他非逾期表内敞口",
+          "name": "other_onbalance_not_past_due",
+          "note": "未在特别规定中列明的其他所有表内敞口（含无法归类的应计项目），风险权重 100%。",
+          "value": 1,
+          "when": {
+            "all": []
+          }
+        }
+      ],
+      "label": "股权及其他表内敞口",
+      "name": "equity_and_other_asset",
+      "note": "本框架采标准法，未单设权益资产类别。股权类敞口及未在特别规定中列明的其他表内敞口归入本类，一律 100%。须排在所有具名类别之后。",
+      "when": {
+        "all": []
+      }
+    }
+  ],
+  "title": "市场化债券"
+}

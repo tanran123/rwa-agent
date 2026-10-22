@@ -9,7 +9,7 @@ Koa 2，前缀 `/api`，默认 `http://127.0.0.1:8780`。数据在 MySQL，连�
 | 路径 | 作用 |
 | --- | --- |
 | `src/index.js` | 全部 HTTP 路由，以及行数据到 JSON 的形状。 |
-| `src/exposureDocs.js` | 读仓库根目录分类 JSON：通用、贷款、债券，以及后来新增的 `*风险暴露.json`。确认写入和每个产品的决策树对话也在这里。 |
+| `src/exposureDocs.js` | 从 `exposure_document` 读页签分类（`seq > 0`）：通用、贷款、债券，以及后来新增的页签。确认写入也写回这张表。每个产品的决策树对话仍在仓库根目录 `决策树对话.json`。 |
 | `src/db.js` | 读取 `.env`，导出 `query(sql, params)`。 |
 | `src/measure.js` | `GET /measure` 和审计底稿。模拟债项在 `data/`，计量在 `lib/`，分类规则读 `agent/subagents/weight/knowledge/权重法风险暴露分类.json`，EAD 配置读 `ead_product_config`、`ead_product_rule`。 |
 | `src/paper.js` | `GET /working-paper` 和上传样例。底稿读 `agent/subagents/weight/paper/底稿模型计算.json`，样例读 `data/data.js`。 |
@@ -30,7 +30,7 @@ Koa 2，前缀 `/api`，默认 `http://127.0.0.1:8780`。数据在 MySQL，连�
 | GET | `/dashboard` | 总览数字。 |
 | GET | `/rule-versions`、`/clauses`、`/params` | 规则版本、条款、共用参数。参数用 `PUT /params/:id` 修改。 |
 | GET | `/products`、`/products/:code/fields`、`/field-mappings` | 产品、标准字段、字段映射。 |
-| GET | `/exposure-classes`、`/exposure-class`、`/weights`、`/crm`、`/product-rules` | 分类 JSON 页签、单份分类、权重表、缓释、产品专属规则。`/exposure-class?name=` 读对应文件；不带 name 时仍读库里的权重法分类。 |
+| GET | `/exposure-classes`、`/exposure-class`、`/weights`、`/crm`、`/product-rules` | 分类 JSON 页签、单份分类、权重表、缓释、产品专属规则。`/exposure-class?name=` 读 `exposure_document` 里 `seq > 0` 的那一行；不带 name 时仍读 `id = 1` 的权重法分类。 |
 | POST | `/exposure-tree/copy`、`/exposure-tree/propose`、`/exposure-tree/save` | 添加页签时复制通用。对话先说明当前规则，确认后询问是否保存，保存才写入。没在对话里出现的权重不写入。 |
 | GET、POST | `/exposure-tree/chat` | 按分类 name 读取或保存决策树对话。内容写在仓库根目录 `决策树对话.json`，不提交。 |
 | GET、PUT | `/ead-config` | 表内外 EAD 计算配置。读写在 `ead_product_config`、`ead_product_rule` 两张表；保存前整份校验产品 code、公式语法、字段范围和适用条件，对不上就报错不写。 |
@@ -43,11 +43,11 @@ Koa 2，前缀 `/api`，默认 `http://127.0.0.1:8780`。数据在 MySQL，连�
 | POST | `/agent/chat` | 原样转发到 Flask `8766`。这里不实现智能体。决策树对话的提议也转发到 Flask，写入留在 `/exposure-tree/save`。 |
 | POST | `/rules/chat` | 原样转发到 Flask 的规则对话。 |
 
-成功时响应体就是数据。失败时 `{ "error": "原因" }`，并带上相应状态码。
+成功时响应体就是数据。4xx 失败时 `{ "error": "原因" }`。5xx 一律 `{ "error": "服务异常" }`，具体原因打在服务日志里。
 
 ## 表
 
-`jurisdiction`、`customer`、`org_unit` 是客户和机构。`rule_version`、`clause_doc`、`clause_ref`、`rule_param` 是规则版本、条款和共用参数。`product_type`、`product_field`、`field_mapping` 是产品和字段。`exposure_document` 存权重法分类 JSON。`weight_rule`、`bank_grade_row`、`mo_weight_row` 是权重表。`ead_product_config`、`ead_product_rule` 是按产品的 EAD 配置和公式。`ccf_rule`、`crm_rule`、`product_exposure_rule` 是转换系数、缓释和产品规则。`measure_batch`、`measure_line` 是批次和逐笔结果。`assistant_turn` 是规则助手对话。
+`jurisdiction`、`customer`、`org_unit` 是客户和机构。`rule_version`、`clause_doc`、`clause_ref`、`rule_param` 是规则版本、条款和共用参数。`product_type`、`product_field`、`field_mapping` 是产品和字段。`exposure_document` 存权重法分类 JSON（`id = 1`，`seq = 0`），以及决策树页签上的分类 JSON（`seq > 0`，按 `seq` 排序，第一份是复制来源）。`weight_rule`、`bank_grade_row`、`mo_weight_row` 是权重表。`ead_product_config`、`ead_product_rule` 是按产品的 EAD 配置和公式。`ccf_rule`、`crm_rule`、`product_exposure_rule` 是转换系数、缓释和产品规则。`measure_batch`、`measure_line` 是批次和逐笔结果。`assistant_turn` 是规则助手对话。
 
 表内 / 表外 EAD 计算规则在 `ead_product_config`、`ead_product_rule`。一个产品只能选表内或表外。`tools/build-seed.mjs` 按产品公式生成这两张表的种子，公式先过 `lib/formula.cjs`。
 

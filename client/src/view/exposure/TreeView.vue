@@ -62,9 +62,9 @@ async function show(name, rev) {
     if (!item) throw new Error("没有这份分类 JSON");
     if (!rev && item.name === current.value && doc.value) return;
     current.value = item.name;
+    loading.value = true;
     const pending = [fetchExposureClass(item.name)];
     if (!clauses.value.length) pending.push(fetchClauses().catch(() => []));
-    if (!doc.value) loading.value = true;
     const result = await Promise.all(pending);
     if (token !== seq) return;
     const nextDoc = result[0].document;
@@ -118,7 +118,7 @@ watch(() => (route.params.name || "") + "\n" + (route.query.rev || ""), () => {
 </script>
 
 <template>
-  <div v-if="loading && !doc" class="loading"><span class="spin"></span>正在从接口读取</div>
+  <div v-if="loading && !doc" class="loading"><span class="spin"></span>正在读取</div>
   <div v-else-if="error && !doc" class="notice danger">{{ error }}</div>
   <template v-else-if="doc">
     <div class="section-tabs" role="tablist">
@@ -146,8 +146,9 @@ watch(() => (route.params.name || "") + "\n" + (route.query.rev || ""), () => {
         />
         <span v-if="addError" class="dim">{{ addError }}</span>
       </div>
-    <DecisionChart :document="doc" :changed="changed" @select="choose" />
-    <RuleDetail
+    <div v-if="loading" class="loading"><span class="spin"></span>正在读取</div>
+    <DecisionChart v-else :document="doc" :changed="changed" @select="choose" />
+    <RuleDetail v-if="!loading"
       :node="picked && picked.node"
       :path="picked ? picked.path : ''"
       :index="picked ? picked.index : 0"
