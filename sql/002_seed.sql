@@ -251,6 +251,26 @@ INSERT INTO mo_weight_row (id, bucket, weights_json, note) VALUES
   ('MO-RW-CORP', '企业 / 非银', '["20%","50%","100%","100%","150%","150%","100%"]', ''),
   ('MO-RW-ZERO', '中华人民共和国财政部', '["0%"]', '发行人是财政部时直接 0%，不再查评级档');
 
+INSERT INTO ead_product_config (product_code, needed, reason, side, version) VALUES
+  ('corp_loan', 1, '', 'on', 'MO-SA-2026.1'),
+  ('personal_loan', 1, '', 'on', 'MO-SA-2026.1'),
+  ('bond', 1, '', 'on', 'MO-SA-2026.1'),
+  ('ib_call', 1, '', 'on', 'MO-SA-2026.1'),
+  ('ib_time', 1, '', 'on', 'MO-SA-2026.1'),
+  ('due_from_bank', 1, '', 'on', 'MO-SA-2026.1'),
+  ('other_credit', 1, '', 'on', 'MO-SA-2026.1'),
+  ('off_bs', 1, '', 'off', 'MO-SA-2026.1');
+
+INSERT INTO ead_product_rule (id, product_code, seq, name, condition_text, conditions_json, formula, fields_json, structured_json, precision_digits, rounding, result_field, clause_id, status, ccf, params_json) VALUES
+  ('EAD-ON-CL-001', 'corp_loan', 1, '对公贷款表内 EAD', '适用于所有表内对公贷款', '{"all":[]}', 'EAD = 债项余额', '[{"name":"债项余额","code":"bal","stdField":"balance"}]', '{"kind":"var","name":"balance","label":"债项余额"}', 2, '四舍五入', 'on_balance_ead', 'CL-MO-060', 'published', NULL, '[]'),
+  ('EAD-ON-PL-001', 'personal_loan', 1, '个人贷款表内 EAD', '适用于所有表内个人贷款', '{"all":[]}', 'EAD = 债项余额', '[{"name":"债项余额","code":"bal","stdField":"balance"}]', '{"kind":"var","name":"balance","label":"债项余额"}', 2, '四舍五入', 'on_balance_ead', 'CL-MO-060', 'published', NULL, '[]'),
+  ('EAD-ON-BD-001', 'bond', 1, '债券投资表内 EAD', '适用于所有表内债券投资', '{"all":[]}', 'EAD = 债券余额', '[{"name":"债券余额","code":"bal","stdField":"balance"}]', '{"kind":"var","name":"balance","label":"债券余额"}', 2, '四舍五入', 'on_balance_ead', 'CL-MO-060', 'published', NULL, '[]'),
+  ('EAD-ON-IB-001', 'ib_call', 1, '同业活期表内 EAD', '适用于所有存放同业活期', '{"all":[]}', 'EAD = 余额', '[{"name":"余额","code":"bal","stdField":"balance"}]', '{"kind":"var","name":"balance","label":"余额"}', 2, '四舍五入', 'on_balance_ead', 'CL-MO-060', 'published', NULL, '[]'),
+  ('EAD-ON-IT-001', 'ib_time', 1, '同业定期表内 EAD', '适用于所有存放同业定期', '{"all":[]}', 'EAD = 余额', '[{"name":"余额","code":"bal","stdField":"balance"}]', '{"kind":"var","name":"balance","label":"余额"}', 2, '四舍五入', 'on_balance_ead', 'CL-MO-060', 'published', NULL, '[]'),
+  ('EAD-ON-DF-001', 'due_from_bank', 1, '存放同业表内 EAD', '适用于所有存放同业款项', '{"all":[]}', 'EAD = 余额', '[{"name":"余额","code":"bal","stdField":"balance"}]', '{"kind":"var","name":"balance","label":"余额"}', 2, '四舍五入', 'on_balance_ead', 'CL-MO-060', 'published', NULL, '[]'),
+  ('EAD-ON-OC-001', 'other_credit', 1, '其他信用风险暴露表内 EAD', '适用于股权等权益类表内业务', '{"all":[]}', 'EAD = 余额', '[{"name":"余额","code":"bal","stdField":"balance"}]', '{"kind":"var","name":"balance","label":"余额"}', 2, '四舍五入', 'on_balance_ead', 'CL-MO-060', 'published', NULL, '[]'),
+  ('EAD-OFF-OB-001', 'off_bs', 1, '表外授信及承诺 EAD', '按业务品种的信用转换系数折算；债项自带 ccf 时以债项为准', '{"all":[]}', 'EAD = 已提用金额 + 授信总额度 × CCF', '[{"name":"已提用金额","code":"drn","stdField":"onbalance_amount"},{"name":"授信总额度","code":"tot","stdField":"offbalance_amount"}]', '{"kind":"bin","op":"add","left":{"kind":"var","name":"onbalance_amount","label":"已提用金额"},"right":{"kind":"bin","op":"mul","left":{"kind":"var","name":"offbalance_amount","label":"授信总额度"},"right":{"kind":"var","name":"CCF","label":"CCF"}}}', 2, '四舍五入', 'off_balance_ead', 'CL-MO-064', 'published', 0.2, '[]');
+
 INSERT INTO ccf_rule (id, type_name, cond_text, ccf, priority, conds_json) VALUES
   ('CCF_100', '贷款、保函、信用证垫款、远期资产购买、资产转让', '信用风险仍在银行', '100%', 50, NULL),
   ('CCF_COMMIT_40', '贷款承诺', '一般贷款承诺', '40%', 60, NULL),

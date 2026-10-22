@@ -1,124 +1,263 @@
 <script setup>
-import { computed, nextTick, ref, watch } from "vue";
-import { useRoute } from "vue-router";
-import { fetchEadConfig, saveEadConfig, trialEad } from "@/api/ead";
-import { sendAgentChat } from "@/api/agent";
+import { computed, nextTick, reactive, ref } from "vue";
+import { checkEadFormula, fetchEadConfig, saveEadConfig, trialEad } from "@/api/ead";
+import { OP_LABELS } from "@/utils/ruleText";
 import AsyncView from "@/components/AsyncView.vue";
 import Drawer from "@/components/Drawer.vue";
 
-const props = defineProps({ side: { type: String, default: "on" } });
-const route = useRoute();
+const OPS = ["+", "−", "×", "÷", "(", ")"];
+const FNS = ["max(", "min(", "abs(", "round("];
+const COND_OPS = Object.keys(OP_LABELS);
+
 const view = ref(null);
-const loaded = ref(null);
+const data = ref(null);
+const active = ref("");
+const areas = reactive({});
+const saving = ref(false);
 const pageError = ref("");
 const pageMessage = ref("");
-const saving = ref(false);
+const toast = ref("");
 
-const chatEl = ref(null);
-const shown = ref([]);
-const text = ref("");
-const sending = ref(false);
-const draft = ref(null);
-
-const trial = ref(null);
-const trialProduct = ref("");
+const trial = ref(false);
+const trialProduct = ref(null);
+const trialRule = ref(null);
 const trialView = ref(null);
 const trialInputs = ref({});
 const trialError = ref("");
 
-const ruleCount = computed(() => {
-  const list = loaded.value && loaded.value.config ? loaded.value.config.products : [];
-  return (list || []).reduce((total, item) => total + ((item.rules || []).length), 0);
+const product = computed(() => {
+  if (!data.value || !data.value.products) return null;
+  return data.value.products.find((item) => item.code === active.value) || null;
 });
 
-async function load() {
-  const data = await fetchEadConfig(props.side);
-  loaded.value = data;
-  return data;
+function ping(text) {
+  toast.value = text;
+  clearTimeout(ping.timer);
+  ping.timer = setTimeout(() => { toast.value = ""; }, 2600);
 }
 
-function jsonOf(value) {
-  return JSON.stringify(value, null, 2);
-}
-
-function productOf(products, code) {
-  return (products || []).find((item) => item.code === code) || null;
-}
-
-function labelOf(products, code) {
-  const product = productOf(products, code);
-  return product ? product.label : code + "（库里没有）";
-}
-
-function fieldText(products, code, stdField) {
-  const product = productOf(products, code);
-  const field = product ? (product.fields || []).find((item) => item.stdField === stdField) : null;
-  return field ? field.name + "（" + stdField + "）" : stdField;
-}
-
-function ccfText(value) {
-  if (value == null || value === "") return "—";
-  const number = Number(value);
-  if (Number.isNaN(number)) return String(value);
-  return (number * 100).toFixed(0) + "%";
-}
-
-function statusText(status) {
-  return status === "published" ? "已发布" : "草稿";
-}
-
-function reveal() {
-  nextTick(() => {
-    if (chatEl.value) chatEl.value.scrollTop = chatEl.value.scrollHeight;
+/** 从接口拿到的规则补上编辑态字段：_check 决定能不能保存，conditions 一律补成 { all: [] }。 */
+function hydrate(cfg) {
+  (cfg.products || []).forEach((item) => {
+    (item.rules || []).forEach((rule) => {
+      rule._check = rule.structured
+        ? { ok: true, errors: [], warnings: [], fields: rule.fields || [] }
+        : { ok: false, errors: ["这条规则缺少结构化公式，请重新编写并保存。"], warnings: [], fields: [] };
+      rule._checking = false;
+      if (!rule.conditions || !Array.isArray(rule.conditions.all)) rule.conditions = { all: [] };
+      rule.conditions.all.forEach((cond) => {
+        if (Array.isArray(cond.match)) cond.match = cond.match.join(",");
+        else if (cond.match != null) cond.match = String(cond.match);
+      });
+    });
   });
+  return cfg;
 }
 
-function onKey(event) {
-  if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
-  event.preventDefault();
-  send();
+async function load() {
+  const cfg = hydrate(await fetchEadConfig());
+  data.value = cfg;
+  if (!active.value || !cfg.products.some((item) => item.code === active.value)) {
+    active.value = cfg.products[0] ? cfg.products[0].code : "";
+  }
+  return cfg;
 }
 
-async function send() {
-  const content = text.value.trim();
-  if (!content || sending.value || !loaded.value) return;
-  text.value = "";
-  draft.value = null;
+function pick(code) {
+  active.value = code;
   pageError.value = "";
   pageMessage.value = "";
-  const pending = { role: "assistant", text: "正在交给智能体…", pending: true };
-  shown.value = [...shown.value, { role: "user", text: content }, pending];
-  sending.value = true;
-  reveal();
+}
+
+function statusOf(item) {
+  if (!item.needed) return { cls: "muted", text: "无需配置" };
+  if (!item.side) return { cls: "warn", text: "待选表内/表外" };
+  if (!item.rules.length) return { cls: "danger", text: "未配置规则" };
+  if (item.rules.every((rule) => rule._check && rule._check.ok)) return { cls: "ok", text: "已配置" };
+  return { cls: "warn", text: "待完善" };
+}
+
+/* ---------------- 公式校验 ---------------- */
+async function runCheck(item, rule) {
+  rule._checking = true;
   try {
-    const messages = shown.value
-      .filter((item) => item.text && !item.pending)
-      .map((item) => ({ role: item.role, content: item.text }))
-      .slice(-8);
-    const data = await sendAgentChat(route.path, messages, loaded.value.config);
-    pending.text = (data && data.reply) || "没有返回";
-    if (data && data.draft) draft.value = data.draft;
+    const result = await checkEadFormula({ productCode: item.code, side: item.side, formula: rule.formula });
+    rule._check = result;
+    if (result.ok) rule.structured = result.structured;
   } catch (err) {
-    pending.text = err.message || "这次没有问成";
-    pending.fail = true;
+    rule._check = { ok: false, errors: [err.message], warnings: [], fields: [] };
   } finally {
-    pending.pending = false;
-    shown.value = shown.value.slice();
-    sending.value = false;
-    reveal();
+    rule._checking = false;
   }
 }
 
+function scheduleCheck(item, rule) {
+  clearTimeout(rule._timer);
+  rule._timer = setTimeout(() => runCheck(item, rule), 350);
+}
+
+function insert(item, rule, snippet) {
+  const ta = areas[rule.id];
+  const text = rule.formula || "";
+  const pad = ["+", "−", "×", "÷", ")"].includes(snippet) ? " " : "";
+  if (!ta) {
+    rule.formula = text + pad + snippet + pad;
+  } else {
+    const start = ta.selectionStart == null ? text.length : ta.selectionStart;
+    const end = ta.selectionEnd == null ? text.length : ta.selectionEnd;
+    rule.formula = text.slice(0, start) + pad + snippet + pad + text.slice(end);
+    const caret = start + pad.length + snippet.length + pad.length;
+    nextTick(() => {
+      ta.focus();
+      try { ta.setSelectionRange(caret, caret); } catch (e) { /* 忽略 */ }
+    });
+  }
+  scheduleCheck(item, rule);
+}
+
+/* ---------------- 三步配置 ---------------- */
+function setNeeded(item, value) {
+  if (item.needed === value) return;
+  if (!value && item.rules.length) {
+    const ok = window.confirm(`「${item.label}」当前有 ${item.rules.length} 条规则。标记为无需配置会同时清除这些规则，该产品在计量时不再计算 EAD。是否继续？`);
+    if (!ok) return;
+    item.rules = [];
+    item.side = null;
+    ping(`已将「${item.label}」标记为无需配置，规则已清除`);
+    return;
+  }
+  item.needed = value;
+  ping(value ? `已将「${item.label}」标记为需要配置` : `已将「${item.label}」标记为无需配置`);
+}
+
+function blankRule(item) {
+  const off = item.side === "off";
+  const n = item.rules.length + 1;
+  return {
+    id: `EAD-${off ? "OFF" : "ON"}-${item.code.slice(0, 2).toUpperCase()}-${String(n).padStart(3, "0")}`,
+    name: `${item.label}${off ? "表外" : "表内"} EAD`,
+    condition: "",
+    conditions: { all: [] },
+    formula: "EAD = ",
+    precision: 2,
+    rounding: "四舍五入",
+    resultField: off ? "off_balance_ead" : "on_balance_ead",
+    clause: off ? "CL-MO-064" : "CL-MO-060",
+    status: "draft",
+    ccf: off ? 0.2 : null,
+    params: [],
+    _check: { ok: false, errors: ["公式为空。"], warnings: [], fields: [] },
+    _checking: false
+  };
+}
+
+function setSide(item, side) {
+  if (item.side === side) return;
+  const label = side === "on" ? "表内" : "表外";
+  if (item.rules.length) {
+    const ok = window.confirm(`表内与表外 EAD 互斥。切换到${label}会清除当前的 ${item.rules.length} 条规则，并新建一条待配置规则。是否继续？`);
+    if (!ok) return;
+  }
+  item.side = side;
+  item.rules = [blankRule(item)];
+  ping(`「${item.label}」已切换为${label} EAD，请编写公式`);
+}
+
+function addRule(item) {
+  item.rules.push(blankRule(item));
+  ping("已新增一条规则，请编写公式并保存");
+}
+
+function removeRule(item, index) {
+  const rule = item.rules[index];
+  const ok = window.confirm(`将删除「${rule.name}」。若这是该产品唯一的规则，该产品在计量时会因缺少 EAD 规则而报异常。是否继续？`);
+  if (!ok) return;
+  item.rules.splice(index, 1);
+  ping("规则已删除");
+}
+
+function moveRule(item, index, step) {
+  const next = index + step;
+  if (next < 0 || next >= item.rules.length) return;
+  const moved = item.rules.splice(index, 1)[0];
+  item.rules.splice(next, 0, moved);
+}
+
+/* ---------------- 适用条件 ---------------- */
+function addCond(rule) {
+  if (!rule.conditions || !Array.isArray(rule.conditions.all)) rule.conditions = { all: [] };
+  rule.conditions.all.push({ field: "", op: "eq", match: "" });
+}
+
+function removeCond(rule, index) {
+  rule.conditions.all.splice(index, 1);
+}
+
+/** 比较值按运算符还原成引擎要的类型：in 拆成数组，大小比较转数字。 */
+function coerceMatch(op, text) {
+  const raw = String(text == null ? "" : text).trim();
+  if (op === "in") return raw.split(/[,，]/).map((x) => x.trim()).filter(Boolean);
+  if (op === "gt" || op === "gte" || op === "lt" || op === "lte") {
+    const number = Number(raw);
+    return Number.isNaN(number) ? raw : number;
+  }
+  return raw;
+}
+
+/** 空行丢掉，剩下的按运算符还原类型。空数组 = 无条件。 */
+function conditionsPayload(rule) {
+  const list = rule.conditions && Array.isArray(rule.conditions.all) ? rule.conditions.all : [];
+  return {
+    all: list
+      .filter((cond) => String(cond.field || "").trim() || String(cond.match || "").trim())
+      .map((cond) => ({
+        field: cond.field,
+        op: cond.op || "eq",
+        match: coerceMatch(cond.op || "eq", cond.match)
+      }))
+  };
+}
+
+/* ---------------- 保存 ---------------- */
+function payload() {
+  return {
+    version: data.value.version,
+    products: data.value.products.map((item) => ({
+      code: item.code,
+      needed: item.needed,
+      reason: item.reason || "",
+      side: item.side,
+      rules: item.rules.map((rule) => ({
+        id: rule.id,
+        name: rule.name,
+        condition: rule.condition,
+        conditions: conditionsPayload(rule),
+        formula: rule.formula,
+        precision: rule.precision,
+        rounding: rule.rounding,
+        resultField: rule.resultField,
+        clause: rule.clause,
+        status: rule.status,
+        ccf: rule.ccf,
+        params: rule.params || []
+      }))
+    }))
+  };
+}
+
 async function save() {
-  if (!draft.value || saving.value) return;
+  const bad = data.value.products.find((item) =>
+    item.needed && item.side && item.rules.some((rule) => !(rule._check && rule._check.ok)));
+  if (bad) {
+    pageError.value = `「${bad.label}」有规则没通过公式校验，先改好再保存。`;
+    return;
+  }
   saving.value = true;
   pageError.value = "";
   pageMessage.value = "";
   try {
-    loaded.value = await saveEadConfig(props.side, draft.value);
-    draft.value = null;
-    pageMessage.value = "配置已写入文件";
-    if (view.value) await view.value.reload();
+    data.value = hydrate(await saveEadConfig(payload()));
+    pageMessage.value = "配置已保存到 ead_product_config / ead_product_rule";
   } catch (err) {
     pageError.value = err.message;
   } finally {
@@ -126,268 +265,397 @@ async function save() {
   }
 }
 
-function drop() {
-  draft.value = null;
-  pageMessage.value = "已丢弃草稿，配置文件没有改";
+/* ---------------- 试算 ---------------- */
+function fieldLabel(item, key) {
+  const field = (item.fields || []).find((x) => (x.stdField || x.code) === key);
+  return field ? field.name + "（" + key + "）" : key;
 }
 
-async function runTrial(code, rule) {
-  pageError.value = "";
-  if (!code) {
-    pageError.value = "这个产品没有 code，不能试算";
-    return;
-  }
-  // 配置里规则挂在自己的产品下，不带 productCodes；试算要按 computeEad 的口径补上。
-  const shaped = { ...rule, productCodes: [code] };
-  trial.value = shaped;
-  trialProduct.value = code;
+async function runTrial(item, rule) {
+  trialProduct.value = item;
+  trialRule.value = rule;
+  trial.value = true;
   trialView.value = null;
   trialError.value = "";
   try {
-    const data = await trialEad({ product: code, side: props.side, rule: shaped });
-    trialInputs.value = data.inputs;
-    trialView.value = data;
+    const result = await trialEad({ product: item.code, side: item.side, rule });
+    trialInputs.value = result.inputs;
+    trialView.value = result;
   } catch (err) {
     trialError.value = err.message;
   }
 }
 
 async function rerun() {
-  if (!trial.value) return;
   trialError.value = "";
   try {
-    trialView.value = await trialEad({ product: trialProduct.value, side: props.side, rule: trial.value, std: trialInputs.value });
+    const result = await trialEad({
+      product: trialProduct.value.code,
+      side: trialProduct.value.side,
+      rule: trialRule.value,
+      std: trialInputs.value
+    });
+    trialView.value = result;
   } catch (err) {
     trialError.value = err.message;
   }
 }
-
-watch(() => props.side, () => {
-  loaded.value = null;
-  shown.value = [];
-  text.value = "";
-  draft.value = null;
-  trial.value = null;
-  trialProduct.value = "";
-  trialView.value = null;
-  pageError.value = "";
-  pageMessage.value = "";
-});
 </script>
 
 <template>
-  <AsyncView :key="side" ref="view" :load="load">
-    <template #default="{ data }">
-      <div class="notice info">
-        <span class="ni">ℹ</span>
-        <div>
-          这是{{ side === "on" ? "表内" : "表外" }} EAD 的计算配置。一个产品一份规则，规则只能引用该产品自己的标准字段。
-          产品名和标准字段清单都从库里读（<span class="mono">product_type</span>、<span class="mono">product_field</span>），
-          配置文件只写产品 code 和标准字段名。改配置走页面下方的对话，确认后才写文件。
-        </div>
-      </div>
+  <AsyncView ref="view" :load="load">
+    <template #default>
       <div v-if="pageError" class="notice danger"><span class="ni">!</span><div>{{ pageError }}</div></div>
       <div v-if="pageMessage" class="notice ok"><span class="ni">✓</span><div>{{ pageMessage }}</div></div>
-      <div v-if="data.issues.length" class="notice warn">
-        <span class="ni">!</span>
-        <div>配置与库里的产品/标准字段对不上：{{ data.issues.join("；") }}</div>
-      </div>
 
-      <div class="panel">
-        <div class="panel-head">
-          <h3>{{ data.config.name }}</h3>
-          <span class="sub">规则版本 {{ data.config.version }} · {{ data.config.products.length }} 个产品 · {{ ruleCount }} 条规则</span>
-        </div>
-        <div class="panel-body tight">
-          <div v-if="!data.config.products.length" class="empty">这份配置里还没有产品</div>
-          <table v-else class="tbl compact">
-            <thead>
-              <tr>
-                <th>产品（来自库）</th>
-                <th>产品 code</th>
-                <th>标准字段</th>
-                <th>规则</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="item in data.config.products" :key="item.code">
-                <td>{{ labelOf(data.products, item.code) }}</td>
-                <td class="mono">{{ item.code }}</td>
-                <td class="dim">
-                  {{ (productOf(data.products, item.code) ? productOf(data.products, item.code).fields.length : 0) }} 个
-                </td>
-                <td>{{ (item.rules || []).length }} 条</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div class="panel">
-        <div class="panel-head">
-          <h3>配置 JSON</h3>
-          <span class="sub mono">{{ data.file }}</span>
-        </div>
-        <div class="panel-body">
-          <div class="codeblock">{{ jsonOf(data.config) }}</div>
-        </div>
-      </div>
-
-      <div class="panel">
-        <div class="panel-head">
-          <h3>分产品配置</h3>
-          <span class="sub">标准字段清单来自 product_field，规则只能引用本产品的字段</span>
-        </div>
-        <div class="panel-body">
-          <div v-for="item in data.config.products" :key="item.code" class="panel" style="margin-bottom: 14px">
-            <div class="panel-head">
-              <h3>{{ labelOf(data.products, item.code) }}</h3>
-              <span class="sub mono">{{ item.code }}</span>
-              <span class="spacer"></span>
-              <span class="sub">{{ (item.rules || []).length }} 条规则</span>
+      <div v-if="data" class="ead-layout">
+        <div class="ead-left">
+          <div class="ead-left-head">
+            <b>产品清单</b>
+            <div class="dim" style="font-size: 11px; margin-top: 2px">
+              来自 product_type · 共 {{ data.products.length }} 个产品
             </div>
-
-            <div class="panel-body">
-              <div class="cond-group-label">该产品的标准字段（product_field）</div>
-              <div v-if="!productOf(data.products, item.code) || !productOf(data.products, item.code).fields.length" class="empty">
-                库里没有这个产品的标准字段
-              </div>
-              <table v-else class="tbl compact">
-                <thead><tr><th>标准字段</th><th>中文名</th><th>本配置用到了</th></tr></thead>
-                <tbody>
-                  <tr v-for="field in productOf(data.products, item.code).fields" :key="field.stdField">
-                    <td class="mono">{{ field.stdField }}</td>
-                    <td>{{ field.name }}</td>
-                    <td>
-                      <span
-                        v-if="(item.rules || []).some((rule) => (rule.inputs || []).includes(field.stdField))"
-                        class="tag ok"
-                      >✓</span>
-                      <span v-else class="dim">—</span>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            <div v-for="rule in item.rules" :key="rule.id" class="panel-body">
-              <div class="cond-group-label">{{ rule.id }} · {{ rule.name }}</div>
-              <div class="kv">
-                <div class="k">输入字段</div>
-                <div class="v">
-                  {{ (rule.inputs || []).map((std) => fieldText(data.products, item.code, std)).join("、") }}
+          </div>
+          <div class="ead-list">
+            <div
+              v-for="item in data.products"
+              :key="item.code"
+              class="ead-item"
+              :class="{ on: active === item.code }"
+              @click="pick(item.code)"
+            >
+              <span
+                style="width: 22px; height: 22px; border-radius: 5px; color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex: 0 0 22px"
+                :style="{ background: item.color }"
+              >{{ item.icon }}</span>
+              <div style="flex: 1; min-width: 0">
+                <div class="ead-item-n">
+                  {{ item.label }}
+                  <span
+                    v-if="item.needed && item.side"
+                    class="tag"
+                    :class="item.side === 'on' ? 'muted' : 'brand'"
+                    style="margin-left: 6px; font-size: 9.5px"
+                  >{{ item.side === "on" ? "表内" : "表外" }}</span>
                 </div>
-                <div class="k">计算公式</div><div class="v mono">{{ rule.formula }}</div>
-                <div v-if="side === 'off'" class="k">信用转换系数</div>
-                <div v-if="side === 'off'" class="v">{{ ccfText(rule.ccf) }}</div>
-                <div class="k">适用条件</div><div class="v">{{ rule.condition }}</div>
-                <div class="k">计算精度</div><div class="v">{{ rule.precision }} 位小数 · {{ rule.rounding }}</div>
-                <div class="k">结果字段</div><div class="v mono">{{ rule.resultField }}</div>
-                <div class="k">关联监管条款</div><div class="v">{{ rule.clause }}</div>
-                <div class="k">状态</div>
-                <div class="v"><span class="tag" :class="rule.status === 'published' ? 'ok' : 'muted'">{{ statusText(rule.status) }}</span></div>
+                <div class="ead-item-s">{{ item.fields.length }} 个标准字段 · {{ item.rules.length }} 条规则</div>
               </div>
-              <div v-if="rule.steps && rule.steps.length" style="margin-top: 8px">
-                <div v-for="(step, index) in rule.steps" :key="index" class="step-line">
-                  <span class="sl-n">{{ index + 1 }}</span>
-                  <div class="sl-b">{{ step }}</div>
+              <span class="tag" :class="statusOf(item).cls">{{ statusOf(item).text }}</span>
+            </div>
+          </div>
+          <div class="ead-left-foot">
+            <div class="dim" style="font-size: 11px; line-height: 1.7">
+              已保存的配置来自 ead_product_config / ead_product_rule 两张表。<br>
+              改动先留在页面上，点右上角「保存全部配置」才写库。
+            </div>
+          </div>
+        </div>
+
+        <div class="ead-right">
+          <template v-if="product">
+            <div class="ead-right-head">
+              <div>
+                <b>{{ product.label }}</b>
+                <div class="dim" style="font-size: 11px; margin-top: 2px">
+                  产品编码 {{ product.code }} · 可用标准字段 {{ product.fields.length }} 个
                 </div>
               </div>
-              <div v-if="rule.params && rule.params.length" class="panel-body tight">
-                <table class="tbl compact">
-                  <thead><tr><th>参数</th><th>取值</th><th>依据</th></tr></thead>
-                  <tbody>
-                    <tr v-for="param in rule.params" :key="param.name">
-                      <td>{{ param.name }}</td>
-                      <td class="mono">{{ param.value }}</td>
-                      <td class="dim">{{ param.basis }}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <div class="btn-group" style="margin-top: 8px">
-                <button type="button" class="btn sm" @click="runTrial(item.code, rule)">用模拟债项试算</button>
+              <div style="flex: 1"></div>
+              <div class="btn-group">
+                <button
+                  type="button"
+                  class="btn sm"
+                  :disabled="!product.needed || !product.side || !product.rules.length"
+                  @click="product.rules.length && runTrial(product, product.rules[0])"
+                >用模拟债项试算</button>
+                <button type="button" class="btn sm primary" :disabled="saving" @click="save">
+                  {{ saving ? "保存中…" : "保存全部配置" }}
+                </button>
               </div>
             </div>
 
-            <div v-if="!item.rules || !item.rules.length" class="panel-body">
-              <div class="empty">这个产品还没有配置计算规则</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="panel">
-        <div class="panel-head">
-          <h3>与智能体对话修订配置</h3>
-          <span class="sub">例如：把表外一年以上贷款承诺的 CCF 从 50% 改成 40%</span>
-        </div>
-        <div class="panel-body">
-          <div ref="chatEl" class="chat">
-            <div v-if="!shown.length" class="empty">把修订意见发给智能体，它会回一份整份 JSON 草稿，确认后才写文件。</div>
-            <div v-for="(turn, index) in shown" :key="index" class="msg" :class="turn.role === 'user' ? 'user' : 'assistant'">
-              <div class="mav">{{ turn.role === "user" ? "我" : "AI" }}</div>
-              <div class="mb">
-                <div v-if="turn.pending"><span class="spin"></span>{{ turn.text }}</div>
-                <div v-else>{{ turn.text }}</div>
+            <!-- 第 1 步 -->
+            <div class="ead-step">
+              <div class="ead-step-n">1</div>
+              <div class="ead-step-b">
+                <div class="ead-step-t">该产品是否需要配置 EAD 计算规则？</div>
+                <div class="ead-step-d">
+                  标为「无需配置」的产品在计量时不算异常，只以提示出现在异常清单里。
+                </div>
+                <div class="seg" style="margin-top: 9px">
+                  <button type="button" :class="{ active: product.needed }" @click="setNeeded(product, true)">需要配置</button>
+                  <button type="button" :class="{ active: !product.needed }" @click="setNeeded(product, false)">无需配置</button>
+                </div>
+                <div v-if="!product.needed" class="field" style="margin-top: 11px">
+                  <label>无需配置的说明（会显示在计量追溯中）</label>
+                  <input v-model="product.reason" type="text" placeholder="例如：该产品按人工逐笔录入，不需要单独的 EAD 计算规则" />
+                </div>
               </div>
             </div>
-          </div>
-          <div class="chat-compose">
-            <textarea
-              v-model="text"
-              rows="2"
-              placeholder="输入修订意见，回车发送"
-              :disabled="sending"
-              @keydown="onKey"
-            ></textarea>
-            <button type="button" class="btn primary" :disabled="sending || !text.trim()" @click="send">发送</button>
-          </div>
-          <div v-if="draft" style="margin-top: 14px">
-            <div class="cond-group-label">智能体给出的修订草稿（还没写进文件）：</div>
-            <div class="codeblock">{{ jsonOf(draft) }}</div>
-            <div class="btn-group" style="margin-top: 10px">
-              <button type="button" class="btn primary" :disabled="saving" @click="save">✓ 确认并保存</button>
-              <button type="button" class="btn" @click="drop">丢弃草稿</button>
-            </div>
-          </div>
+
+            <template v-if="!product.needed">
+              <div class="empty" style="padding: 30px 20px">
+                「{{ product.label }}」已标记为无需配置 EAD 计算规则。该产品在计量时不会计算 EAD，也不会被计为异常。
+              </div>
+            </template>
+
+            <template v-else>
+              <!-- 第 2 步 -->
+              <div class="ead-step">
+                <div class="ead-step-n">2</div>
+                <div class="ead-step-b">
+                  <div class="ead-step-t">配置哪一种 EAD？</div>
+                  <div class="ead-step-d">
+                    表内 EAD 与表外 EAD 互斥 —— 一个产品只会配置其中一种。切换会清除已配置的另一种规则。
+                  </div>
+                  <div class="ead-side-pick" style="margin-top: 10px">
+                    <div class="ead-side" :class="{ on: product.side === 'on' }" @click="setSide(product, 'on')">
+                      <div class="ead-side-t">表内 EAD<span v-if="product.side === 'on'" class="tag ok" style="margin-left: 7px">已选</span></div>
+                      <div class="ead-side-d">EAD = 账面余额</div>
+                    </div>
+                    <div class="ead-side" :class="{ on: product.side === 'off' }" @click="setSide(product, 'off')">
+                      <div class="ead-side-t">表外 EAD<span v-if="product.side === 'off'" class="tag ok" style="margin-left: 7px">已选</span></div>
+                      <div class="ead-side-d">EAD = 已提用 + 未提用 × CCF</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div v-if="!product.side" class="empty" style="padding: 26px 20px">
+                请先在上方选择配置表内 EAD 还是表外 EAD。
+              </div>
+
+              <!-- 第 3 步 -->
+              <div v-else class="ead-step">
+                <div class="ead-step-n">3</div>
+                <div class="ead-step-b">
+                  <div class="ead-step-t">
+                    配置{{ product.side === "off" ? "表外" : "表内" }} EAD 计算规则
+                    <span class="tag muted" style="margin-left: 7px">{{ product.rules.length }} 条</span>
+                  </div>
+                  <div class="ead-step-d">
+                    同一产品下自上而下匹配，第一条适用条件命中的规则生效。公式左侧写 EAD =，右侧引用本产品的标准字段。
+                  </div>
+
+                  <div class="btn-group" style="margin-top: 10px">
+                    <button type="button" class="btn sm" @click="addRule(product)">＋ 新增规则</button>
+                  </div>
+
+                  <div v-if="!product.rules.length" class="empty" style="padding: 26px 20px">
+                    尚未配置{{ product.side === "off" ? "表外" : "表内" }} EAD 规则。
+                  </div>
+
+                  <div v-for="(rule, index) in product.rules" :key="rule.id" class="ead-card" style="margin-top: 12px">
+                    <div class="ead-card-head">
+                      <span class="tag brand">第 {{ index + 1 }} 条</span>
+                      <span class="ead-card-n">{{ rule.name }}</span>
+                      <span class="mono dim" style="font-size: 11px">{{ rule.id }}</span>
+                      <span class="tag" :class="rule.status === 'published' ? 'ok' : 'muted'">
+                        {{ rule.status === "published" ? "已发布" : "草稿" }}
+                      </span>
+                      <div style="flex: 1"></div>
+                      <div class="btn-group">
+                        <button type="button" class="btn xs" :disabled="index === 0" @click="moveRule(product, index, -1)">↑</button>
+                        <button type="button" class="btn xs" :disabled="index === product.rules.length - 1" @click="moveRule(product, index, 1)">↓</button>
+                        <button type="button" class="btn xs" @click="runTrial(product, rule)">试算</button>
+                        <button type="button" class="btn xs danger" @click="removeRule(product, index)">删除</button>
+                      </div>
+                    </div>
+
+                    <div class="ead-card-body">
+                      <div class="grid c2">
+                        <label class="field">规则名称
+                          <input v-model="rule.name" type="text" />
+                        </label>
+                        <label class="field">规则说明
+                          <input v-model="rule.condition" type="text" :placeholder="product.side === 'off' ? '例如：原始期限一年以内的贷款承诺' : '例如：适用于所有表内对公贷款'" />
+                        </label>
+                      </div>
+
+                      <div class="ead-ccf">
+                        <div class="ead-cond-head">
+                          <b>适用条件</b>
+                          <span class="dim" style="font-size: 11px; margin-left: 7px">
+                            命中才用这条规则。留空表示无条件，对该产品的所有债项生效。
+                          </span>
+                        </div>
+                        <div v-if="!rule.conditions.all.length" class="dim" style="font-size: 11.5px; padding: 5px 0">
+                          无条件 —— 该规则对该产品的所有债项生效。
+                        </div>
+                        <div v-for="(cond, ci) in rule.conditions.all" :key="ci" class="ead-cond-row">
+                          <select v-model="cond.field">
+                            <option value="">（选择字段）</option>
+                            <option v-for="field in product.fields" :key="field.code" :value="field.stdField || field.code">
+                              {{ field.name }}（{{ field.stdField || field.code }}）
+                            </option>
+                          </select>
+                          <select v-model="cond.op">
+                            <option v-for="op in COND_OPS" :key="op" :value="op">{{ OP_LABELS[op] }}</option>
+                          </select>
+                          <input v-model="cond.match" type="text" placeholder="比较值" />
+                          <button type="button" class="btn xs danger" @click="removeCond(rule, ci)">移除</button>
+                        </div>
+                        <button type="button" class="btn sm" style="margin-top: 6px" @click="addCond(rule)">＋ 添加条件</button>
+                      </div>
+
+                      <div v-if="product.side === 'off'" class="ead-ccf">
+                        <div class="ead-cond-head">
+                          <b>信用转换系数 CCF</b>
+                          <span class="dim" style="font-size: 11px; margin-left: 7px">
+                            表外项目按 CCF 折算为等值表内金额。同一产品下按 CCF 档位匹配规则。
+                          </span>
+                        </div>
+                        <label class="field" style="max-width: 420px">
+                          CCF 取值（0.2 表示 20%）
+                          <div style="display: flex; align-items: center; gap: 8px">
+                            <input v-model="rule.ccf" type="number" step="0.01" min="0" max="1" style="width: 130px" />
+                            <span class="tag brand">{{ rule.ccf == null ? "—" : (Number(rule.ccf) * 100).toFixed(0) + "%" }}</span>
+                          </div>
+                        </label>
+                      </div>
+
+                      <div class="panel" style="margin-bottom: 0">
+                        <div class="panel-head"><h3>计算公式</h3></div>
+                        <div class="panel-body">
+                          <label class="field">公式（左侧写 EAD =，右侧引用本产品标准字段）
+                            <textarea
+                              :ref="(el) => { areas[rule.id] = el }"
+                              v-model="rule.formula"
+                              :style="{ fontFamily: 'var(--mono)', fontSize: '13px', minHeight: '58px', lineHeight: '1.6' }"
+                              :placeholder="product.side === 'off' ? '例如：EAD = 已提用金额 + 授信总额度 × CCF' : '例如：EAD = 债项余额'"
+                              @input="scheduleCheck(product, rule)"
+                            ></textarea>
+                          </label>
+
+                          <div class="fx-ops">
+                            <button v-for="op in OPS" :key="op" type="button" class="fx-op" @click="insert(product, rule, op)">{{ op }}</button>
+                            <button v-for="fn in FNS" :key="fn" type="button" class="fx-op fn" @click="insert(product, rule, fn)">{{ fn }} )</button>
+                          </div>
+
+                          <div v-if="rule._checking" class="fx-warn">
+                            <span class="fx-ic">…</span><div class="fx-d">正在校验公式…</div>
+                          </div>
+                          <template v-else-if="rule._check">
+                            <div v-if="rule._check.ok" class="fx-ok">
+                              <span class="fx-ic">✓</span>
+                              <div>
+                                <div class="fx-t">公式校验通过</div>
+                                <div class="fx-d">
+                                  {{ (rule._check.fields || []).length
+                                    ? "引用的计算项：" + rule._check.fields.map((f) => f.name + "（" + (f.stdField || f.code) + "）").join("、") + " —— 均属于本产品标准字段范围。"
+                                    : "公式未引用任何字段。" }}
+                                </div>
+                              </div>
+                            </div>
+                            <div v-else class="fx-err">
+                              <span class="fx-ic">✕</span>
+                              <div>
+                                <div class="fx-t">公式校验未通过</div>
+                                <div v-for="(msg, i) in rule._check.errors" :key="i" class="fx-d">{{ msg }}</div>
+                              </div>
+                            </div>
+                            <div v-for="(msg, i) in rule._check.warnings || []" :key="'w' + i" class="fx-warn">
+                              <span class="fx-ic">!</span><div class="fx-d">{{ msg }}</div>
+                            </div>
+                            <details v-if="rule._check.ok && rule.structured" class="fx-struct">
+                              <summary>查看结构化引用（引擎按此执行，不依赖中文名）</summary>
+                              <div class="codeblock" style="margin-top: 6px; font-size: 10.5px">{{ JSON.stringify(rule.structured, null, 2) }}</div>
+                            </details>
+                          </template>
+
+                          <div class="fx-picker">
+                            <div class="fx-pk-title">
+                              本产品标准字段（点击插入公式）
+                              <span class="tag muted" style="margin-left: 7px">{{ product.fields.length }} 个</span>
+                            </div>
+                            <div class="fx-pk-list">
+                              <div v-if="!product.fields.length" class="empty">
+                                该产品在 product_field 里还没有标准字段，无法编写公式。
+                              </div>
+                              <button
+                                v-for="field in product.fields"
+                                :key="field.code"
+                                type="button"
+                                class="fx-fld"
+                                :title="(field.meaning || '') + '（编码 ' + field.code + '，标准字段 ' + (field.stdField || '—') + '）'"
+                                @click="insert(product, rule, field.name)"
+                              >
+                                <span class="fx-fld-n">{{ field.name }}</span>
+                                <span class="fx-fld-c mono">{{ field.stdField || field.code }}</span>
+                                <span v-if="field.required" class="fx-req">必填</span>
+                              </button>
+                              <button v-if="product.side === 'off'" type="button" class="fx-fld ccf" title="信用转换系数，由本规则配置" @click="insert(product, rule, 'CCF')">
+                                <span class="fx-fld-n">CCF</span>
+                                <span class="fx-fld-c mono">系数</span>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div class="grid c3">
+                        <label class="field">计算精度（小数位）
+                          <input v-model="rule.precision" type="number" min="0" max="6" />
+                        </label>
+                        <label class="field">舍入规则
+                          <select v-model="rule.rounding">
+                            <option value="四舍五入">四舍五入</option>
+                            <option value="向上取整">向上取整</option>
+                            <option value="向下取整">向下取整</option>
+                          </select>
+                        </label>
+                        <label class="field">关联监管条款
+                          <input v-model="rule.clause" type="text" />
+                        </label>
+                        <label class="field">结果字段
+                          <input v-model="rule.resultField" type="text" />
+                        </label>
+                        <label class="field">状态
+                          <select v-model="rule.status">
+                            <option value="draft">草稿</option>
+                            <option value="published">已发布</option>
+                          </select>
+                        </label>
+                      </div>
+
+                      <div class="btn-group">
+                        <button
+                          type="button"
+                          class="btn primary"
+                          :disabled="!(rule._check && rule._check.ok)"
+                          @click="rule.status = 'published'; ping('已把「' + rule.name + '」标为已发布，别忘了点保存全部配置')"
+                        >保存规则</button>
+                        <button type="button" class="btn" @click="runTrial(product, rule)">试算</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </template>
         </div>
       </div>
     </template>
   </AsyncView>
 
-  <Drawer :open="!!trial" :title="trial ? '试算 · ' + trial.name : ''" wide @close="trial = null">
+  <Drawer :open="trial" :title="trialRule ? '试算 · ' + trialRule.name : ''" wide @close="trial = false">
     <div v-if="trialError" class="notice danger"><span class="ni">!</span><div>{{ trialError }}</div></div>
-    <div v-if="trial && trialView">
+    <div v-if="trialView && trialProduct">
       <div class="notice info">
         <span class="ni">ℹ</span>
-        <div>试算「{{ trial.name }}」时只取产品 {{ trialProduct }} 的模拟债项，并调用与正式计量相同的计算。</div>
+        <div>试算「{{ trialRule ? trialRule.name : "" }}」时只取「{{ trialProduct.label }}」的模拟债项，并调用与正式计量相同的计算。</div>
       </div>
       <p>{{ trialView.hint }}</p>
       <div v-if="trialView.result.error" class="notice danger"><span class="ni">!</span><div>{{ trialView.result.error }}</div></div>
+      <div v-else-if="trialView.result.skipped" class="notice warn"><span class="ni">!</span><div>{{ trialView.result.skipReason }}</div></div>
       <div v-else class="grid c2">
         <div class="panel">
           <div class="panel-head"><h3>输入参数（可调整）</h3></div>
           <div class="panel-body">
-            <template v-if="side === 'on'">
-              <label class="field">账面本金余额
-                <input v-model="trialInputs.balance" type="number" step="1000" />
-              </label>
-              <label class="field">已计提减值准备
-                <input v-model="trialInputs.impairment" type="number" step="1000" />
-              </label>
-            </template>
-            <template v-else>
-              <label class="field">表内已提用金额
-                <input v-model="trialInputs.onbalance_amount" type="number" step="1000" />
-              </label>
-              <label class="field">表外未提用金额
-                <input v-model="trialInputs.offbalance_amount" type="number" step="1000" />
-              </label>
-              <label class="field">信用转换系数（0.2 = 20%）
-                <input v-model="trialInputs.ccf" type="number" step="0.05" />
-              </label>
-            </template>
+            <label v-for="(value, key) in trialInputs" :key="key" class="field">
+              {{ fieldLabel(trialProduct, key) }}
+              <input v-model="trialInputs[key]" type="number" step="0.01" />
+            </label>
             <button type="button" class="btn primary sm" @click="rerun">按这些金额试算</button>
           </div>
         </div>
@@ -404,29 +672,30 @@ watch(() => props.side, () => {
               </tbody>
             </table>
             <div class="panel-body">
-              <div class="dim">{{ side === "on" ? "表内 EAD" : "表外 EAD" }}</div>
+              <div class="dim">{{ trialProduct.side === "on" ? "表内 EAD" : "表外 EAD" }}</div>
               <div class="k-value">{{ trialView.result.ead }}</div>
               <p class="dim">规则 {{ trialView.result.ruleId }} · {{ trialView.result.formula }}</p>
             </div>
           </div>
         </div>
       </div>
+
       <div class="panel">
         <div class="panel-head">
           <h3>用当前模拟债项数据试算</h3>
           <span class="sub">{{ trialView.samples.length ? "只取该产品的 " + trialView.samples.length + " 笔" : "该产品无匹配债项" }}</span>
         </div>
         <div class="panel-body tight">
-          <div v-if="!trialView.samples.length" class="empty">内置模拟债项里没有这个产品的{{ side === "on" ? "表内" : "表外" }}记录。上方参数试算仍可用。</div>
+          <div v-if="!trialView.samples.length" class="empty">内置模拟债项里没有这个产品的记录。上方参数试算仍可用。</div>
           <table v-else class="tbl compact">
             <thead>
               <tr>
                 <th>债项编号</th>
-                <th v-if="side === 'on'">余额</th>
-                <th v-if="side === 'on'">减值</th>
-                <th v-if="side === 'off'">已提用</th>
-                <th v-if="side === 'off'">未提用</th>
-                <th v-if="side === 'off'">CCF</th>
+                <th v-if="trialProduct.side === 'on'">余额</th>
+                <th v-if="trialProduct.side === 'on'">减值</th>
+                <th v-if="trialProduct.side === 'off'">已提用</th>
+                <th v-if="trialProduct.side === 'off'">未提用</th>
+                <th v-if="trialProduct.side === 'off'">CCF</th>
                 <th>EAD</th>
                 <th>命中规则</th>
               </tr>
@@ -434,11 +703,11 @@ watch(() => props.side, () => {
             <tbody>
               <tr v-for="row in trialView.samples" :key="row.id">
                 <td class="mono">{{ row.id }}</td>
-                <td v-if="side === 'on'" class="num">{{ row.balance }}</td>
-                <td v-if="side === 'on'" class="num">{{ row.impairment }}</td>
-                <td v-if="side === 'off'" class="num">{{ row.onbalanceAmount }}</td>
-                <td v-if="side === 'off'" class="num">{{ row.offbalanceAmount }}</td>
-                <td v-if="side === 'off'" class="mono">{{ row.ccf }}</td>
+                <td v-if="trialProduct.side === 'on'" class="num">{{ row.balance }}</td>
+                <td v-if="trialProduct.side === 'on'" class="num">{{ row.impairment }}</td>
+                <td v-if="trialProduct.side === 'off'" class="num">{{ row.onbalanceAmount }}</td>
+                <td v-if="trialProduct.side === 'off'" class="num">{{ row.offbalanceAmount }}</td>
+                <td v-if="trialProduct.side === 'off'" class="mono">{{ row.ccf }}</td>
                 <td class="num strong">{{ row.error || row.ead }}</td>
                 <td class="dim">{{ row.ruleName }}</td>
               </tr>
@@ -448,4 +717,8 @@ watch(() => props.side, () => {
       </div>
     </div>
   </Drawer>
+
+  <Teleport to="body">
+    <div v-if="toast" class="toasts"><div class="toast ok">{{ toast }}</div></div>
+  </Teleport>
 </template>

@@ -350,8 +350,8 @@ const FIELD_MAPPINGS = {
   ],
 };
 
-/* 表内 / 表外 EAD 计算规则不在这里。唯一数据源是
-   agent/subagents/ead/knowledge/ 下的 表内EAD计算配置.json 和 表外EAD计算配置.json。 */
+/* 表内 / 表外 EAD 计算规则不在这里，在 tools/build-seed.mjs 的 EAD_PRODUCT_CONFIG，
+   灌进 ead_product_config 和 ead_product_rule 两张表。 */
 
 /* ======================= 产品专属暴露分类规则 ====================== */
 /* 这些是"产品视角"的规则子集，与规则集 JSON 中的条目一一对应。

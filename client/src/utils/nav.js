@@ -14,8 +14,8 @@ export const NAV = [
     id: "ead",
     label: "EAD 计算规则",
     items: [
-      { label: "表内 EAD", path: "/ead-on" },
-      { label: "表外 EAD", path: "/ead-off" }
+      { label: "EAD 计算规则", path: "/ead" },
+      { label: "转换系数", path: "/ccf" }
     ]
   },
   {
@@ -36,7 +36,8 @@ const PARENT = {
   "/exposure": "/generic",
   "/crm": "/generic",
   "/weights": "/tree",
-  "/ccf": "/ead-off",
+  "/ead-on": "/ead",
+  "/ead-off": "/ead",
   "/engine": "/wizard"
 };
 

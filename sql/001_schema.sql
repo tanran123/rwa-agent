@@ -17,6 +17,8 @@ DROP TABLE IF EXISTS measure_batch;
 DROP TABLE IF EXISTS product_exposure_rule;
 DROP TABLE IF EXISTS crm_rule;
 DROP TABLE IF EXISTS ccf_rule;
+DROP TABLE IF EXISTS ead_product_rule;
+DROP TABLE IF EXISTS ead_product_config;
 DROP TABLE IF EXISTS ead_rule;
 DROP TABLE IF EXISTS mo_weight_row;
 DROP TABLE IF EXISTS bank_grade_row;
@@ -185,18 +187,35 @@ CREATE TABLE mo_weight_row (
   note VARCHAR(255) NOT NULL DEFAULT ''
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE ead_rule (
+-- 表内 / 表外 EAD 计算配置，一个产品一行。
+-- side 只在这张表上，规则表不带 side，所以同一产品不可能表内表外都有规则。
+CREATE TABLE ead_product_config (
+  product_code VARCHAR(32) NOT NULL PRIMARY KEY,
+  needed TINYINT NOT NULL DEFAULT 1,
+  reason VARCHAR(255) NOT NULL DEFAULT '',
+  side ENUM('on', 'off') NULL,
+  version VARCHAR(40) NOT NULL DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 一个产品下的 EAD 规则，seq 自上而下，第一条命中生效。
+CREATE TABLE ead_product_rule (
   id VARCHAR(32) NOT NULL PRIMARY KEY,
-  side ENUM('on', 'off') NOT NULL,
+  product_code VARCHAR(32) NOT NULL,
+  seq INT NOT NULL DEFAULT 1,
   name VARCHAR(128) NOT NULL,
-  version VARCHAR(40) NOT NULL,
-  status VARCHAR(20) NOT NULL,
-  formula VARCHAR(255) NOT NULL,
-  condition_text VARCHAR(255) NOT NULL,
-  ccf DECIMAL(8, 4) NULL,
+  condition_text VARCHAR(255) NOT NULL DEFAULT '',
+  conditions_json JSON NOT NULL,
+  formula VARCHAR(512) NOT NULL,
+  fields_json JSON NOT NULL,
+  structured_json JSON NOT NULL,
+  precision_digits TINYINT NOT NULL DEFAULT 2,
+  rounding VARCHAR(20) NOT NULL DEFAULT '四舍五入',
+  result_field VARCHAR(64) NOT NULL,
   clause_id VARCHAR(32) NOT NULL,
-  body JSON NOT NULL,
-  KEY idx_ead_side (side)
+  status VARCHAR(20) NOT NULL DEFAULT 'draft',
+  ccf DECIMAL(8, 4) NULL,
+  params_json JSON NOT NULL,
+  KEY idx_ead_product_rule (product_code, seq)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE ccf_rule (

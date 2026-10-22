@@ -2,7 +2,7 @@ import { createRequire } from "module";
 import { readFileSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { readEadRules } from "./eadConfig.js";
+import { eadConfigMap } from "./eadConfig.js";
 
 const require = createRequire(import.meta.url);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -72,7 +72,7 @@ function suggestMapping(productCode, headers, master) {
   });
 }
 
-export function measureDemo() {
+export async function measureDemo() {
   if (cached) return cached;
   const master = require(path.join(root, "server/data/master_data.cjs"));
   const mock = require(path.join(root, "server/data/mock_loans.cjs"));
@@ -82,10 +82,10 @@ export function measureDemo() {
     path.join(root, "agent/subagents/weight/knowledge/权重法风险暴露分类.json"),
     "utf8"
   ));
+  const eadConfig = await eadConfigMap();
   const out = pipeline.measureBatch(mock.MOCK_LOANS, {
     ruleset: doc,
-    eadOnRules: readEadRules("on"),
-    eadOffRules: readEadRules("off"),
+    eadConfig,
     detectRules: mock.PRODUCT_DETECT_RULES
   });
   const products = {};
@@ -117,8 +117,8 @@ export function measureDemo() {
       headerRow: 14,
       headers: mock.RAW_SHEET_HEADERS,
       fieldCount: Array.isArray(doc.fields) ? doc.fields.length : 0,
-      eadOn: readEadRules("on").length,
-      eadOff: readEadRules("off").length,
+      eadOn: Object.values(eadConfig).filter((c) => c.side === "on").reduce((n, c) => n + c.rules.length, 0),
+      eadOff: Object.values(eadConfig).filter((c) => c.side === "off").reduce((n, c) => n + c.rules.length, 0),
       loans: detected,
       mappings
     },
@@ -162,8 +162,8 @@ function col(title, width) {
   return { title, width };
 }
 
-export function auditWorkbook() {
-  const data = measureDemo();
+export async function auditWorkbook() {
+  const data = await measureDemo();
   const label = (code) => data.products[code] || code || "未识别";
   const money = (value) => (value == null ? "" : Number(value));
   return Buffer.from(writeXlsx([

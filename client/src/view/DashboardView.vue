@@ -10,7 +10,7 @@ const { session, currentVersion } = useContext();
 const steps = [
   ["1", "规则配置", "监管规则版本 → 监管条款库 → 产品标准字段", "/versions"],
   ["2", "暴露分类规则", "通用、贷款、债券各自一份分类 JSON", "/tree"],
-  ["3", "EAD 计算规则", "表内 EAD → 表外 EAD", "/ead-on"],
+  ["3", "EAD 计算规则", "按产品配置，表内和表外互斥", "/ead"],
   ["4", "计量执行", "计量向导 → 结果明细 → 计量批次 → 审计底稿", "/wizard"]
 ];
 const statusLabel = { completed: "已完成", running: "进行中", failed: "失败", draft: "草稿", pending: "待处理" };

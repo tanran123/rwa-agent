@@ -36,6 +36,7 @@
 | 样式类名 | `client/src/assets/css/` 里已经出现的类。没有的类不要写进模板，除非同时在对应 css 里加上。 |
 | 计算步骤名单 | `agent/pipeline.py` 的 `STEPS`。不要凭记忆写成还包含 `ccf`、`crm`、`rwa`。 |
 | 分类规则和权重 | `agent/subagents/weight/knowledge/权重法风险暴露分类.json`。只改用户点名的那一条，不要顺手补权重。 |
+| 表内 / 表外 EAD 计算配置 | 库表 `ead_product_config` 和 `ead_product_rule`。产品清单来自 `product_type`，公式能引用的字段来自 `product_field`。公式的语法与字段范围校验只有一份，在 `server/lib/formula.cjs`。 |
 | 本地规则包 | `knowledge/local/`。微信知识库对话在 `knowledge/weknora/`，不拿本地 Markdown 当回答。 |
 | 试算底稿 | `agent/subagents/weight/samples/`。 |
 | 计算留痕 | 仓库根目录 `output/traces/`。 |

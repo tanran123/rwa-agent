@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(import.meta.url);
 const MASTER = require(join(root, "server/data/master_data.cjs"));
+const FormulaEngine = require(join(root, "server/lib/formula.cjs"));
 const rulesSrc = readFileSync(join(root, "server/data/rules.js"), "utf8");
 const classDoc = JSON.parse(readFileSync(
   join(root, "agent/subagents/weight/knowledge/权重法风险暴露分类.json"),
@@ -205,8 +206,69 @@ lines.push(insert("mo_weight_row",
   ["id", "bucket", "weights_json", "note"],
   MO_WEIGHTS.map((item) => [item.id, item.bucket, JSON.stringify(item.weights), item.note || ""])));
 
-/* ead_rule 不在这里灌数。表内 / 表外 EAD 计算规则的唯一数据源是
-   agent/subagents/ead/knowledge/ 下的两个配置文件，由 Koa 直接读写。 */
+/* ---------------- EAD 计算配置（按产品，表内表外互斥） ---------------- */
+/* 公式只能引用该产品在 PRODUCT_FIELDS 里已有的标准字段。
+   结构化引用在这里算好落库，运行时不再解析公式。 */
+const EAD_VERSION = "MO-SA-2026.1";
+const EAD_PRODUCT_CONFIG = [
+  { code: "corp_loan", side: "on", rules: [
+    { id: "EAD-ON-CL-001", name: "对公贷款表内 EAD", formula: "EAD = 债项余额", condition: "适用于所有表内对公贷款" }] },
+  { code: "personal_loan", side: "on", rules: [
+    { id: "EAD-ON-PL-001", name: "个人贷款表内 EAD", formula: "EAD = 债项余额", condition: "适用于所有表内个人贷款" }] },
+  { code: "bond", side: "on", rules: [
+    { id: "EAD-ON-BD-001", name: "债券投资表内 EAD", formula: "EAD = 债券余额", condition: "适用于所有表内债券投资" }] },
+  { code: "ib_call", side: "on", rules: [
+    { id: "EAD-ON-IB-001", name: "同业活期表内 EAD", formula: "EAD = 余额", condition: "适用于所有存放同业活期" }] },
+  { code: "ib_time", side: "on", rules: [
+    { id: "EAD-ON-IT-001", name: "同业定期表内 EAD", formula: "EAD = 余额", condition: "适用于所有存放同业定期" }] },
+  { code: "due_from_bank", side: "on", rules: [
+    { id: "EAD-ON-DF-001", name: "存放同业表内 EAD", formula: "EAD = 余额", condition: "适用于所有存放同业款项" }] },
+  { code: "other_credit", side: "on", rules: [
+    { id: "EAD-ON-OC-001", name: "其他信用风险暴露表内 EAD", formula: "EAD = 余额", condition: "适用于股权等权益类表内业务" }] },
+  { code: "off_bs", side: "off", rules: [
+    { id: "EAD-OFF-OB-001", name: "表外授信及承诺 EAD",
+      formula: "EAD = 已提用金额 + 授信总额度 × CCF", ccf: 0.2,
+      condition: "按业务品种的信用转换系数折算；债项自带 ccf 时以债项为准" }] },
+];
+
+/** 一条 EAD 规则 → ead_product_rule 的一行。公式在这里先过一遍校验，过不了就不生成种子。 */
+function eadRuleTuple(productCode, side, rule, seq) {
+  const pf = MASTER.PRODUCT_FIELDS[productCode] || [];
+  const alias = {};
+  pf.forEach((f) => { const key = f.stdField || f.code; if (f.name) alias[f.name] = key; if (f.code) alias[f.code] = key; });
+  const allowed = ["EAD"];
+  pf.forEach((f) => { if (f.name) allowed.push(f.name); if (f.code) allowed.push(f.code); if (f.stdField) allowed.push(f.stdField); });
+  if (side === "off") allowed.push("CCF");
+
+  const check = FormulaEngine.validate(rule.formula, allowed, { resultField: "EAD", allowCcf: side === "off", alias });
+  if (!check.ok) throw new Error(`${rule.id} 的公式没通过校验：${check.errors.join(" ")}`);
+
+  const fields = check.fields.filter((name) => name !== "CCF").map((name) => {
+    const f = pf.find((x) => x.name === name || x.code === name || x.stdField === name);
+    return { name: f ? f.name : name, code: f ? f.code : null, stdField: f ? (f.stdField || f.code) : null };
+  });
+
+  return [
+    rule.id, productCode, seq, rule.name, rule.condition || "", JSON.stringify(rule.conditions || { all: [] }), rule.formula,
+    JSON.stringify(fields), JSON.stringify(check.structured), 2, "四舍五入",
+    rule.resultField || (side === "off" ? "off_balance_ead" : "on_balance_ead"),
+    rule.clause || (side === "off" ? "CL-MO-064" : "CL-MO-060"),
+    rule.status || "published", rule.ccf == null ? null : rule.ccf, JSON.stringify(rule.params || [])
+  ];
+}
+
+lines.push(insert("ead_product_config",
+  ["product_code", "needed", "reason", "side", "version"],
+  EAD_PRODUCT_CONFIG.map((item) => [item.code, item.needed === false ? 0 : 1, item.reason || "", item.side, EAD_VERSION])));
+
+const eadRuleRows = [];
+EAD_PRODUCT_CONFIG.forEach((item) => {
+  (item.rules || []).forEach((rule, index) => eadRuleRows.push(eadRuleTuple(item.code, item.side, rule, index + 1)));
+});
+lines.push(insert("ead_product_rule",
+  ["id", "product_code", "seq", "name", "condition_text", "conditions_json", "formula", "fields_json", "structured_json",
+    "precision_digits", "rounding", "result_field", "clause_id", "status", "ccf", "params_json"],
+  eadRuleRows));
 
 lines.push(insert("ccf_rule",
   ["id", "type_name", "cond_text", "ccf", "priority", "conds_json"],

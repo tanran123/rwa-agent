@@ -6,7 +6,7 @@ import { query } from "./db.js";
 import { auditWorkbook, measureDemo } from "./measure.js";
 import { paperView, uploadSamples } from "./paper.js";
 import { trialEad } from "./ead.js";
-import { readEadConfig, saveEadConfig } from "./eadConfig.js";
+import { checkEadFormula, readEadConfig, saveEadConfig } from "./eadConfig.js";
 import { copyExposureDoc, exposureChat, exposureDoc, exposureDocs, saveExposureChat, saveExposureDoc } from "./exposureDocs.js";
 
 const app = new Koa();
@@ -273,16 +273,20 @@ router.get("/weights", async (ctx) => {
 });
 
 router.get("/ead-config", async (ctx) => {
-  ctx.body = await readEadConfig(ctx.query.side);
+  ctx.body = await readEadConfig();
 });
 
 router.put("/ead-config", async (ctx) => {
+  ctx.body = await saveEadConfig((ctx.request.body || {}).config);
+});
+
+router.post("/ead-formula/check", async (ctx) => {
   const body = ctx.request.body || {};
-  ctx.body = await saveEadConfig(body.side, body.config);
+  ctx.body = await checkEadFormula(body.productCode, body.side, body.formula);
 });
 
 router.post("/ead-trial", async (ctx) => {
-  ctx.body = trialEad(ctx.request.body || {});
+  ctx.body = await trialEad(ctx.request.body || {});
 });
 
 router.get("/ccf", async (ctx) => {
@@ -347,7 +351,7 @@ router.post("/batches", async (ctx) => {
 });
 
 router.get("/measure", async (ctx) => {
-  ctx.body = measureDemo();
+  ctx.body = await measureDemo();
 });
 
 router.get("/working-paper", async (ctx) => {
@@ -359,7 +363,7 @@ router.get("/upload-samples", async (ctx) => {
 });
 
 router.get("/audit.xlsx", async (ctx) => {
-  const body = auditWorkbook();
+  const body = await auditWorkbook();
   ctx.set("content-type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   ctx.set("content-disposition", "attachment; filename*=UTF-8''" + encodeURIComponent("信用风险RWA审计底稿.xlsx"));
   ctx.body = body;

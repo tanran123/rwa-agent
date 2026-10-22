@@ -1,8 +1,10 @@
 import request from './request'
 
-export const fetchEadConfig = (side) => request.get('/ead-config', { params: { side } })
+export const fetchEadConfig = () => request.get('/ead-config')
 
-export const saveEadConfig = (side, config) => request.put('/ead-config', { side, config })
+export const saveEadConfig = (config) => request.put('/ead-config', { config })
+
+export const checkEadFormula = (body) => request.post('/ead-formula/check', body, { timeout: 20000 })
 
 export const trialEad = (body) => request.post('/ead-trial', body)
 

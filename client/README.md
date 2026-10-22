@@ -31,7 +31,7 @@ Vue 3 + Vue Router + Vuex + axios。开发服务把 `/api` 代理到 `http://127
 | `view/DashboardView.vue` | `/` 总览。 |
 | `view/rule/` | 规则配置：版本、参数、条款、标准字段、字段映射。 |
 | `view/exposure/` | 暴露分类。侧栏一项「暴露分类规则」，页签是通用、贷款、债券各自的分类 JSON。 |
-| `view/ead/` | 表内 EAD、表外 EAD、转换系数。 |
+| `view/ead/` | EAD 计算规则配置。左侧产品清单，右侧三步：是否需要配置、表内或表外、公式编辑器。转换系数仍是 `CcfView.vue`。 |
 | `view/measure/` | 计量向导、底稿计算、结果明细、批次、审计底稿导出。 |
 
 页内页签不是新菜单。例如「标准字段 / 知识库字段」是 `/fields` 和 `/mappings`，菜单只挂在「产品标准字段」上。对应关系已经写在 `router/index.js` 的 `sections` 和 `nav.js` 的 `PARENT`。
@@ -67,7 +67,7 @@ Vue 3 + Vue Router + Vuex + axios。开发服务把 `/api` 代理到 `http://127
 | `api/rule.js` | 版本、条款、参数 |
 | `api/product.js` | 产品、标准字段、字段映射 |
 | `api/exposure.js` | 暴露分类页签、单份分类 JSON、权重、缓释、产品规则、决策树对话的提议、确认写入，以及按产品保存对话 |
-| `api/ead.js` | 表内外 EAD 配置的读取和保存、试算、转换系数 |
+| `api/ead.js` | EAD 计算配置的读取和保存、公式校验、试算、转换系数 |
 | `api/batch.js` | 批次、计量演示、底稿、上传样例 |
 | `api/assistant.js` | 规则助手 |
 | `api/agent.js` | `/agent/chat`，只给 `AgentDock` 用 |

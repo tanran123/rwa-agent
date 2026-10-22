@@ -33,10 +33,6 @@ const classTabs = [
   { label: '产品线路', path: '/exposure' },
   { label: '缓释', path: '/crm' },
 ]
-const eadOffTabs = [
-  { label: '表外规则', path: '/ead-off' },
-  { label: '转换系数', path: '/ccf' },
-]
 const wizardTabs = [
   { label: '计量向导', path: '/wizard' },
   { label: '底稿计算', path: '/engine' },
@@ -57,9 +53,10 @@ const routes = [
   { path: '/tree/:name', name: 'tree-doc', component: TreeView, meta: { group: '暴露分类规则', title: '暴露分类规则', chart: true } },
   { path: '/weights', name: 'weights', component: WeightsView, meta: { group: '暴露分类规则', title: '风险权重', blurb: '权重表。没有单列的档位保持未列明。' } },
   { path: '/assistant', name: 'assistant', component: AssistantView, meta: { group: '暴露分类规则', title: '自然语言规则配置助手', blurb: '先识别再生成。生成的规则要确认后才保存，对话是预置脚本。' } },
-  { path: '/ead-on', name: 'ead-on', component: EadView, props: { side: 'on' }, meta: { group: 'EAD 计算规则', title: '表内 EAD', blurb: '表内一份配置 JSON。产品类型和标准字段从库里读，改配置走页面下方的对话。' } },
-  { path: '/ead-off', name: 'ead-off', component: EadView, props: { side: 'off' }, meta: { group: 'EAD 计算规则', title: '表外 EAD', blurb: '表外一份配置 JSON。产品类型和标准字段从库里读，改配置走页面下方的对话。', sections: eadOffTabs } },
-  { path: '/ccf', name: 'ccf', component: CcfView, meta: { group: 'EAD 计算规则', title: '信用转换系数', blurb: '一行是一种表外类型加一个条件。', sections: eadOffTabs } },
+  { path: '/ead', name: 'ead', component: EadView, meta: { group: 'EAD 计算规则', title: 'EAD 计算规则配置', blurb: '按产品逐个配置；同一产品只会配表内或表外其中之一，二者互斥。' } },
+  { path: '/ead-on', redirect: '/ead' },
+  { path: '/ead-off', redirect: '/ead' },
+  { path: '/ccf', name: 'ccf', component: CcfView, meta: { group: 'EAD 计算规则', title: '信用转换系数', blurb: '一行是一种表外类型加一个条件。' } },
   { path: '/wizard', name: 'wizard', component: WizardView, meta: { group: '计量执行', title: '信用风险 RWA 计量向导', blurb: '分步骤完成从计量范围选择、数据导入到计量结果查看的全过程', sections: wizardTabs } },
   { path: '/engine', name: 'engine', component: EngineView, meta: { group: '计量执行', title: '底稿计算', blurb: '映射、计算、追溯。逐笔结果写入计量明细后在结果页查看。', sections: wizardTabs } },
   { path: '/results', name: 'results', component: ResultsView, meta: { group: '计量执行', title: '计量结果明细', blurb: '逐笔债项计量结果与审计证据；点击任意债项进入该笔的完整计量详情页' } },

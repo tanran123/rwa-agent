@@ -30,19 +30,11 @@
   }
 
   /* ---------------- 第二阶段：EAD 计算 ---------------- */
+  const FE = isNode ? require('./formula.cjs') : global.FormulaEngine;
+
   function productMeta(code) {
     const list = (typeof MASTER !== 'undefined' && MASTER.PRODUCT_TYPES) || [];
     return list.find((p) => p.code === code) || null;
-  }
-
-  /** 规则是否适用于该产品。有 productCodes 时以代码为准，否则退回中文产品名。 */
-  function ruleAppliesToProduct(rule, productCode) {
-    if (!rule || !productCode) return false;
-    if (Array.isArray(rule.productCodes) && rule.productCodes.length) {
-      return rule.productCodes.includes(productCode);
-    }
-    const meta = productMeta(productCode);
-    return !!(meta && Array.isArray(rule.products) && rule.products.includes(meta.label));
   }
 
   function eadMiss(kind, message) {
@@ -53,7 +45,52 @@
     };
   }
 
-  function computeEad(loan, product, eadOnRules, eadOffRules) {
+  function eadSkipped(kind, reason) {
+    return {
+      kind, ruleId: null, ruleName: '该产品无需配置 EAD 规则',
+      onEad: null, offEad: null, ead: null, steps: [], formula: '—',
+      clause: null, params: [], skipped: true,
+      skipReason: reason || '用户已标记该产品无需配置 EAD 计算规则。', error: null,
+    };
+  }
+
+  /** 适用条件是否命中。没有条件、或条件为空数组，都算无条件命中。 */
+  function conditionsOk(rule, facts) {
+    const when = rule && rule.conditions;
+    if (!when || typeof when !== 'object') return true;
+    const list = when.all || when.any;
+    if (!Array.isArray(list) || !list.length) return true;
+    return E.evalWhen(when, facts).ok;
+  }
+
+  /** 规则的结构化引用。库里存的是 JSON，可能已经被上层解析过。 */
+  function structuredOf(rule) {
+    const raw = rule && rule.structured;
+    if (raw == null) return null;
+    if (typeof raw === 'string') {
+      try { return JSON.parse(raw); } catch { return null; }
+    }
+    return typeof raw === 'object' ? raw : null;
+  }
+
+  /** 公式求值用的事实表。结构化引用里的变量名已经是 std_field，std 里就有。 */
+  function eadFacts(rule, std) {
+    const facts = { ...std };
+    (rule.fields || []).forEach((f) => {
+      const key = f.stdField || f.code;
+      if (key == null || std[key] == null) return;
+      if (f.name) facts[f.name] = std[key];
+      if (f.code) facts[f.code] = std[key];
+      facts[key] = std[key];
+    });
+    return facts;
+  }
+
+  /**
+   * 按产品配置的公式算 EAD。
+   * eadConfig 形如 { [productCode]: { needed, reason, side, rules } }，由调用方从库里读好传进来。
+   */
+  function computeEad(loan, product, eadConfig) {
     const std = loan.std || {};
     const isOff = std.offbalance === 'yes';
     const kind = isOff ? 'off' : 'on';
@@ -64,57 +101,60 @@
       return eadMiss(kind, '计算 EAD 前必须先确定产品类型。未选择产品时，不套用其他产品的规则。');
     }
 
-    const pool = (isOff ? eadOffRules : eadOnRules) || [];
-    const published = pool.filter((r) => r.status === 'published' && ruleAppliesToProduct(r, product));
-    if (!published.length) {
-      return eadMiss(kind, `产品「${label}」没有已发布的${isOff ? '表外' : '表内'} EAD 规则，无法计算。`);
+    const cfg = (eadConfig || {})[product] || null;
+    if (!cfg) return eadMiss(kind, `产品「${label}」在 ead_product_config 里没有配置。`);
+    if (cfg.needed === false || cfg.needed === 0) return eadSkipped(kind, cfg.reason);
+    if (cfg.side !== kind) {
+      return eadMiss(kind,
+        `产品「${label}」配置的是${cfg.side === 'off' ? '表外' : '表内'} EAD 规则，`
+        + `这笔债项走的是${isOff ? '表外' : '表内'}口径，两者对不上。`);
     }
+
+    const published = (cfg.rules || []).filter((r) => r.status === 'published');
+    if (!published.length) {
+      return eadMiss(kind,
+        `产品「${label}」已标记为需要配置 EAD 规则，但尚未配置${isOff ? '表外' : '表内'} EAD 计算规则。`);
+    }
+
+    // 同一产品下自上而下，第一条适用条件命中的规则生效；都没命中就退回第一条。
+    const rule = published.find((r) => conditionsOk(r, std)) || published[0];
+
+    const structured = structuredOf(rule);
+    if (!structured) {
+      return eadMiss(kind, `规则「${rule.name}」缺少结构化公式，无法计算。请在 EAD 计算规则页重新保存。`);
+    }
+
+    const facts = eadFacts(rule, std);
+    // 表外：债项自带 ccf 时以债项为准，没带才用规则里配的。
+    if (isOff) facts.CCF = std.ccf != null ? num(std.ccf) : (rule.ccf != null ? Number(rule.ccf) : null);
+
+    const evaluated = FE.evaluateWithSteps(structured, facts);
+    const ead = evaluated.value == null ? null : round2(evaluated.value);
 
     const steps = [];
-    let rule = null;
-
-    if (isOff) {
-      const ccf = std.ccf;
-      rule = published.find((r) => r.ccf != null && Math.abs(r.ccf - ccf) < 1e-9) || published[0];
-      const offAmt = num(std.offbalance_amount);
-      const onAmt = num(std.onbalance_amount);
-      const useCcf = rule.ccf != null ? rule.ccf : ccf;
-      const converted = round2(offAmt * useCcf);
-      const includeDrawn = /已提用/.test(rule.formula || '') || (rule.inputs || []).some((s) => /onbalance|已提用/.test(s));
-      const ead = includeDrawn ? round2(onAmt + converted) : converted;
-
-      steps.push({ n: 1, label: '适用产品', expr: 'product', value: label, note: `只在「${label}」的表外 EAD 规则中匹配，不使用其他产品的公式。` });
-      steps.push({ n: 2, label: '命中规则', expr: rule.id, value: rule.name, note: rule.condition || '' });
-      if (includeDrawn) {
-        steps.push({ n: 3, label: '表内已提用金额', expr: 'onbalance_amount', value: onAmt, note: '已提用并计入表内的部分，全额计入 EAD。' });
+    steps.push({ n: 1, label: '适用产品', expr: 'product', value: label,
+      note: `只在「${label}」的${isOff ? '表外' : '表内'} EAD 规则中匹配，不使用其他产品的公式。` });
+    steps.push({ n: 2, label: '命中规则', expr: rule.id, value: rule.name, note: rule.condition || '' });
+    evaluated.steps.forEach((s) => {
+      if (s.type === 'field') {
+        steps.push({ n: steps.length + 1, label: s.label, expr: s.code, value: s.value,
+          note: `取本产品的标准字段「${s.label}」。` });
+      } else if (s.type === 'op') {
+        steps.push({ n: steps.length + 1, label: s.op, expr: `${fmt(s.left)} ${s.op} ${fmt(s.right)}`, value: s.value });
+      } else {
+        steps.push({ n: steps.length + 1, label: s.fn, expr: `${s.fn}(${s.args.map(fmt).join(', ')})`, value: s.value });
       }
-      steps.push({ n: steps.length + 1, label: '表外未提用金额', expr: 'offbalance_amount', value: offAmt, note: '授信额度中尚未提用的部分。' });
-      steps.push({ n: steps.length + 1, label: '信用转换系数 CCF', expr: 'ccf', value: useCcf, note: `按「${rule.name}」的档位取 ${(useCcf * 100).toFixed(0)}%。` });
-      steps.push({ n: steps.length + 1, label: '折算后表外等值金额', expr: `${fmt(offAmt)} × ${useCcf}`, value: converted, note: '未提用金额 × 信用转换系数。' });
-      steps.push({ n: steps.length + 1, label: '表外 EAD', expr: includeDrawn ? `${fmt(onAmt)} + ${fmt(converted)}` : fmt(converted), value: ead, note: includeDrawn ? '表内已提用部分 + 折算后的表外等值金额。' : '本规则不叠加已提用金额，只取表外余额乘以 CCF。' });
+    });
+    steps.push({ n: steps.length + 1, label: isOff ? '表外 EAD' : '表内 EAD', expr: rule.formula || '—', value: ead,
+      note: `按「${rule.name}」的公式计算。` });
 
-      return { kind: 'off', product, productLabel: label, ruleId: rule.id, ruleName: rule.name,
-        ccf: useCcf, onEad: 0, offEad: ead, ead, steps, formula: rule.formula,
-        clause: rule.clause || null, params: rule.params || [] };
-    }
-
-    rule = published[0];
-    const bal = num(std.balance);
-    const imp = num(std.impairment);
-    const deduct = /减值/.test(rule.formula || '') || (rule.inputs || []).some((s) => /impairment|减值/.test(s));
-    const ead = deduct ? round2(bal - imp) : round2(bal);
-    steps.push({ n: 1, label: '适用产品', expr: 'product', value: label, note: `只使用「${label}」已发布的表内 EAD 规则「${rule.name}」。` });
-    steps.push({ n: 2, label: '账面本金余额', expr: 'balance', value: bal, note: '该笔债项的账面本金余额，不含利息。' });
-    if (deduct) {
-      steps.push({ n: 3, label: '已计提减值准备', expr: 'impairment', value: imp, note: '表内债权类 EAD 需从账面余额中扣减。' });
-      steps.push({ n: 4, label: '表内 EAD', expr: `${fmt(bal)} − ${fmt(imp)}`, value: ead, note: '账面余额扣除已计提的损失准备。' });
-    } else {
-      steps.push({ n: 3, label: '表内 EAD', expr: fmt(bal), value: ead, note: '本产品规则按账面价值计量，不扣减减值准备。' });
-    }
-
-    return { kind: 'on', product, productLabel: label, ruleId: rule.id, ruleName: rule.name,
-      onEad: ead, offEad: 0, ead, steps, formula: rule.formula,
-      clause: rule.clause || null, params: rule.params || [] };
+    return {
+      kind, product, productLabel: label, ruleId: rule.id, ruleName: rule.name,
+      ccf: isOff ? facts.CCF : null,
+      onEad: isOff ? 0 : ead, offEad: isOff ? ead : 0, ead, steps,
+      formula: rule.formula, clause: rule.clause || null, params: rule.params || [],
+      error: ead == null ? '公式求值失败，引用的标准字段在这笔债项上取不到值。' : null,
+    };
   }
 
   /* ---------------- 第三阶段：RWA ---------------- */
@@ -134,7 +174,7 @@
 
   /* ---------------- 主流程 ---------------- */
   function measure(loan, ctx) {
-    const { ruleset, eadOnRules, eadOffRules, detectRules, productOverride } = ctx;
+    const { ruleset, eadConfig, detectRules, productOverride } = ctx;
 
     const stage1 = { name: '产品类型识别', status: 'ok', log: [] };
     const det = productOverride
@@ -187,9 +227,12 @@
     const stage3 = { name: 'EAD 计算', status: 'ok', log: [] };
     let ead = null;
     if (det.product) {
-      ead = computeEad(loan, det.product, eadOnRules, eadOffRules);
+      ead = computeEad(loan, det.product, eadConfig);
       stage3.result = ead;
-      if (ead.error || ead.ead == null || Number.isNaN(ead.ead)) {
+      if (ead.skipped) {
+        stage3.status = 'skipped';
+        stage3.error = ead.skipReason;
+      } else if (ead.error || ead.ead == null || Number.isNaN(ead.ead)) {
         stage3.status = 'exception';
         stage3.error = ead.error || 'EAD 计算失败，关键金额字段缺失。';
       }
@@ -200,7 +243,10 @@
     const stage4 = { name: '风险权重与 RWA', status: 'ok', log: [] };
     let rwa = { rwa: null, steps: [] };
     const weight = cls && cls.result ? cls.result.riskWeight : null;
-    if (ead && ead.ead != null && weight != null) {
+    if (ead && ead.skipped) {
+      stage4.status = 'skipped';
+      stage4.error = ead.skipReason;
+    } else if (ead && ead.ead != null && weight != null) {
       rwa = computeRwa(ead.ead, weight);
       stage4.result = { ...rwa, riskWeight: weight, weightTrace: cls.result.weightTrace, weightKind: cls.result.weightKind };
     } else {
@@ -291,8 +337,7 @@
 
   const Pipeline = {
     detectProduct, computeEad, computeRwa, measure, measureBatch,
-    ruleAppliesToProduct, productMeta,
-    num, round2, round4, fmt, pct,
+    productMeta, num, round2, round4, fmt, pct,
   };
 
   if (typeof window !== 'undefined') window.Pipeline = Pipeline;
