@@ -9,16 +9,7 @@ export const NAV = [
       { label: "产品标准字段", path: "/fields" }
     ]
   },
-  {
-    id: "class",
-    label: "暴露分类规则",
-    items: [
-      { label: "通用暴露分类", path: "/generic" },
-      { label: "产品专属规则", path: "/product-rules" },
-      { label: "分类决策树", path: "/tree" },
-      { label: "规则助手", path: "/assistant" }
-    ]
-  },
+  { id: "class", label: "暴露分类规则", path: "/tree" },
   {
     id: "ead",
     label: "EAD 计算规则",
@@ -50,5 +41,6 @@ const PARENT = {
 };
 
 export function menuPath(path) {
+  if (String(path || "").indexOf("/tree") === 0) return "/tree";
   return PARENT[path] || path;
 }

@@ -46,6 +46,7 @@ from knowledge.local.rule_graph import load_graph, save_graph
 from agent.subagents.weight.paper.exp_flow_gen import analyze_flow_gaps_local, generate_product_flow
 from agent.subagents.rwa.market.mapper import suggest_field_map, suggest_mappings
 from agent.harness import reply as agent_reply
+from agent.tree_edit import propose as propose_tree
 from knowledge.weknora.rule_chat import discuss_rules, lookup_basis
 from knowledge.local.rule_learn import learn_from_excel
 from knowledge.weknora.weknora import ask as weknora_ask
@@ -419,6 +420,18 @@ def rules_basis():
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     return jsonify({"basis": basis})
+
+
+@app.post("/api/exposure-tree/propose")
+def exposure_tree_propose():
+    data = request.get_json(silent=True) or {}
+    try:
+        result = propose_tree(data.get("messages") or [], data.get("document") or {}, data.get("label") or "")
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    return jsonify(result)
 
 
 @app.post("/api/agent/chat")

@@ -375,6 +375,103 @@
 }
 #auditBody .toggle-c:hover, .drawer .toggle-c:hover, .modal .toggle-c:hover{ color: var(--brand); border-color: var(--brand-2); }
 
+.app-frame:has(.chart-page) { height: 100vh; overflow: hidden; }
+.app-frame:has(.chart-page) .app-main { height: 100vh; min-height: 0; }
+.app-frame:has(.chart-page) .content-bar {
+  margin: 12px 16px 0; border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
+}
+.app-frame .main-col.chart-page {
+  flex: 1; min-height: 0; padding: 10px 16px 14px;
+  display: flex; flex-direction: column; overflow: hidden; box-sizing: border-box;
+}
+.app-frame .main-col.chart-page #auditBody {
+  flex: 1; min-height: 0; display: flex; flex-direction: column;
+}
+.app-frame .main-col.chart-page .section-tabs {
+  margin: 10px 0 0; flex: 0 0 auto; padding: 8px 8px 0;
+  background: #fff; border: 1px solid #e3e8f0; border-bottom: 0; border-radius: 16px 16px 0 0;
+}
+.app-frame .main-col.chart-page .section-tab { border-radius: 10px 10px 0 0; }
+.app-frame .main-col.chart-page .section-tab.active {
+  background: #141d33; color: #f8fafc; box-shadow: none;
+}
+#auditBody .section-tabs input.section-add { width: 8em; flex: 0 0 auto; margin: 0 4px; padding: 6px 10px; border-radius: 8px; }
+.app-frame .main-col.chart-page #auditBody .dt-shell {
+  flex: 1 1 auto; height: auto; min-height: 0;
+}
+#auditBody .dt-shell{
+  position: relative; display: flex; flex-direction: column;
+  height: calc(100vh - 148px); min-height: 520px;
+  background: #0b1020; color: #e8eefc; overflow: hidden;
+  border-radius: 0 0 16px 16px;
+  box-shadow: 0 18px 44px rgba(15, 23, 42, .18);
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+}
+#auditBody .dt-head{
+  padding: 12px 16px; border-bottom: 1px solid #233152;
+  background: linear-gradient(180deg, #141d33, #0d1425);
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+}
+#auditBody .dt-head h3{ flex: 1; min-width: 12em; font-size: 16px; margin: 0; font-weight: 650; letter-spacing: .3px; color: #e8eefc; }
+#auditBody .dt-head h3 small{ display: block; font-weight: 400; color: #93a4c4; font-size: 11.5px; margin-top: 3px; }
+#auditBody .dt-grow{ display: none; }
+#auditBody .dt-zoom{
+  display: flex; gap: 0; padding: 2px; border-radius: 10px;
+  border: 1px solid #233152; background: #121a2e;
+}
+#auditBody .dt-shell .dt-zoom button{ border: 0; background: transparent; border-radius: 8px; }
+#auditBody .dt-shell .dt-zoom button:hover{ background: #1c2b4a; border-color: transparent; }
+#auditBody .dt-shell button, #auditBody .dt-shell select{
+  width: auto; flex: 0 0 auto;
+  background: #121a2e; color: #e8eefc; border: 1px solid #233152;
+  border-radius: 8px; padding: 7px 12px; font-size: 12.5px; cursor: pointer;
+  font-family: inherit;
+}
+#auditBody .dt-shell button:hover, #auditBody .dt-shell select:hover{ border-color: #60a5fa; background: #16223c; }
+#auditBody .dt-canvas{
+  flex: 1; overflow: hidden; padding: 18px 18px 58px; cursor: grab; touch-action: none;
+  background: radial-gradient(circle at 1px 1px, #1b2740 1px, transparent 0) 0 0 / 26px 26px;
+}
+#auditBody .dt-canvas.grabbing, #auditBody .dt-canvas.nodedrag{ cursor: grabbing; }
+#auditBody .dt-stage{ transform-origin: 0 0; display: inline-block; min-width: 100%; }
+#auditBody .dt-shell .mermaid{ display: flex; justify-content: center; }
+#auditBody .dt-shell .mermaid svg{ max-width: none !important; background: transparent !important; }
+#auditBody .dt-shell g.node{ cursor: grab; }
+#auditBody .dt-shell g.node:hover{ filter: drop-shadow(0 0 6px rgba(96, 165, 250, .85)); }
+#auditBody .dt-shell g.node.dragging{ cursor: grabbing; filter: drop-shadow(0 0 12px rgba(96, 165, 250, 1)); }
+#auditBody .dt-shell g.node.changed rect,
+#auditBody .dt-shell g.node.changed polygon,
+#auditBody .dt-shell g.node.changed path{ stroke: #fde68a !important; stroke-width: 4px !important; }
+#auditBody .dt-shell g.node.changed{ filter: drop-shadow(0 0 12px rgba(251, 191, 36, .95)); }
+#auditBody .dt-shell g.node text, #auditBody .dt-shell g.node .label, #auditBody .dt-shell g.node foreignObject{ pointer-events: none; }
+#auditBody .dt-legend{
+  position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 9;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px;
+  background: rgba(18, 26, 46, .92); border: 1px solid #233152; border-radius: 12px;
+  padding: 8px 12px; font-size: 12px; color: #c5d2ea; line-height: 1.4;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .35); backdrop-filter: blur(10px);
+}
+#auditBody .dt-legend b{ color: #e8eefc; font-weight: 600; }
+#auditBody .dt-legend-foot b{ color: #60a5fa; }
+#auditBody .dt-legend .sw{
+  display: inline-block; width: 10px; height: 10px; border-radius: 3px;
+  margin-right: 6px; vertical-align: middle;
+}
+#auditBody .dt-legend-foot{
+  margin: 0 0 0 auto; border: 0; padding: 0; color: #93a4c4;
+}
+#auditBody .dt-src{
+  display: block; margin: 0; padding: 18px 22px; overflow: auto; flex: 1;
+  background: #0f1729; color: #b9c8e6; font-size: 12px; line-height: 1.6;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre;
+}
+#auditBody .dt-err{
+  padding: 16px 20px; background: #3b1620; color: #ffb4c0;
+  border-bottom: 1px solid #7f2233; font-size: 12.5px; white-space: pre-wrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
 /* 条件展示 */
 #auditBody .cond-list, .drawer .cond-list, .modal .cond-list{ display: flex; flex-direction: column; gap: 4px; }
 #auditBody .cond, .drawer .cond, .modal .cond{

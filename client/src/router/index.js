@@ -33,10 +33,6 @@ const classTabs = [
   { label: '产品线路', path: '/exposure' },
   { label: '缓释', path: '/crm' },
 ]
-const treeTabs = [
-  { label: '决策树', path: '/tree' },
-  { label: '权重表', path: '/weights' },
-]
 const eadOffTabs = [
   { label: '表外规则', path: '/ead-off' },
   { label: '转换系数', path: '/ccf' },
@@ -47,7 +43,7 @@ const wizardTabs = [
 ]
 
 const routes = [
-  { path: '/', name: 'dashboard', component: DashboardView, meta: { group: '总览', title: '首页 / 计量工作台', blurb: '按菜单顺序走：规则配置、暴露分类、EAD，然后计量。' } },
+  { path: '/', name: 'dashboard', component: DashboardView, meta: { group: '总览', title: '首页 / 计量工作台', blurb: '按菜单顺序走：规则配置、暴露分类规则、EAD，然后计量。' } },
   { path: '/versions', name: 'versions', component: VersionsView, meta: { group: '规则配置', title: '监管规则版本管理', blurb: '三地规则分开维护。在已有版本上复制后再改，避免互相覆盖。', sections: versionTabs } },
   { path: '/params', name: 'params', component: ParamsView, meta: { group: '规则配置', title: '共用参数', blurb: '多条规则共用的门槛。评级百分比在权重表里改。', sections: versionTabs } },
   { path: '/clauses', name: 'clauses', component: ClausesView, meta: { group: '规则配置', title: '监管条款库', blurb: '条款和引用它的规则放在同一张表里。点一行看原文和引用。' } },
@@ -57,8 +53,9 @@ const routes = [
   { path: '/exposure', name: 'exposure', component: ExposureView, meta: { group: '暴露分类规则', title: '产品线路', blurb: '每个产品挂在通用分类上的专属规则。', sections: classTabs } },
   { path: '/crm', name: 'crm', component: CrmView, meta: { group: '暴露分类规则', title: '信用风险缓释', blurb: '合格工具，以及什么情况下这条缓释不计入。', sections: classTabs } },
   { path: '/product-rules', name: 'product-rules', component: ProductRulesView, meta: { group: '暴露分类规则', title: '产品专属暴露分类规则', blurb: '在通用分类框架基础上，用产品标准字段绑定通用规则字段，向导式建立每个产品的暴露分类规则' } },
-  { path: '/tree', name: 'tree', component: TreeView, meta: { group: '暴露分类规则', title: '暴露分类决策树', blurb: '决策树根据实际配置动态生成；可高亮指定债项的实际命中路径，并对未命中、冲突或字段缺失的路径给出提示', sections: treeTabs } },
-  { path: '/weights', name: 'weights', component: WeightsView, meta: { group: '暴露分类规则', title: '风险权重', blurb: '权重表。没有单列的档位保持未列明。', sections: treeTabs } },
+  { path: '/tree', name: 'tree', component: TreeView, meta: { group: '暴露分类规则', title: '暴露分类规则', chart: true } },
+  { path: '/tree/:name', name: 'tree-doc', component: TreeView, meta: { group: '暴露分类规则', title: '暴露分类规则', chart: true } },
+  { path: '/weights', name: 'weights', component: WeightsView, meta: { group: '暴露分类规则', title: '风险权重', blurb: '权重表。没有单列的档位保持未列明。' } },
   { path: '/assistant', name: 'assistant', component: AssistantView, meta: { group: '暴露分类规则', title: '自然语言规则配置助手', blurb: '先识别再生成。生成的规则要确认后才保存，对话是预置脚本。' } },
   { path: '/ead-on', name: 'ead-on', component: EadView, props: { side: 'on' }, meta: { group: 'EAD 计算规则', title: '表内 EAD', blurb: '先选定产品，再新增或试算该产品的规则。' } },
   { path: '/ead-off', name: 'ead-off', component: EadView, props: { side: 'off' }, meta: { group: 'EAD 计算规则', title: '表外 EAD', blurb: '先选定产品，再用该产品的信用转换系数。', sections: eadOffTabs } },

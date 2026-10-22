@@ -27,6 +27,7 @@
 | `chat.py` | 通义模型。密钥读仓库根目录 `.env`。 |
 | `pipeline.py` | `STEPS` 名单。按名单调用 `program.run`。 |
 | `pages.py` | 总控打开页面。只在用户要看页面时用。 |
+| `tree_edit.py` | 决策树对话先说明当前规则，再给出修改 JSON。不写文件。用户确认并选择保存后，由 Koa 写入。 |
 | `paths.py` | 仓库根目录。留痕目录从这里找。 |
 | `skills/calculation-order/SKILL.md` | 计算顺序。总控和子智能体都能读。 |
 | `subagents/__init__.py` | `ORDER`。顺序是 weight、ccf、crm、rwa，不能调换。 |

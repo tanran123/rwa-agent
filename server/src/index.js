@@ -6,6 +6,7 @@ import { query } from "./db.js";
 import { auditWorkbook, measureDemo } from "./measure.js";
 import { paperView, uploadSamples } from "./paper.js";
 import { createEad, listEad, trialEad, updateEad } from "./ead.js";
+import { copyExposureDoc, exposureChat, exposureDoc, exposureDocs, saveExposureChat, saveExposureDoc } from "./exposureDocs.js";
 
 const app = new Koa();
 const router = new Router({ prefix: "/api" });
@@ -208,7 +209,27 @@ router.get("/field-mappings", async (ctx) => {
   }));
 });
 
+router.get("/exposure-classes", async (ctx) => {
+  ctx.body = exposureDocs().map((item) => ({
+    name: item.name,
+    title: item.title,
+    label: item.label
+  }));
+});
+
 router.get("/exposure-class", async (ctx) => {
+  const name = String(ctx.query.name || "");
+  if (name) {
+    const doc = exposureDoc(name);
+    if (!doc) ctx.throw(404, "没有这份分类 JSON");
+    ctx.body = {
+      name: doc.name,
+      title: doc.title,
+      sourceFile: doc.sourceFile,
+      document: doc.document
+    };
+    return;
+  }
   const rows = await query("SELECT name, title, source_file, body FROM exposure_document WHERE id = 1");
   if (!rows[0]) ctx.throw(404, "分类 JSON 不在库里");
   ctx.body = {
@@ -350,6 +371,54 @@ router.get("/audit.xlsx", async (ctx) => {
 router.get("/assistant", async (ctx) => {
   const rows = await query("SELECT seq, role, body FROM assistant_turn ORDER BY seq");
   ctx.body = rows.map((row) => ({ seq: row.seq, ...(json(row.body) || {}), role: row.role }));
+});
+
+router.post("/exposure-tree/propose", async (ctx) => {
+  const body = ctx.request.body || {};
+  const name = String(body.name || "");
+  const item = name ? exposureDoc(name) : exposureDocs()[0];
+  if (!item) ctx.throw(404, "没有这份分类 JSON");
+  try {
+    const response = await fetch("http://127.0.0.1:8766/api/exposure-tree/propose", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        messages: body.messages || [],
+        label: item.label,
+        document: item.document
+      })
+    });
+    const text = await response.text();
+    let payload;
+    try { payload = text ? JSON.parse(text) : { error: "决策树对话没有返回" }; }
+    catch { payload = { error: "决策树对话没有返回可读内容" }; }
+    if (payload && payload.action === "update") payload.action = "draft";
+    if (payload && payload.action === "draft" && payload.document) {
+      payload.document.name = item.name;
+      payload.label = item.label;
+    }
+    ctx.status = response.status;
+    ctx.body = payload;
+  } catch (err) {
+    ctx.status = 502;
+    ctx.body = { error: "决策树对话没开，或暂时连不上。" };
+  }
+});
+
+router.get("/exposure-tree/chat", async (ctx) => {
+  ctx.body = exposureChat(String(ctx.query.name || ""));
+});
+
+router.post("/exposure-tree/chat", async (ctx) => {
+  ctx.body = saveExposureChat(ctx.request.body || {});
+});
+
+router.post("/exposure-tree/copy", async (ctx) => {
+  ctx.body = copyExposureDoc(ctx.request.body || {});
+});
+
+router.post("/exposure-tree/save", async (ctx) => {
+  ctx.body = saveExposureDoc(ctx.request.body || {});
 });
 
 router.post("/agent/chat", async (ctx) => {

@@ -24,8 +24,14 @@ export const pool = mysql.createPool({
   charset: "utf8mb4",
   waitForConnections: true,
   connectionLimit: 8,
+  connectTimeout: 10000,
+  enableKeepAlive: true,
   dateStrings: true,
   supportBigNumbers: true
+});
+
+pool.on("error", (err) => {
+  console.error(err);
 });
 
 export async function query(sql, params) {

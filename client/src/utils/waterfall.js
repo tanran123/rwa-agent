@@ -1,3 +1,5 @@
+import { labelBook, summarizeWhen, whenKey } from "./ruleText";
+
 function ratio(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return "";
@@ -155,6 +157,170 @@ export function layoutDocument(doc) {
     });
   }
   return { nodes, edges };
+}
+
+function bookOf(doc) {
+  const fields = [...(doc && doc.fields ? doc.fields : [])];
+  function walk(node) {
+    if (!node || typeof node !== "object") return;
+    (node.fields || []).forEach((field) => fields.push(field));
+    (node.children || []).forEach(walk);
+    if (node.otherwise && typeof node.otherwise === "object") walk(node.otherwise);
+  }
+  (doc && doc.rules ? doc.rules : []).forEach(walk);
+  if (doc && doc.otherwise && typeof doc.otherwise === "object") walk(doc.otherwise);
+  (doc && doc.extensions ? doc.extensions : []).forEach((item) => {
+    (item.fields || []).forEach((field) => fields.push(field));
+    (item.children || []).forEach(walk);
+  });
+  return labelBook(fields);
+}
+
+function chartWhen(rule, book, otherwise, top) {
+  if (top) return "以上全部未命中";
+  const key = whenKey(rule && rule.when);
+  const items = key ? rule.when[key] : null;
+  if (!key || (Array.isArray(items) && !items.length)) return otherwise ? "其余情形" : "以上规则均未命中时";
+  const text = summarizeWhen(rule.when, book);
+  return text && text !== "—" ? text : "其余情形";
+}
+
+function shapeOf(rule, kids) {
+  if (kids.length) return "judge";
+  const weight = rule && rule.weight;
+  if (weight && (weight.same_as || Array.isArray(weight.greater_of))) return "ref";
+  return "weight";
+}
+
+function mermaidText(text) {
+  return String(text == null ? "" : text)
+    .replace(/&/g, " ")
+    .replace(/[<>]/g, " ")
+    .replace(/"/g, "'")
+    .replace(/[[\]{}|#]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function wrapMermaid(text, size) {
+  const clean = mermaidText(text);
+  if (clean.length <= size) return clean;
+  const parts = [];
+  for (let i = 0; i < clean.length; i += size) parts.push(clean.slice(i, i + size));
+  return parts.join("<br/>");
+}
+
+function refCaption(rule) {
+  const weight = rule && rule.weight;
+  if (weight && weight.same_as) return "→ 参照 " + weight.same_as;
+  if (weight && Array.isArray(weight.greater_of)) {
+    const fields = weight.greater_of.map((item) => {
+      if (item && item.field) return item.field;
+      if (typeof item === "number") return String(item);
+      return "";
+    }).filter(Boolean);
+    return "→ 参照 " + (fields.join("、") || "greater_of");
+  }
+  return "→ 参照";
+}
+
+function classStmt(ids, name) {
+  const lines = [];
+  for (let i = 0; i < ids.length; i += 30) {
+    lines.push("    class " + ids.slice(i, i + 30).join(",") + " " + name + ";");
+  }
+  return lines;
+}
+
+export function toMermaid(doc, changedNames) {
+  const book = bookOf(doc || {});
+  const rules = (doc && doc.rules ? doc.rules : []).map((rule) => ({ rule, otherwise: false, edge: rule.edge }));
+  if (doc && doc.otherwise && typeof doc.otherwise === "object") {
+    rules.push({ rule: doc.otherwise, otherwise: true, top: true });
+  }
+  (doc && doc.extensions ? doc.extensions : []).forEach((item, index) => {
+    rules.push({
+      rule: {
+        name: "extension_" + index,
+        label: "银行自定义扩展",
+        children: item.children || [],
+        attach_to: item.attach_to
+      },
+      otherwise: false,
+      edge: item.attach_to ? "挂在 " + item.attach_to : "银行自定义扩展"
+    });
+  });
+  const rootLine = doc && doc.rootLabel
+    ? mermaidText(doc.rootLabel) + "<br/>按下列顺序依次判定<br/>首个命中者即适用"
+    : "信用风险暴露<br/>按下列顺序依次判定<br/>首个命中者即适用";
+  const lines = [
+    "%% 由分类规则机械推导生成 —— 请勿手工编辑",
+    "flowchart LR",
+    "    ROOT([\"" + rootLine + "\"])",
+    ""
+  ];
+  const judge = [];
+  const weight = [];
+  const ref = [];
+  const changed = [];
+  const mark = {};
+  (changedNames || []).forEach((name) => { mark[name] = true; });
+  const lookup = {};
+  let seq = 0;
+
+  function walk(list, parentId, depth, parentPath) {
+    list.forEach((entry, index) => {
+      const kids = childrenOf(entry.rule);
+      const id = "N" + (seq += 1);
+      const shape = shapeOf(entry.rule, kids);
+      const label = mermaidText(entry.rule.label || entry.rule.name || "");
+      const path = parentId === "ROOT"
+        ? (entry.top ? ">otherwise" : "/" + index + ":" + (entry.rule.name || ""))
+        : parentPath + "/" + (entry.otherwise ? "otherwise" : index + ":" + (entry.rule.name || ""));
+      lookup[id] = {
+        node: entry.rule,
+        path,
+        depth: depth + 1,
+        index: entry.otherwise ? -1 : index,
+        fallback: !!entry.otherwise
+      };
+      const edited = !!mark[entry.rule.name];
+      if (shape === "judge") {
+        lines.push("    " + id + "{{\"" + label + "\"}}");
+        (edited ? changed : judge).push(id);
+      } else if (shape === "ref") {
+        lines.push("    " + id + "[/\"" + label + "<br/>" + mermaidText(refCaption(entry.rule)) + "\"/]");
+        (edited ? changed : ref).push(id);
+      } else {
+        lines.push("    " + id + "[\"" + label + "<br/><b>" + mermaidText(weightText(entry.rule) || "权重未单列") + "</b>\"]");
+        (edited ? changed : weight).push(id);
+      }
+      const edge = wrapMermaid(entry.edge || chartWhen(entry.rule, book, entry.otherwise, entry.top), 18);
+      const arrow = parentId === "ROOT" ? "-.->" : "-->";
+      lines.push("    " + parentId + " " + arrow + "|\"" + edge + "\"| " + id);
+      lines.push("");
+      if (kids.length) walk(kids, id, depth + 1, path);
+    });
+  }
+
+  walk(rules, "ROOT", 0, "");
+  lines.push("    classDef root fill:#1e293b,stroke:#60a5fa,stroke-width:2px,color:#f8fafc;");
+  lines.push("    classDef judge fill:#1e3a8a,stroke:#93c5fd,stroke-width:2px,color:#eff6ff;");
+  lines.push("    classDef weight fill:#065f46,stroke:#34d399,stroke-width:2px,color:#ecfdf5;");
+  lines.push("    classDef ref fill:#78350f,stroke:#fbbf24,stroke-width:2px,color:#fffbeb;");
+  lines.push("    classDef changed fill:#9a3412,stroke:#fde68a,stroke-width:4px,color:#fff7ed;");
+  lines.push("    class ROOT root;");
+  classStmt(judge, "judge").forEach((line) => lines.push(line));
+  classStmt(weight, "weight").forEach((line) => lines.push(line));
+  classStmt(ref, "ref").forEach((line) => lines.push(line));
+  classStmt(changed, "changed").forEach((line) => lines.push(line));
+  return {
+    mmd: lines.join("\n"),
+    rules: doc && doc.rules ? doc.rules.length : 0,
+    leaves: weight.length + ref.length + changed.length,
+    changed,
+    lookup
+  };
 }
 
 export function edgePath(edges, nodes) {

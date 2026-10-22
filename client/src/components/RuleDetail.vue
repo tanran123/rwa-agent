@@ -122,7 +122,8 @@ async function copyJson() {
             <div class="hint" style="margin: 6px 0 10px; font-size: 11px; color: var(--ink-3)">skip 成立就当没有这条，子级也不进；被跳过的那条 when 本来会命中时，不再走同一层的 otherwise，退回外层继续下一条。</div>
           </template>
           <WhenList v-if="whenKey(node.when)" :when="node.when" :book="book" />
-          <p v-if="!node.skip && !whenKey(node.when)" class="dim">这一层没有单独写 when。</p>
+          <p v-if="!node.skip && !whenKey(node.when) && node.whenText">{{ node.whenText }}</p>
+          <p v-if="!node.skip && !whenKey(node.when) && !node.whenText" class="dim">这一层没有单独写 when。</p>
         </div>
       </div>
 

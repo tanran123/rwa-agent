@@ -87,8 +87,15 @@ button, select, input, textarea { font: inherit; }
   border: 0; background: transparent; color: #64748b; cursor: pointer;
   padding: 7px 14px; border-radius: 8px; font-size: 13px; font-weight: 650;
 }
+.section-tab svg {
+  width: 14px; height: 14px; margin-right: 4px; vertical-align: -2px; display: inline-block;
+}
 .section-tab:hover { color: #334155; }
 .section-tab.active { background: #fff; color: #0f3d32; box-shadow: 0 1px 2px rgba(15, 23, 42, .08); }
+.section-add {
+  width: 8em; flex: 0 0 auto; margin: 0 4px; padding: 6px 10px;
+  border: 1px solid #d5dbe6; border-radius: 8px; background: #fff; font-size: 13px;
+}
 .nav-menu .nav-sec {
   margin: 4px 8px 2px; font-size: 10px; font-weight: 700; color: #94a3b8; letter-spacing: .04em;
 }

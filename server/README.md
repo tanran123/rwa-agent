@@ -9,6 +9,7 @@ Koa 2，前缀 `/api`，默认 `http://127.0.0.1:8780`。数据在 MySQL，连�
 | 路径 | 作用 |
 | --- | --- |
 | `src/index.js` | 全部 HTTP 路由，以及行数据到 JSON 的形状。 |
+| `src/exposureDocs.js` | 读仓库根目录分类 JSON：通用、贷款、债券，以及后来新增的 `*风险暴露.json`。确认写入和每个产品的决策树对话也在这里。 |
 | `src/db.js` | 读取 `.env`，导出 `query(sql, params)`。 |
 | `src/measure.js` | `GET /measure` 和审计底稿。模拟债项在 `data/`，计量在 `lib/`，分类规则读 `agent/subagents/weight/knowledge/权重法风险暴露分类.json`。 |
 | `src/paper.js` | `GET /working-paper` 和上传样例。底稿读 `agent/subagents/weight/paper/底稿模型计算.json`，样例读 `data/data.js`。 |
@@ -27,14 +28,16 @@ Koa 2，前缀 `/api`，默认 `http://127.0.0.1:8780`。数据在 MySQL，连�
 | GET | `/dashboard` | 总览数字。 |
 | GET | `/rule-versions`、`/clauses`、`/params` | 规则版本、条款、共用参数。参数用 `PUT /params/:id` 修改。 |
 | GET | `/products`、`/products/:code/fields`、`/field-mappings` | 产品、标准字段、字段映射。 |
-| GET | `/exposure-class`、`/weights`、`/crm`、`/product-rules` | 暴露分类、权重表、缓释、产品专属规则。 |
+| GET | `/exposure-classes`、`/exposure-class`、`/weights`、`/crm`、`/product-rules` | 分类 JSON 页签、单份分类、权重表、缓释、产品专属规则。`/exposure-class?name=` 读对应文件；不带 name 时仍读库里的权重法分类。 |
+| POST | `/exposure-tree/copy`、`/exposure-tree/propose`、`/exposure-tree/save` | 添加页签时复制通用。对话先说明当前规则，确认后询问是否保存，保存才写入。没在对话里出现的权重不写入。 |
+| GET、POST | `/exposure-tree/chat` | 按分类 name 读取或保存决策树对话。内容写在仓库根目录 `决策树对话.json`，不提交。 |
 | GET、POST、PUT | `/ead-rules`、`/ead-rules/:id` | 表内外 EAD。新建和修改写入 `ead_rule`。 | 
 | POST | `/ead-trial` | 用现有 `computeEad` 试算一条规则。 | 
 | GET | `/ccf` | 转换系数。 |
 | GET、POST | `/batches`、`/batches/:id/lines` | 计量批次和明细。 |
 | GET | `/measure`、`/working-paper`、`/upload-samples`、`/audit.xlsx` | 31 笔模拟计量、信用风险底稿缓存、上传样例、审计工作簿。 |
 | GET | `/assistant` | 规则助手历史。 |
-| POST | `/agent/chat` | 原样转发到 Flask `8766`。这里不实现智能体。 |
+| POST | `/agent/chat` | 原样转发到 Flask `8766`。这里不实现智能体。决策树对话的提议也转发到 Flask，写入留在 `/exposure-tree/save`。 |
 | POST | `/rules/chat` | 原样转发到 Flask 的规则对话。 |
 
 成功时响应体就是数据。失败时 `{ "error": "原因" }`，并带上相应状态码。

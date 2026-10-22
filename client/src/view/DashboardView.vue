@@ -9,7 +9,7 @@ const router = useRouter();
 const { session, currentVersion } = useContext();
 const steps = [
   ["1", "规则配置", "监管规则版本 → 监管条款库 → 产品标准字段", "/versions"],
-  ["2", "暴露分类规则", "通用暴露分类 → 产品专属规则 → 分类决策树 → 规则助手", "/generic"],
+  ["2", "暴露分类规则", "通用、贷款、债券各自一份分类 JSON", "/tree"],
   ["3", "EAD 计算规则", "表内 EAD → 表外 EAD", "/ead-on"],
   ["4", "计量执行", "计量向导 → 结果明细 → 计量批次 → 审计底稿", "/wizard"]
 ];

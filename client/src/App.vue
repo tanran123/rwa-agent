@@ -22,6 +22,7 @@ const { session, versionOptions, setOrg, setJurisdiction, loadBootstrap } = useC
 
 const STATUS = { draft: "草稿", reviewing: "审核中", published: "已发布", superseded: "已被取代", disabled: "已停用" };
 const activePath = computed(() => menuPath(route.path));
+const viewKey = computed(() => (route.meta.chart ? "tree" : route.path));
 
 function versionText(item) {
   const extra = item.status && item.status !== "published" ? "（" + (STATUS[item.status] || item.status) + "）" : "";
@@ -124,8 +125,8 @@ function toggle(id) {
         </div>
         <button type="button" class="btn btn-primary" @click="go('/wizard')">发起计量</button>
       </div>
-      <main class="main-col" :class="{ 'exp-full': route.meta.full }">
-        <header class="page-head">
+      <main class="main-col" :class="{ 'exp-full': route.meta.full, 'chart-page': route.meta.chart }">
+        <header v-if="!route.meta.chart" class="page-head">
           <div>
             <div class="page-kicker">{{ route.meta.group }}</div>
             <h1>{{ route.meta.title }}</h1>
@@ -136,7 +137,7 @@ function toggle(id) {
         <AgentDock />
         <div id="auditBody">
           <p v-if="session.error" class="notice danger">{{ session.error }}先执行 sql 目录里的两个脚本，再启动 Koa。</p>
-          <router-view :key="route.path" />
+          <router-view :key="viewKey" />
         </div>
       </main>
     </div>

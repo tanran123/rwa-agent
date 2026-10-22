@@ -20,8 +20,9 @@ Vue 3 + Vue Router + Vuex + axios。开发服务把 `/api` 代理到 `http://127
 | `src/api/*.js` | 按业务拆开的请求函数。页面只从这里要数据。 |
 | `src/view/` | 一个路由一个 `.vue`。按菜单再分子目录。 |
 | `src/components/` | 多页共用的抽屉、瀑布、加载、智能体停靠栏。 |
-| `src/utils/` | 纯函数：菜单、规则文案、瀑布布局。 |
+| `src/utils/` | 菜单、规则文案、瀑布布局。决策图的拖拽跟在 `mermaidStage.js`。 |
 | `src/assets/main.css` | 引入 `src/assets/css/` 里的样式。新样式加在那些 css 里，或只写在单个组件上。 |
+| `src/assets/mermaid.min.js` | 决策图用的 Mermaid 10.9.1。页面从这里加载，不访问外网。 |
 
 ## view 子目录
 
@@ -29,7 +30,7 @@ Vue 3 + Vue Router + Vuex + axios。开发服务把 `/api` 代理到 `http://127
 | --- | --- |
 | `view/DashboardView.vue` | `/` 总览。 |
 | `view/rule/` | 规则配置：版本、参数、条款、标准字段、字段映射。 |
-| `view/exposure/` | 暴露分类：通用规则、产品线路、缓释、产品专属规则、决策树、权重表、规则助手。 |
+| `view/exposure/` | 暴露分类。侧栏一项「暴露分类规则」，页签是通用、贷款、债券各自的分类 JSON。 |
 | `view/ead/` | 表内 EAD、表外 EAD、转换系数。 |
 | `view/measure/` | 计量向导、底稿计算、结果明细、批次、审计底稿导出。 |
 
@@ -65,7 +66,7 @@ Vue 3 + Vue Router + Vuex + axios。开发服务把 `/api` 代理到 `http://127
 | `api/dashboard.js` | `/dashboard` |
 | `api/rule.js` | 版本、条款、参数 |
 | `api/product.js` | 产品、标准字段、字段映射 |
-| `api/exposure.js` | 暴露分类、权重、缓释、产品规则 |
+| `api/exposure.js` | 暴露分类页签、单份分类 JSON、权重、缓释、产品规则、决策树对话的提议、确认写入，以及按产品保存对话 |
 | `api/ead.js` | 表内外 EAD、新建、修改、试算、转换系数 |
 | `api/batch.js` | 批次、计量演示、底稿、上传样例 |
 | `api/assistant.js` | 规则助手 |
@@ -73,4 +74,4 @@ Vue 3 + Vue Router + Vuex + axios。开发服务把 `/api` 代理到 `http://127
 
 ## 智能体停靠栏
 
-`components/AgentDock.vue` 在每一页都在。它把当前路由和最近对话交给 `sendAgentChat`。返回的 `pages` 用来跳转。不要在业务页面里再接一条智能体请求。
+`components/AgentDock.vue` 在每一页都在。暴露分类规则页上，页签「添加」先复制通用。对话先说明当前规则，确认后再问要不要保存，保存后才画到画布。每个产品的对话单独记在服务端，切换页签或刷新后还在。其他页面把当前路由和最近对话交给 `sendAgentChat`。返回的 `pages` 用来跳转。不要在业务页面里再接一条智能体请求。

@@ -2,7 +2,7 @@
 
 生成代码之前先读 `AGENTS.md`。它约定编程助手怎么和下面这些说明协作：先读本文件判断功能属于前端、后端还是智能体，再打开对应目录里的 `README.md`，按清单落文件。Cursor 会通过 `.cursor/skills/rwa-codegen/` 走同一套步骤。DeepSeek 或其他助手打开本仓库时，也从 `AGENTS.md` 开始。
 
-加功能时直接说想要的效果，一两句就够。右下角的 AI 只做权重计算，不改页面和接口。
+加功能时直接说想要的效果，一两句就够。右下角的 AI 在其他页面只做权重计算。在暴露分类规则页，页签上添加会先复制通用。对话先说明当前规则，确认后再问要不要保存，保存后才画到画布。每个产品的对话单独保留。
 
 ## 目录
 
@@ -17,6 +17,7 @@
 | `output/` | 每次计算写出的留痕和结果工作簿。不提交。 |
 | `tools/build-seed.mjs` | 从 `server/data/master_data.cjs` 和分类 JSON 重新生成 `sql/002_seed.sql`。 |
 | `ecosystem.config.cjs`、`start.sh` | 用 PM2 启动智能体和接口。 |
+| `使用说明.md` | 同事克隆、导入数据库并启动的步骤。 |
 
 ## 分类规则和计算结果
 
@@ -35,7 +36,7 @@
 
 页面按钮走接口：浏览器 `POST /api/...`，Vite 转到 `http://127.0.0.1:8780`，Koa 查 MySQL 或读文件。
 
-右下角 AI 走智能体：页面 `POST /api/agent/chat`，Koa 转到 `http://127.0.0.1:8766/api/agent/chat`，Flask 调用 `agent.harness.reply`。规则助手是另一条：`POST /api/rules/chat`，问的是微信知识库，不是计算子智能体。
+右下角 AI 走智能体：页面 `POST /api/agent/chat`，Koa 转到 `http://127.0.0.1:8766/api/agent/chat`，Flask 调用 `agent.harness.reply`。暴露分类规则页改走 `POST /api/exposure-tree/propose`：先说明规则，给出修改后由用户确认，再询问是否保存。保存走 `POST /api/exposure-tree/save`。规则助手是另一条：`POST /api/rules/chat`，问的是微信知识库，不是计算子智能体。
 
 ## 加功能时怎么说
 
@@ -76,4 +77,4 @@ cd .. && ./start.sh
 cd client && npm run dev
 ```
 
-`./start.sh` 拉起 `rwa-agent`（http://127.0.0.1:8766）和 `rwa-api`（http://127.0.0.1:8780）。前端开发地址默认 http://127.0.0.1:5173 。改了 Python 之后执行 `pm2 restart rwa-agent`。
+`./start.sh` 拉起 `rwa-agent`（http://127.0.0.1:8766）和 `rwa-api`（http://127.0.0.1:8780），并交给 PM2 常驻。进程退出会自动再拉起；本机登录后也会再拉起。前端开发地址默认 http://127.0.0.1:5173 。改了 Python 之后执行 `pm2 restart rwa-agent`。改了 Koa 之后执行 `pm2 restart rwa-api`。
