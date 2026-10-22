@@ -14,6 +14,7 @@ import WeightsView from '../view/exposure/WeightsView.vue'
 import AssistantView from '../view/exposure/AssistantView.vue'
 import EadView from '../view/ead/EadView.vue'
 import CcfView from '../view/ead/CcfView.vue'
+import CrmConfigView from '../view/crm/CrmConfigView.vue'
 import WizardView from '../view/measure/WizardView.vue'
 import EngineView from '../view/measure/EngineView.vue'
 import ResultsView from '../view/measure/ResultsView.vue'
@@ -57,6 +58,7 @@ const routes = [
   { path: '/ead-on', redirect: '/ead' },
   { path: '/ead-off', redirect: '/ead' },
   { path: '/ccf', name: 'ccf', component: CcfView, meta: { group: 'EAD 计算规则', title: '信用转换系数', blurb: '一行是一种表外类型加一个条件。' } },
+  { path: '/crm-config', name: 'crm-config', component: CrmConfigView, meta: { group: '信用风险缓释', title: '信用风险缓释配置', blurb: '按产品绑定缓释字段并维护合格缓释物字典。产品清单读 product_type，可选列读 product_field。' } },
   { path: '/wizard', name: 'wizard', component: WizardView, meta: { group: '计量执行', title: '信用风险 RWA 计量向导', blurb: '分步骤完成从计量范围选择、数据导入到计量结果查看的全过程', sections: wizardTabs } },
   { path: '/engine', name: 'engine', component: EngineView, meta: { group: '计量执行', title: '底稿计算', blurb: '映射、计算、追溯。逐笔结果写入计量明细后在结果页查看。', sections: wizardTabs } },
   { path: '/results', name: 'results', component: ResultsView, meta: { group: '计量执行', title: '计量结果明细', blurb: '逐笔债项计量结果与审计证据；点击任意债项进入该笔的完整计量详情页' } },

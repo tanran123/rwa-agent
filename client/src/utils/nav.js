@@ -19,6 +19,13 @@ export const NAV = [
     ]
   },
   {
+    id: "crm",
+    label: "信用风险缓释",
+    items: [
+      { label: "信用风险缓释配置", path: "/crm-config" }
+    ]
+  },
+  {
     id: "run",
     label: "计量执行",
     items: [

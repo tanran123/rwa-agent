@@ -32,6 +32,7 @@ Vue 3 + Vue Router + Vuex + axios。开发服务把 `/api` 代理到 `http://127
 | `view/rule/` | 规则配置：版本、参数、条款、标准字段、字段映射。 |
 | `view/exposure/` | 暴露分类。侧栏一项「暴露分类规则」，页签是通用、贷款、债券各自的分类 JSON。 |
 | `view/ead/` | EAD 计算规则配置。左侧产品清单，右侧三步：是否需要配置、表内或表外、公式编辑器。转换系数仍是 `CcfView.vue`。 |
+| `view/crm/` | 信用风险缓释配置。左侧产品清单，右侧三步：是否需要配置、逐笔缓释字段绑定、合格缓释物字典。新建产品的默认状态是无需配置。第 2、3 步各有自己的草稿，「保存绑定」「保存字典」写回配置并立即落库，各自的「重置」丢弃未保存的改动；右上角「保存全部配置」保存整份。 |
 | `view/measure/` | 计量向导、底稿计算、结果明细、批次、审计底稿导出。 |
 
 页内页签不是新菜单。例如「标准字段 / 知识库字段」是 `/fields` 和 `/mappings`，菜单只挂在「产品标准字段」上。对应关系已经写在 `router/index.js` 的 `sections` 和 `nav.js` 的 `PARENT`。
@@ -50,7 +51,7 @@ Vue 3 + Vue Router + Vuex + axios。开发服务把 `/api` 代理到 `http://127
 
 按这个顺序落文件。每一步都先打开清单里的现有文件再改：
 
-1. `src/view/<分组>/<Name>View.vue`。分组用上面四个目录之一；总览级页面可以放在 `view/` 根下。
+1. `src/view/<分组>/<Name>View.vue`。分组用上面五个目录之一；总览级页面可以放在 `view/` 根下。
 2. `src/router/index.js` 增加路由，写上 `meta.group`、`meta.title`、`meta.blurb`。若它是某个菜单下的页签，把 `{ label, path }` 放进对应的 `sections`。
 3. 它是新菜单项时，改 `src/utils/nav.js` 的 `NAV`。它只是页签时，改 `PARENT`，不要再加一条菜单。
 4. 需要接口时，在 `src/api/<业务>.js` 增加函数，走 `request`。没有合适的业务文件就新建一个，不要把请求写进 `.vue`。
@@ -68,6 +69,7 @@ Vue 3 + Vue Router + Vuex + axios。开发服务把 `/api` 代理到 `http://127
 | `api/product.js` | 产品、标准字段、字段映射 |
 | `api/exposure.js` | 暴露分类页签、单份分类 JSON、权重、缓释、产品规则、决策树对话的提议、确认写入，以及按产品保存对话 |
 | `api/ead.js` | EAD 计算配置的读取和保存、公式校验、试算、转换系数 |
+| `api/crm.js` | 信用风险缓释配置的读取和保存（`/crm-config`）。`/crm` 的缓释规则列表在 `api/exposure.js`。 |
 | `api/batch.js` | 批次、计量演示、底稿、上传样例 |
 | `api/assistant.js` | 规则助手 |
 | `api/agent.js` | `/agent/chat`，只给 `AgentDock` 用 |
