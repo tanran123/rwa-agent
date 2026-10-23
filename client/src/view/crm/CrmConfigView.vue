@@ -2,6 +2,7 @@
 import { computed, reactive, ref } from "vue";
 import { fetchCrmConfig, saveCrmConfig } from "@/api/crm";
 import AsyncView from "@/components/AsyncView.vue";
+import { askConfirm } from "@/utils/confirm";
 
 /** 缓释配置只绑定这三个属性，与接口的 CRM_ATTRS 一致。三个都是必选。 */
 const ATTRS = [
@@ -107,13 +108,14 @@ const dirtyTypes = computed(() => {
 });
 
 /* ---------------- 第 1 步 ---------------- */
-function setNeeded(item, needed) {
+async function setNeeded(item, needed) {
   if (item.needed === needed) return;
   if (!needed) {
     const bound = boundCount(item);
     if (bound) {
-      const ok = window.confirm(
-        `「${item.label}」当前已配置 ${bound} 个属性绑定。标记为无需配置会清除这些绑定。是否继续？`
+      const ok = await askConfirm(
+        "「" + item.label + "」当前已配置 " + bound + " 个属性绑定。标记为无需配置会清除这些绑定。",
+        { title: "清除绑定", confirmText: "继续", danger: true }
       );
       if (!ok) return;
     }
@@ -185,14 +187,19 @@ async function commitDraft() {
   return persist(`「${product.value.label}」的缓释字段绑定已保存到 crm_slot_column。`);
 }
 
-function discardDraft() {
+async function discardDraft() {
   const item = product.value;
   if (!item) return;
   if (!dirty.value) {
     pageMessage.value = "当前没有未保存的改动。";
     return;
   }
-  if (!window.confirm(`将放弃「${item.label}」未保存的列名改动，恢复为上次保存的内容。是否继续？`)) return;
+  const ok = await askConfirm("将放弃「" + item.label + "」未保存的列名改动，恢复为上次保存的内容。", {
+    title: "放弃改动",
+    confirmText: "放弃",
+    danger: true
+  });
+  if (!ok) return;
   resetDraft(item);
   pageError.value = "";
   pageMessage.value = "已重置为上次保存的内容。";
@@ -203,19 +210,23 @@ function addType() {
   draftTypes.value = draftTypes.value.concat([{ code: "", name: "", note: "" }]);
 }
 
-function removeType(index) {
+async function removeType(index) {
   const type = draftTypes.value[index];
-  const ok = window.confirm(`将删除合格缓释物「${type.name || type.code || "（未命名）"}」。是否继续？`);
+  const ok = await askConfirm("将删除合格缓释物「" + (type.name || type.code || "（未命名）") + "」。", {
+    title: "删除合格缓释物",
+    confirmText: "删除",
+    danger: true
+  });
   if (!ok) return;
   const next = draftTypes.value.slice();
   next.splice(index, 1);
   draftTypes.value = next;
 }
 
-function restoreDefault() {
-  const ok = window.confirm(
-    `把「${product.value.label}」的合格缓释物字典还原为默认的 ${data.value.defaultTypes.length} 类，` +
-    "当前字典会被替换。是否继续？"
+async function restoreDefault() {
+  const ok = await askConfirm(
+    "把「" + product.value.label + "」的合格缓释物字典还原为默认的 " + data.value.defaultTypes.length + " 类，当前字典会被替换。",
+    { title: "还原字典", confirmText: "还原", danger: true }
   );
   if (!ok) return;
   draftTypes.value = data.value.defaultTypes.map((type) => ({ ...type }));
@@ -227,14 +238,19 @@ async function commitTypes() {
   return persist(`「${product.value.label}」的合格缓释物字典已保存到 crm_eligible_type。`);
 }
 
-function discardTypes() {
+async function discardTypes() {
   const item = product.value;
   if (!item) return;
   if (!dirtyTypes.value) {
     pageMessage.value = "当前没有未保存的改动。";
     return;
   }
-  if (!window.confirm(`将放弃「${item.label}」未保存的字典改动，恢复为上次保存的内容。是否继续？`)) return;
+  const ok = await askConfirm("将放弃「" + item.label + "」未保存的字典改动，恢复为上次保存的内容。", {
+    title: "放弃改动",
+    confirmText: "放弃",
+    danger: true
+  });
+  if (!ok) return;
   resetDraft(item);
   pageError.value = "";
   pageMessage.value = "已重置为上次保存的内容。";

@@ -122,12 +122,15 @@
   background: rgba(15, 23, 42, .45); backdrop-filter: blur(2px);
   display: grid; place-items: center; padding: 20px 14px;
 }
+.modal-backdrop.front { z-index: 1100; }
 .modal-dialog {
   width: min(640px, 100%); max-height: min(88vh, 820px);
   display: flex; flex-direction: column;
   background: #fff; border: 1px solid var(--border); border-radius: 16px;
   box-shadow: 0 24px 64px rgba(15, 23, 42, .22); overflow: hidden;
 }
+.modal-dialog.confirm { width: min(420px, 100%); }
+.modal-dialog.confirm:focus { outline: none; }
 .modal-dialog.wide { width: min(760px, 100%); }
 .modal-dialog.xl { width: min(920px, 100%); max-height: min(92vh, 900px); }
 .modal-head {
@@ -148,6 +151,8 @@
   display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap;
   padding: 12px 18px; border-top: 1px solid var(--border); background: #fbfcfd;
 }
+.modal-foot .btn.danger { color: #b4334a; border-color: #f0c9cf; background: #fff; }
+.modal-foot .btn.danger:hover { background: #fdecee; color: #b4334a; border-color: #e7b3ba; }
 .field-methods {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; margin-bottom: 14px;
 }
@@ -176,6 +181,7 @@
 .src-tag.local { background: #f1f5f9; color: #475569; }
 
 .upload-box {
+  display: block;
   border: 1.5px dashed #c5d0dc; border-radius: var(--radius); padding: 32px 20px; text-align: center;
   background: #f8fafc; cursor: pointer; margin-bottom: 14px; transition: border-color .12s, background .12s;
 }

@@ -302,6 +302,7 @@ CREATE TABLE measure_batch (
   rwa DECIMAL(20, 2) NOT NULL DEFAULT 0,
   created_at VARCHAR(32) NOT NULL,
   status VARCHAR(20) NOT NULL,
+  rules_json JSON NULL,
   KEY idx_batch_date (base_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

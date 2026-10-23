@@ -6,23 +6,10 @@ export const NAV = [
     items: [
       { label: "监管规则版本", path: "/versions" },
       { label: "监管条款库", path: "/clauses" },
-      { label: "产品标准字段", path: "/fields" }
-    ]
-  },
-  { id: "class", label: "暴露分类规则", path: "/tree" },
-  {
-    id: "ead",
-    label: "EAD 计算规则",
-    items: [
+      { label: "产品标准字段", path: "/fields" },
+      { label: "暴露分类规则", path: "/tree" },
       { label: "EAD 计算规则", path: "/ead" },
-      { label: "转换系数", path: "/ccf" }
-    ]
-  },
-  {
-    id: "crm",
-    label: "信用风险缓释",
-    items: [
-      { label: "信用风险缓释配置", path: "/crm-config" }
+      { label: "信用风险缓释", path: "/crm-config" }
     ]
   },
   {

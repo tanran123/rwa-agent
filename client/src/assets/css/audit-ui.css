@@ -135,6 +135,9 @@
 #auditBody table.tbl th.sortable, .drawer table.tbl th.sortable, .modal table.tbl th.sortable{ cursor: pointer; user-select: none; }
 #auditBody table.tbl th.sortable:hover, .drawer table.tbl th.sortable:hover, .modal table.tbl th.sortable:hover{ color: var(--brand); }
 #auditBody table.tbl th.num, .drawer table.tbl th.num, .modal table.tbl th.num, #auditBody table.tbl td.num, .drawer table.tbl td.num, .modal table.tbl td.num{ text-align: right; font-variant-numeric: tabular-nums; }
+#auditBody table.tbl.cols-center th, #auditBody table.tbl.cols-center td,
+.drawer table.tbl.cols-center th, .drawer table.tbl.cols-center td,
+.modal table.tbl.cols-center th, .modal table.tbl.cols-center td{ text-align: center; }
 #auditBody table.tbl td, .drawer table.tbl td, .modal table.tbl td{
   padding: 12px 14px; border-bottom: 1px solid #eef2f6;
   vertical-align: middle; color: var(--ink); line-height: 1.55;

@@ -19,6 +19,8 @@ export const saveExposureTree = (body) => request.post('/exposure-tree/save', bo
 
 export const copyExposureTree = (label) => request.post('/exposure-tree/copy', { label })
 
+export const deleteExposureTree = (name) => request.post('/exposure-tree/delete', { name })
+
 export const fetchExposureChat = (name = '') =>
   request.get('/exposure-tree/chat', { params: name ? { name } : {} })
 

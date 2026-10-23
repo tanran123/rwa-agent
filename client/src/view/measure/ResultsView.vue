@@ -1,10 +1,15 @@
 <script setup>
 import { ref } from "vue";
-import { fetchMeasure } from "@/api/batch";
+import { useRoute } from "vue-router";
+import { fetchBatch, fetchMeasure } from "@/api/batch";
 import AsyncView from "@/components/AsyncView.vue";
 import Drawer from "@/components/Drawer.vue";
 
+const route = useRoute();
 const product = ref("");
+function loadMeasure() {
+  return route.query.batch ? fetchBatch(String(route.query.batch)) : fetchMeasure();
+}
 const klass = ref("");
 const status = ref("");
 const word = ref("");
@@ -47,13 +52,13 @@ const classesOf = (data) => [...new Set((data.results || []).map((row) => row.ex
 </script>
 
 <template>
-  <AsyncView :load="fetchMeasure">
+  <AsyncView :load="loadMeasure">
     <template #default="{ data }">
       <div class="grid c4" style="margin-bottom: 14px">
         <div class="kpi accent">
           <div class="k-label">债项总数</div>
           <div class="k-value">{{ data.summary.total }}</div>
-          <div class="k-foot">BATCH-AUTO-MO-01 · MO-SA-2026.1</div>
+          <div class="k-foot">{{ data.batchId || "BATCH-AUTO-MO-01" }} · {{ data.version || "MO-SA-2026.1" }}</div>
         </div>
         <div class="kpi">
           <div class="k-label">EAD 合计</div>
@@ -160,6 +165,7 @@ const classesOf = (data) => [...new Set((data.results || []).map((row) => row.ex
                 <div class="k">命中规则</div><div class="v mono">{{ picked.matchedRule || "—" }}</div>
                 <div class="k">表内 / 表外 EAD</div><div class="v">{{ money(picked.onEad) }} / {{ money(picked.offEad) }}</div>
                 <div class="k">EAD 公式</div><div class="v">{{ picked.eadFormula || "—" }}</div>
+                <div class="k">信用风险缓释</div><div class="v">{{ picked.crm && picked.crm.note ? picked.crm.note : "—" }}</div>
                 <div class="k">监管依据</div><div class="v">{{ picked.reference ? (picked.reference.doc || "") + " " + (picked.reference.clause || "") : "—" }}</div>
               </div>
             </div>

@@ -5,6 +5,7 @@ import { NAV, menuPath } from "@/utils/nav";
 import { useContext } from "@/composables/useContext";
 import SectionTabs from "@/components/SectionTabs.vue";
 import AgentDock from "@/components/AgentDock.vue";
+import ConfirmDialog from "@/components/ConfirmDialog.vue";
 
 const ICONS = {
   home: "M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1z",
@@ -136,6 +137,7 @@ function toggle(id) {
         </header>
         <SectionTabs />
         <AgentDock />
+        <ConfirmDialog />
         <div id="auditBody">
           <p v-if="session.error" class="notice danger">{{ session.error }}先执行 sql 目录里的两个脚本，再启动 Koa。</p>
           <router-view :key="viewKey" />
