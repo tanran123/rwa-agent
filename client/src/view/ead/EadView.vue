@@ -4,6 +4,7 @@ import { checkEadFormula, fetchEadConfig, saveEadConfig, trialEad } from "@/api/
 import { OP_LABELS } from "@/utils/ruleText";
 import AsyncView from "@/components/AsyncView.vue";
 import Drawer from "@/components/Drawer.vue";
+import { askConfirm } from "@/utils/confirm";
 
 const OPS = ["+", "−", "×", "÷", "(", ")"];
 const FNS = ["max(", "min(", "abs(", "round("];
@@ -116,10 +117,13 @@ function insert(item, rule, snippet) {
 }
 
 /* ---------------- 三步配置 ---------------- */
-function setNeeded(item, value) {
+async function setNeeded(item, value) {
   if (item.needed === value) return;
   if (!value && item.rules.length) {
-    const ok = window.confirm(`「${item.label}」当前有 ${item.rules.length} 条规则。标记为无需配置会同时清除这些规则，该产品在计量时不再计算 EAD。是否继续？`);
+    const ok = await askConfirm(
+      "「" + item.label + "」当前有 " + item.rules.length + " 条规则。标记为无需配置会同时清除这些规则，该产品在计量时不再计算 EAD。",
+      { title: "清除规则", confirmText: "继续", danger: true }
+    );
     if (!ok) return;
     item.rules = [];
     item.side = null;
@@ -151,11 +155,14 @@ function blankRule(item) {
   };
 }
 
-function setSide(item, side) {
+async function setSide(item, side) {
   if (item.side === side) return;
   const label = side === "on" ? "表内" : "表外";
   if (item.rules.length) {
-    const ok = window.confirm(`表内与表外 EAD 互斥。切换到${label}会清除当前的 ${item.rules.length} 条规则，并新建一条待配置规则。是否继续？`);
+    const ok = await askConfirm(
+      "表内与表外 EAD 互斥。切换到" + label + "会清除当前的 " + item.rules.length + " 条规则，并新建一条待配置规则。",
+      { title: "切换口径", confirmText: "切换", danger: true }
+    );
     if (!ok) return;
   }
   item.side = side;
@@ -168,9 +175,12 @@ function addRule(item) {
   ping("已新增一条规则，请编写公式并保存");
 }
 
-function removeRule(item, index) {
+async function removeRule(item, index) {
   const rule = item.rules[index];
-  const ok = window.confirm(`将删除「${rule.name}」。若这是该产品唯一的规则，该产品在计量时会因缺少 EAD 规则而报异常。是否继续？`);
+  const ok = await askConfirm(
+    "将删除「" + rule.name + "」。若这是该产品唯一的规则，该产品在计量时会因缺少 EAD 规则而报异常。",
+    { title: "删除规则", confirmText: "删除", danger: true }
+  );
   if (!ok) return;
   item.rules.splice(index, 1);
   ping("规则已删除");

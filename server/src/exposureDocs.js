@@ -121,6 +121,26 @@ async function insertDoc(label, document) {
   );
 }
 
+export async function deleteExposureDoc(body) {
+  const name = String((body && body.name) || "").trim();
+  if (!name) reject("没有这份分类 JSON");
+  const rows = await exposureDocs();
+  const item = rows.find((row) => row.name === name);
+  if (!item) reject("没有这份分类 JSON");
+  if (item.label === "通用") reject("通用页签不能删除");
+  const result = await query(
+    "DELETE FROM exposure_document WHERE name = ? AND seq > 0 AND label <> ?",
+    [name, "通用"]
+  );
+  if (!result.affectedRows) reject("没有这份分类 JSON");
+  const chats = readChats();
+  if (chats[name]) {
+    delete chats[name];
+    writeFileSync(CHAT_FILE, JSON.stringify(chats, null, 2) + "\n");
+  }
+  return { name, label: item.label };
+}
+
 export async function copyExposureDoc(body) {
   const label = String((body && body.label) || "").trim();
   if (!label || /[\\/]/.test(label) || label.includes(".")) reject("页签名不能包含路径");

@@ -174,11 +174,16 @@
 
   /* ---------------- 主流程 ---------------- */
   function measure(loan, ctx) {
-    const { ruleset, eadConfig, detectRules, productOverride } = ctx;
+    const { ruleset, eadConfig, detectRules, productOverride, productById } = ctx;
 
     const stage1 = { name: '产品类型识别', status: 'ok', log: [] };
-    const det = productOverride
+    const picked = productById && productById[loan.id];
+    const det = picked
+      ? { product: picked, basis: '从产品配置中选择', confidence: 'manual' }
+      : productOverride
       ? { product: productOverride, basis: '用户在向导中人工确认/调整的产品类型。', confidence: 'manual' }
+      : loan.productAssigned
+      ? { product: loan.productAssigned, basis: loan.productBasis || '按工作表对应产品', confidence: 'high' }
       : detectProduct(loan, detectRules);
     stage1.product = det.product;
     stage1.basis = det.basis;
@@ -187,42 +192,35 @@
 
     const stage2 = { name: '信用风险暴露分类', status: 'ok', log: [] };
     let cls = null;
-    if (det.product) {
-      const facts = { ...loan.std };
-      // 补齐跨产品通用推导字段
-      if (facts.is_defaulted === 'yes' && facts.provision_ratio == null && num(facts.balance) > 0) {
-        facts.provision_ratio = round4(num(facts.impairment) / num(facts.balance));
-      }
-      facts.instrument_type = facts.instrument_type || 'claim';
-
-      // 若该产品已建立专属规则集，按其字段绑定把产品数据喂进通用规则的字段。
-      // 产品专属规则建立在通用规则之上：绑定只负责字段对接，不新增分类逻辑。
-      const prs = ctx.productRuleset;
-      if (prs && prs.fieldBindings) {
-        Object.entries(prs.fieldBindings).forEach(([ruleField, b]) => {
-          if (!b || !b.confirmed || !b.from) return;
-          if (facts[ruleField] == null && facts[b.from] != null) {
-            facts[ruleField] = facts[b.from];
-          }
-        });
-      }
-
-      cls = E.classify(ruleset, facts);
-      stage2.trace = cls.trace;
-      stage2.result = cls.result;
-      stage2.facts = facts;
-      if (!cls.classified) {
-        stage2.status = 'exception';
-        stage2.error = cls.errors.join('；') || '未命中任何暴露分类规则。';
-      } else if (cls.result.riskWeight == null) {
-        stage2.status = 'exception';
-        stage2.error = `命中「${cls.result.ruleLabel}」但未能确定风险权重。`;
-      }
-      stage2.log = cls.warnings || [];
-    } else {
-      stage2.status = 'skipped';
-      stage2.error = '产品类型未识别，无法执行分类。';
+    const meta = ctx.rulesetByProduct && (ctx.rulesetByProduct[det.product || ""] || ctx.rulesetByProduct[""]);
+    const active = meta ? meta.doc : ruleset;
+    const facts = { ...(loan.std || {}) };
+    if (facts.is_defaulted === 'yes' && facts.provision_ratio == null && num(facts.balance) > 0) {
+      facts.provision_ratio = round4(num(facts.impairment) / num(facts.balance));
     }
+    facts.instrument_type = facts.instrument_type || 'claim';
+    const prs = ctx.productRuleset;
+    if (det.product && prs && prs.fieldBindings) {
+      Object.entries(prs.fieldBindings).forEach(([ruleField, b]) => {
+        if (!b || !b.confirmed || !b.from) return;
+        if (facts[ruleField] == null && facts[b.from] != null) {
+          facts[ruleField] = facts[b.from];
+        }
+      });
+    }
+    delete facts._rating_choices;
+    cls = E.classify(active, facts);
+    stage2.trace = cls.trace;
+    stage2.result = cls.result;
+    stage2.facts = facts;
+    if (!cls.classified) {
+      stage2.status = 'exception';
+      stage2.error = cls.errors.join('；') || '未命中任何暴露分类规则。';
+    } else if (cls.result.riskWeight == null) {
+      stage2.status = 'exception';
+      stage2.error = `命中「${cls.result.ruleLabel}」但未能确定风险权重。`;
+    }
+    stage2.log = cls.warnings || [];
 
     const stage3 = { name: 'EAD 计算', status: 'ok', log: [] };
     let ead = null;
@@ -270,6 +268,7 @@
       product: det.product, productBasis: det.basis, confidence: det.confidence,
       raw: loan.raw, std: loan.std,
       stages: { product: stage1, classify: stage2, ead: stage3, rwa: stage4 },
+      rulesetLabel: meta ? (meta.label || meta.title || "") : "",
       exposureClass: cls && cls.result ? (cls.result.topRuleLabel || cls.result.ruleLabel) : null,
       exposureSubClass: cls && cls.result ? cls.result.subClass : null,
       matchedRule: cls && cls.result ? cls.result.ruleName : null,

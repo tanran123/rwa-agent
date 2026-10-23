@@ -1,10 +1,11 @@
 <script setup>
 import { nextTick, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { copyExposureTree, fetchExposureClass, fetchExposureClasses } from "@/api/exposure";
+import { copyExposureTree, deleteExposureTree, fetchExposureClass, fetchExposureClasses } from "@/api/exposure";
 import { fetchClauses } from "@/api/rule";
 import DecisionChart from "@/components/DecisionChart.vue";
 import RuleDetail from "@/components/RuleDetail.vue";
+import { askConfirm } from "@/utils/confirm";
 
 const route = useRoute();
 const router = useRouter();
@@ -86,6 +87,25 @@ function openTab(item, index) {
   router.push(index === 0 ? "/tree" : "/tree/" + item.name);
 }
 
+async function removeTab(item) {
+  if (!item || item.label === "通用" || loading.value) return;
+  const ok = await askConfirm("删除页签「" + item.label + "」后，这一页的分类规则会从库里去掉。", {
+    title: "删除页签",
+    confirmText: "删除",
+    danger: true
+  });
+  if (!ok) return;
+  addError.value = "";
+  try {
+    await deleteExposureTree(item.name);
+    picked.value = null;
+    const next = current.value === item.name ? "/tree" : "/tree/" + current.value;
+    router.push({ path: next, query: { rev: String(Date.now()) } });
+  } catch (err) {
+    addError.value = err.message || "没有删除";
+  }
+}
+
 function beginAdd() {
   adding.value = true;
   draft.value = "";
@@ -129,7 +149,7 @@ watch(() => (route.params.name || "") + "\n" + (route.query.rev || ""), () => {
         class="section-tab"
         :class="{ active: current === item.name }"
         @click="openTab(item, index)"
->{{ item.label }}</button>
+>{{ item.label }}<span v-if="item.label !== '通用'" class="tab-x" role="button" aria-label="删除" @click.stop="removeTab(item)">×</span></button>
         <button v-if="!adding" type="button" class="section-tab" @click="beginAdd">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
           添加

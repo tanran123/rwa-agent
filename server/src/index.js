@@ -3,12 +3,12 @@ import Router from "@koa/router";
 import cors from "@koa/cors";
 import bodyParser from "koa-bodyparser";
 import { query } from "./db.js";
-import { auditWorkbook, measureDemo } from "./measure.js";
+import { annotatedUpload, applyMeasureChoices, auditWorkbook, classifyUpload, detectMeasureProducts, mapMeasureFields, measureDemo, readMeasureRun, readUploadedWorkbook, saveMeasureRun } from "./measure.js";
 import { paperView, uploadSamples } from "./paper.js";
 import { trialEad } from "./ead.js";
 import { checkEadFormula, readEadConfig, saveEadConfig } from "./eadConfig.js";
 import { readCrmConfig, saveCrmConfig } from "./crmConfig.js";
-import { copyExposureDoc, exposureChat, exposureDoc, exposureDocs, saveExposureChat, saveExposureDoc } from "./exposureDocs.js";
+import { copyExposureDoc, deleteExposureDoc, exposureChat, exposureDoc, exposureDocs, saveExposureChat, saveExposureDoc } from "./exposureDocs.js";
 
 const app = new Koa();
 const router = new Router({ prefix: "/api" });
@@ -323,6 +323,12 @@ router.get("/product-rules", async (ctx) => {
   ctx.body = rows;
 });
 
+router.get("/batches/:id", async (ctx) => {
+  const data = await readMeasureRun(ctx.params.id);
+  if (!data) ctx.throw(404, "没有这个计量批次");
+  ctx.body = data;
+});
+
 router.get("/batches", async (ctx) => {
   const rows = await query("SELECT * FROM measure_batch ORDER BY base_date DESC, id DESC");
   ctx.body = rows.map(batch);
@@ -362,6 +368,37 @@ router.post("/batches", async (ctx) => {
 
 router.get("/measure", async (ctx) => {
   ctx.body = await measureDemo();
+});
+
+router.post("/measure/runs", async (ctx) => {
+  ctx.body = await saveMeasureRun(ctx.request.body || {});
+});
+
+router.post("/measure/workbook", async (ctx) => {
+  ctx.body = await readUploadedWorkbook(ctx.request.body || {});
+});
+
+router.get("/measure/workbook.xlsx", async (ctx) => {
+  const file = annotatedUpload(ctx.query.uploadId);
+  ctx.set("content-type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  ctx.set("content-disposition", "attachment; filename*=UTF-8''" + encodeURIComponent(file.filename));
+  ctx.body = file.buffer;
+});
+
+router.post("/measure/apply", async (ctx) => {
+  ctx.body = await applyMeasureChoices(ctx.request.body || {});
+});
+
+router.post("/measure/map", async (ctx) => {
+  ctx.body = await mapMeasureFields(ctx.request.body || {});
+});
+
+router.post("/measure/products", async (ctx) => {
+  ctx.body = await detectMeasureProducts(ctx.request.body || {});
+});
+
+router.post("/measure/classify", async (ctx) => {
+  ctx.body = await classifyUpload((ctx.request.body || {}).uploadId);
 });
 
 router.get("/working-paper", async (ctx) => {
@@ -429,6 +466,10 @@ router.post("/exposure-tree/copy", async (ctx) => {
   ctx.body = await copyExposureDoc(ctx.request.body || {});
 });
 
+router.post("/exposure-tree/delete", async (ctx) => {
+  ctx.body = await deleteExposureDoc(ctx.request.body || {});
+});
+
 router.post("/exposure-tree/save", async (ctx) => {
   ctx.body = await saveExposureDoc(ctx.request.body || {});
 });
@@ -474,7 +515,7 @@ router.post("/rules/chat", async (ctx) => {
 });
 
 app.use(cors());
-app.use(bodyParser());
+app.use(bodyParser({ jsonLimit: "32mb" }));
 app.use(async (ctx, next) => {
   try {
     await next();
