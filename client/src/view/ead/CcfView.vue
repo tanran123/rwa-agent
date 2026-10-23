@@ -1,6 +1,7 @@
 <script setup>
 import { ref } from "vue";
-import { createCcf, deleteCcf, fetchCcf, saveCcf } from "@/api/ead";
+import { createCcf, deleteCcf, deleteCcfs, fetchCcf, saveCcf } from "@/api/ead";
+import { runBatch, useBatchNote, usePick } from "@/composables/usePick";
 import AsyncView from "@/components/AsyncView.vue";
 import RuleForm from "@/components/RuleForm.vue";
 import { askConfirm } from "@/utils/confirm";
@@ -9,6 +10,8 @@ const form = ref(null);
 const error = ref("");
 const saving = ref(false);
 const view = ref(null);
+const pick = usePick();
+const batch = useBatchNote();
 
 function create() {
   error.value = "";
@@ -78,9 +81,15 @@ async function remove() {
     saving.value = false;
   }
 }
+
+async function removeSelected(rows) {
+  const result = await runBatch(pick, rows, "id", deleteCcfs, batch, form, (row) => row.id);
+  if (result) await refresh();
+}
 </script>
 
 <template>
+  <p v-if="batch.state.text" class="notice" :class="batch.state.kind">{{ batch.state.text }}</p>
   <AsyncView ref="view" :load="fetchCcf">
     <template #default="{ data }">
       <div class="panel">
@@ -88,13 +97,20 @@ async function remove() {
           <h3>信用转换系数</h3>
           <span class="sub">{{ data.length }} 条</span>
           <span class="spacer"></span>
+          <button type="button" class="btn sm danger" :disabled="!pick.visibleIds(data).length" @click="removeSelected(data)">删除所选</button>
           <button type="button" class="btn sm primary" @click="create">新建</button>
         </div>
         <div class="panel-body tight">
           <table class="tbl compact">
-            <thead><tr><th>类型</th><th>条件</th><th>系数</th><th>优先级</th></tr></thead>
+            <thead>
+              <tr>
+                <th class="pick" @click.stop><input type="checkbox" :checked="pick.allOn(data)" @change="pick.toggleAll(data)" /></th>
+                <th>类型</th><th>条件</th><th>系数</th><th>优先级</th>
+              </tr>
+            </thead>
             <tbody>
               <tr v-for="row in data" :key="row.id" class="clickable" @click="edit(row)">
+                <td class="pick" @click.stop><input type="checkbox" :checked="pick.on(row.id)" @change="pick.toggle(row.id)" /></td>
                 <td>{{ row.type }}</td>
                 <td>{{ row.cond }}</td>
                 <td class="strong">{{ row.ccf }}</td>

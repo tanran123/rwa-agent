@@ -1,6 +1,7 @@
 <script setup>
 import { ref } from "vue";
-import { createProductRule, deleteProductRule, fetchProductRules, saveProductRule } from "@/api/exposure";
+import { createProductRule, deleteProductRule, deleteProductRules, fetchProductRules, saveProductRule } from "@/api/exposure";
+import { runBatch, useBatchNote, usePick } from "@/composables/usePick";
 import { fetchProducts } from "@/api/product";
 import AsyncView from "@/components/AsyncView.vue";
 import RuleForm from "@/components/RuleForm.vue";
@@ -11,6 +12,8 @@ const form = ref(null);
 const error = ref("");
 const saving = ref(false);
 const view = ref(null);
+const pick = usePick();
+const batch = useBatchNote();
 const load = () => Promise.all([fetchProducts(), fetchProductRules()]);
 const labels = { draft: "草稿", reviewing: "审核中", published: "已发布", superseded: "已被取代", disabled: "已停用" };
 
@@ -102,9 +105,15 @@ async function remove() {
     saving.value = false;
   }
 }
+
+async function removeSelected(rows) {
+  const result = await runBatch(pick, rows, "id", deleteProductRules, batch, form, (row) => row.id);
+  if (result) await refresh();
+}
 </script>
 
 <template>
+  <p v-if="batch.state.text" class="notice" :class="batch.state.kind">{{ batch.state.text }}</p>
   <AsyncView ref="view" :load="load">
     <template #default="{ data }">
       <div class="panel">
@@ -140,12 +149,20 @@ async function remove() {
         <div class="panel-head">
           <h3>{{ (data[0].find((item) => item.code === code) || {}).label }}</h3>
           <span class="sub">{{ countFor(data[1], code) }} 条</span>
+          <span class="spacer"></span>
+          <button type="button" class="btn sm danger" :disabled="!pick.visibleIds(rulesOf(data[1])).length" @click="removeSelected(rulesOf(data[1]))">删除所选</button>
         </div>
         <div class="panel-body tight">
           <table class="tbl compact">
-            <thead><tr><th>顺序</th><th>规则</th><th>条件</th><th>归入</th><th>权重</th><th>条款</th><th>状态</th></tr></thead>
+            <thead>
+              <tr>
+                <th class="pick" @click.stop><input type="checkbox" :checked="pick.allOn(rulesOf(data[1]))" @change="pick.toggleAll(rulesOf(data[1]))" /></th>
+                <th>顺序</th><th>规则</th><th>条件</th><th>归入</th><th>权重</th><th>条款</th><th>状态</th>
+              </tr>
+            </thead>
             <tbody>
               <tr v-for="row in rulesOf(data[1])" :key="row.id" class="clickable" @click="edit(row)">
+                <td class="pick" @click.stop><input type="checkbox" :checked="pick.on(row.id)" @change="pick.toggle(row.id)" /></td>
                 <td>{{ row.priority }}</td>
                 <td>{{ row.label }}<div class="mono dim">{{ row.name }}</div></td>
                 <td>{{ row.when }}</td>

@@ -1,7 +1,8 @@
 <script setup>
 import { ref } from "vue";
-import { createClause, deleteClause, fetchClauses, saveClause } from "@/api/rule";
+import { createClause, deleteClause, deleteClauses, fetchClauses, saveClause } from "@/api/rule";
 import { useContext } from "@/composables/useContext";
+import { runBatch, useBatchNote, usePick } from "@/composables/usePick";
 import AsyncView from "@/components/AsyncView.vue";
 import RuleForm from "@/components/RuleForm.vue";
 import { askConfirm } from "@/utils/confirm";
@@ -13,6 +14,8 @@ const form = ref(null);
 const error = ref("");
 const saving = ref(false);
 const view = ref(null);
+const pick = usePick();
+const batch = useBatchNote();
 const load = () => fetchClauses({ jurisdiction: jur.value, q: q.value });
 
 function lines(value) {
@@ -106,9 +109,15 @@ async function remove() {
     saving.value = false;
   }
 }
+
+async function removeSelected(rows) {
+  const result = await runBatch(pick, rows, "id", deleteClauses, batch, form, (row) => row.id);
+  if (result) await refresh();
+}
 </script>
 
 <template>
+  <p v-if="batch.state.text" class="notice" :class="batch.state.kind">{{ batch.state.text }}</p>
   <div class="inline-fields" style="margin-bottom: 12px">
     <select v-model="jur">
       <option value="">全部地区</option>
@@ -120,12 +129,23 @@ async function remove() {
   <AsyncView ref="view" :key="jur + q" :load="load">
     <template #default="{ data }">
       <div class="panel">
-        <div class="panel-head"><h3>监管条款</h3><span class="sub">{{ data.length }} 条</span></div>
+        <div class="panel-head">
+          <h3>监管条款</h3>
+          <span class="sub">{{ data.length }} 条</span>
+          <span class="spacer"></span>
+          <button type="button" class="btn sm danger" :disabled="!pick.visibleIds(data).length" @click="removeSelected(data)">删除所选</button>
+        </div>
         <div class="panel-body tight">
           <table class="tbl compact">
-            <thead><tr><th>条款</th><th>标题</th><th>地区</th><th>被引用</th></tr></thead>
+            <thead>
+              <tr>
+                <th class="pick" @click.stop><input type="checkbox" :checked="pick.allOn(data)" @change="pick.toggleAll(data)" /></th>
+                <th>条款</th><th>标题</th><th>地区</th><th>被引用</th>
+              </tr>
+            </thead>
             <tbody>
               <tr v-for="row in data" :key="row.id" class="clickable" @click="edit(row)">
+                <td class="pick" @click.stop><input type="checkbox" :checked="pick.on(row.id)" @change="pick.toggle(row.id)" /></td>
                 <td class="mono">{{ row.clause }}</td>
                 <td>{{ row.title }}</td>
                 <td>{{ row.jurisdiction }}</td>

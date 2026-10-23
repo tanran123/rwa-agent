@@ -1,8 +1,9 @@
 <script setup>
 import { ref } from "vue";
 import {
-  createFieldMapping, deleteFieldMapping, fetchFieldMappings, fetchProducts, saveFieldMapping
+  createFieldMapping, deleteFieldMapping, deleteFieldMappings, fetchFieldMappings, fetchProducts, saveFieldMapping
 } from "@/api/product";
+import { runBatch, useBatchNote, usePick } from "@/composables/usePick";
 import AsyncView from "@/components/AsyncView.vue";
 import RuleForm from "@/components/RuleForm.vue";
 import { askConfirm } from "@/utils/confirm";
@@ -11,6 +12,8 @@ const form = ref(null);
 const error = ref("");
 const saving = ref(false);
 const view = ref(null);
+const pick = usePick();
+const batch = useBatchNote();
 const load = () => Promise.all([fetchProducts(), fetchFieldMappings()]);
 const statusClass = { ok: "ok", warn: "warn", missing: "danger" };
 
@@ -93,9 +96,15 @@ async function remove() {
     saving.value = false;
   }
 }
+
+async function removeSelected(rows) {
+  const result = await runBatch(pick, rows, "id", deleteFieldMappings, batch, form, (row) => row.id);
+  if (result) await refresh();
+}
 </script>
 
 <template>
+  <p v-if="batch.state.text" class="notice" :class="batch.state.kind">{{ batch.state.text }}</p>
   <AsyncView ref="view" :load="load">
     <template #default="{ data }">
       <div class="panel">
@@ -103,13 +112,20 @@ async function remove() {
           <h3>源字段映射</h3>
           <span class="sub">{{ data[1].length }} 条</span>
           <span class="spacer"></span>
+          <button type="button" class="btn sm danger" :disabled="!pick.visibleIds(data[1]).length" @click="removeSelected(data[1])">删除所选</button>
           <button type="button" class="btn sm primary" @click="create(data[0])">新建</button>
         </div>
         <div class="panel-body tight">
           <table class="tbl compact">
-            <thead><tr><th>产品</th><th>标准字段</th><th>源系统</th><th>源字段</th><th>转换</th><th>状态</th></tr></thead>
+            <thead>
+              <tr>
+                <th class="pick" @click.stop><input type="checkbox" :checked="pick.allOn(data[1])" @change="pick.toggleAll(data[1])" /></th>
+                <th>产品</th><th>标准字段</th><th>源系统</th><th>源字段</th><th>转换</th><th>状态</th>
+              </tr>
+            </thead>
             <tbody>
               <tr v-for="row in data[1]" :key="row.id" class="clickable" @click="edit(row)">
+                <td class="pick" @click.stop><input type="checkbox" :checked="pick.on(row.id)" @change="pick.toggle(row.id)" /></td>
                 <td>{{ row.product }}</td>
                 <td>{{ row.stdField }}<div class="mono dim">{{ row.stdCode }}</div></td>
                 <td>{{ row.srcSystem }}</td>

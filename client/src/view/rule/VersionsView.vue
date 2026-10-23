@@ -1,7 +1,8 @@
 <script setup>
 import { ref } from "vue";
-import { createRuleVersion, deleteRuleVersion, fetchRuleVersions, saveRuleVersion } from "@/api/rule";
+import { createRuleVersion, deleteRuleVersion, deleteRuleVersions, fetchRuleVersions, saveRuleVersion } from "@/api/rule";
 import { useContext } from "@/composables/useContext";
+import { runBatch, useBatchNote, usePick } from "@/composables/usePick";
 import AsyncView from "@/components/AsyncView.vue";
 import RuleForm from "@/components/RuleForm.vue";
 import { askConfirm } from "@/utils/confirm";
@@ -14,6 +15,8 @@ const form = ref(null);
 const error = ref("");
 const saving = ref(false);
 const view = ref(null);
+const pick = usePick();
+const batch = useBatchNote();
 const load = () => fetchRuleVersions(jur.value);
 const labels = { draft: "草稿", reviewing: "审核中", published: "已发布", superseded: "已被取代", disabled: "已停用" };
 const tones = { draft: "muted", reviewing: "warn", published: "ok", superseded: "muted", disabled: "danger" };
@@ -121,6 +124,11 @@ async function remove() {
   }
 }
 
+async function removeSelected(rows) {
+  const result = await runBatch(pick, rows, "id", deleteRuleVersions, batch, form, (row) => row.id);
+  if (result) await refresh();
+}
+
 function openVersion(row) {
   session.versionId = row.id;
   session.jurisdiction = row.jurisdiction;
@@ -128,6 +136,7 @@ function openVersion(row) {
 </script>
 
 <template>
+  <p v-if="batch.state.text" class="notice" :class="batch.state.kind">{{ batch.state.text }}</p>
   <AsyncView ref="view" :key="jur" :load="load">
     <template #default="{ data }">
       <div class="panel">
@@ -135,6 +144,7 @@ function openVersion(row) {
           <h3>监管规则版本列表</h3>
           <span class="sub">共 {{ data.length }} 个版本</span>
           <span class="spacer"></span>
+          <button type="button" class="btn sm danger" :disabled="!pick.visibleIds(shown(data)).length" @click="removeSelected(shown(data))">删除所选</button>
           <button type="button" class="btn sm primary" @click="create">新建</button>
         </div>
         <div class="panel-body">
@@ -157,10 +167,14 @@ function openVersion(row) {
           </div>
           <table class="tbl compact">
             <thead>
-              <tr><th>司法管辖区</th><th>版本编号</th><th>规则名称</th><th>规则类型</th><th>生效日期</th><th>适用机构</th><th>状态</th><th>维护人</th><th>操作</th></tr>
+              <tr>
+                <th class="pick" @click.stop><input type="checkbox" :checked="pick.allOn(shown(data))" @change="pick.toggleAll(shown(data))" /></th>
+                <th>司法管辖区</th><th>版本编号</th><th>规则名称</th><th>规则类型</th><th>生效日期</th><th>适用机构</th><th>状态</th><th>维护人</th><th>操作</th>
+              </tr>
             </thead>
             <tbody>
               <tr v-for="row in shown(data)" :key="row.id" class="clickable" @click="edit(row)">
+                <td class="pick" @click.stop><input type="checkbox" :checked="pick.on(row.id)" @change="pick.toggle(row.id)" /></td>
                 <td>{{ jurLabel(row.jurisdiction) }}</td>
                 <td class="mono">{{ row.version }}</td>
                 <td>{{ row.name }}</td>

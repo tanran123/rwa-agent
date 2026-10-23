@@ -1,9 +1,10 @@
 <script setup>
 import { ref } from "vue";
 import {
-  createBankGrade, createMoWeight, createWeightRule, deleteBankGrade, deleteMoWeight, deleteWeightRule,
-  fetchWeights, saveBankGrade, saveMoWeight, saveWeightRule
+  createBankGrade, createMoWeight, createWeightRule, deleteBankGrade, deleteBankGrades, deleteMoWeight, deleteMoWeights,
+  deleteWeightRule, deleteWeightRules, fetchWeights, saveBankGrade, saveMoWeight, saveWeightRule
 } from "@/api/exposure";
+import { runBatch, useBatchNote, usePick } from "@/composables/usePick";
 import AsyncView from "@/components/AsyncView.vue";
 import RuleForm from "@/components/RuleForm.vue";
 import { askConfirm } from "@/utils/confirm";
@@ -13,10 +14,18 @@ const form = ref(null);
 const error = ref("");
 const saving = ref(false);
 const view = ref(null);
+const rulePick = usePick();
+const gradePick = usePick();
+const moPick = usePick();
+const batch = useBatchNote();
 const titles = { rule: "权重规则", grade: "第一档银行评级", mo: "澳门评级档" };
 
 function lines(value) {
   return String(value || "").split("\n").map((item) => item.trim()).filter(Boolean);
+}
+
+function shownRules(data) {
+  return (data.rules || []).filter((item) => !klass.value || item.cls === klass.value);
 }
 
 function create(kind) {
@@ -122,9 +131,25 @@ async function remove() {
     saving.value = false;
   }
 }
+
+async function removeRules(rows) {
+  const result = await runBatch(rulePick, rows, "id", deleteWeightRules, batch, form, (row) => row.kind === "rule" ? row.id : "");
+  if (result) await refresh();
+}
+
+async function removeGrades(rows) {
+  const result = await runBatch(gradePick, rows, "id", deleteBankGrades, batch, form, (row) => row.kind === "grade" ? row.id : "");
+  if (result) await refresh();
+}
+
+async function removeMo(rows) {
+  const result = await runBatch(moPick, rows, "id", deleteMoWeights, batch, form, (row) => row.kind === "mo" ? row.id : "");
+  if (result) await refresh();
+}
 </script>
 
 <template>
+  <p v-if="batch.state.text" class="notice" :class="batch.state.kind">{{ batch.state.text }}</p>
   <AsyncView ref="view" :load="fetchWeights">
     <template #default="{ data }">
       <div class="inline-fields" style="margin-bottom: 12px">
@@ -137,13 +162,20 @@ async function remove() {
         <div class="panel-head">
           <h3>权重规则</h3>
           <span class="spacer"></span>
+          <button type="button" class="btn sm danger" :disabled="!rulePick.visibleIds(shownRules(data)).length" @click="removeRules(shownRules(data))">删除所选</button>
           <button type="button" class="btn sm primary" @click="create('rule')">新建</button>
         </div>
         <div class="panel-body tight">
           <table class="tbl compact">
-            <thead><tr><th>大类</th><th>条件</th><th>权重</th><th>档</th><th>依据</th></tr></thead>
+            <thead>
+              <tr>
+                <th class="pick" @click.stop><input type="checkbox" :checked="rulePick.allOn(shownRules(data))" @change="rulePick.toggleAll(shownRules(data))" /></th>
+                <th>大类</th><th>条件</th><th>权重</th><th>档</th><th>依据</th>
+              </tr>
+            </thead>
             <tbody>
-              <tr v-for="row in data.rules.filter((item) => !klass || item.cls === klass)" :key="row.id" class="clickable" @click="editRule(row)">
+              <tr v-for="row in shownRules(data)" :key="row.id" class="clickable" @click="editRule(row)">
+                <td class="pick" @click.stop><input type="checkbox" :checked="rulePick.on(row.id)" @change="rulePick.toggle(row.id)" /></td>
                 <td>{{ row.cls }}</td>
                 <td>{{ row.cond }}</td>
                 <td class="strong">{{ row.rw }}</td>
@@ -159,13 +191,20 @@ async function remove() {
           <div class="panel-head">
             <h3>第一档银行评级</h3>
             <span class="spacer"></span>
+            <button type="button" class="btn sm danger" :disabled="!gradePick.visibleIds(data.grades).length" @click="removeGrades(data.grades)">删除所选</button>
             <button type="button" class="btn sm primary" @click="create('grade')">新建</button>
           </div>
           <div class="panel-body tight">
             <table class="tbl compact">
-              <thead><tr><th>情形</th><th>A+</th><th>A</th><th>B</th><th>C</th></tr></thead>
+              <thead>
+                <tr>
+                  <th class="pick" @click.stop><input type="checkbox" :checked="gradePick.allOn(data.grades)" @change="gradePick.toggleAll(data.grades)" /></th>
+                  <th>情形</th><th>A+</th><th>A</th><th>B</th><th>C</th>
+                </tr>
+              </thead>
               <tbody>
                 <tr v-for="row in data.grades" :key="row.id" class="clickable" @click="editGrade(row)">
+                  <td class="pick" @click.stop><input type="checkbox" :checked="gradePick.on(row.id)" @change="gradePick.toggle(row.id)" /></td>
                   <td>{{ row.label }}</td>
                   <td v-for="(weight, index) in row.weights" :key="index">{{ weight }}</td>
                 </tr>
@@ -177,13 +216,20 @@ async function remove() {
           <div class="panel-head">
             <h3>澳门评级档</h3>
             <span class="spacer"></span>
+            <button type="button" class="btn sm danger" :disabled="!moPick.visibleIds(data.mo).length" @click="removeMo(data.mo)">删除所选</button>
             <button type="button" class="btn sm primary" @click="create('mo')">新建</button>
           </div>
           <div class="panel-body tight">
             <table class="tbl compact">
-              <thead><tr><th>类别</th><th>权重</th></tr></thead>
+              <thead>
+                <tr>
+                  <th class="pick" @click.stop><input type="checkbox" :checked="moPick.allOn(data.mo)" @change="moPick.toggleAll(data.mo)" /></th>
+                  <th>类别</th><th>权重</th>
+                </tr>
+              </thead>
               <tbody>
                 <tr v-for="row in data.mo" :key="row.id" class="clickable" @click="editMo(row)">
+                  <td class="pick" @click.stop><input type="checkbox" :checked="moPick.on(row.id)" @change="moPick.toggle(row.id)" /></td>
                   <td>{{ row.bucket }}</td>
                   <td>{{ row.weights.join(" / ") }}</td>
                 </tr>

@@ -10,6 +10,8 @@ export const saveProduct = (code, body) => request.put('/products/' + codeOf(cod
 
 export const deleteProduct = (code) => request.delete('/products/' + codeOf(code))
 
+export const deleteProducts = (ids) => request.post('/products/batch-delete', { ids })
+
 export const fetchProductFields = (code) => request.get('/products/' + codeOf(code) + '/fields')
 
 export const createProductField = (code, body) => request.post('/products/' + codeOf(code) + '/fields', body)
@@ -20,6 +22,9 @@ export const saveProductField = (code, fieldCode, body) =>
 export const deleteProductField = (code, fieldCode) =>
   request.delete('/products/' + codeOf(code) + '/fields/' + codeOf(fieldCode))
 
+export const deleteProductFields = (code, ids) =>
+  request.post('/products/' + codeOf(code) + '/fields/batch-delete', { ids })
+
 export const fetchFieldMappings = (product = '') =>
   request.get('/field-mappings', { params: product ? { product } : {} })
 
@@ -28,3 +33,5 @@ export const createFieldMapping = (body) => request.post('/field-mappings', body
 export const saveFieldMapping = (id, body) => request.put('/field-mappings/' + encodeURIComponent(id), body)
 
 export const deleteFieldMapping = (id) => request.delete('/field-mappings/' + encodeURIComponent(id))
+
+export const deleteFieldMappings = (ids) => request.post('/field-mappings/batch-delete', { ids })

@@ -937,3 +937,48 @@ export async function deleteExposureRule(id) {
   const ret = await query("DELETE FROM product_exposure_rule WHERE id = ?", [key]);
   if (!ret.affectedRows) fail(404, "专属规则不存在");
 }
+
+function idList(body) {
+  const raw = body && body.ids;
+  if (!Array.isArray(raw) || raw.length === 0) fail(400, "请选择要删除的记录");
+  if (raw.length > 200) fail(400, "一次最多删除 200 条");
+  const seen = new Set();
+  const ids = [];
+  raw.forEach((item) => {
+    const id = String(item == null ? "" : item).trim();
+    if (!id) fail(400, "编号不能为空");
+    if (seen.has(id)) return;
+    seen.add(id);
+    ids.push(id);
+  });
+  return ids;
+}
+
+async function batchDelete(body, removeOne) {
+  const ids = idList(body);
+  const deleted = [];
+  const blocked = [];
+  for (const id of ids) {
+    try {
+      await removeOne(id);
+      deleted.push(id);
+    } catch (err) {
+      if (err && err.status && err.status < 500) blocked.push({ id, error: err.message });
+      else throw err;
+    }
+  }
+  return { deleted, blocked };
+}
+
+export const deleteRuleVersions = (body) => batchDelete(body, deleteRuleVersion);
+export const deleteClauses = (body) => batchDelete(body, deleteClause);
+export const deleteParams = (body) => batchDelete(body, deleteParam);
+export const deleteProducts = (body) => batchDelete(body, deleteProduct);
+export const deleteFields = (product, body) => batchDelete(body, (code) => deleteField(product, code));
+export const deleteMappings = (body) => batchDelete(body, deleteMapping);
+export const deleteWeightRules = (body) => batchDelete(body, deleteWeightRule);
+export const deleteGrades = (body) => batchDelete(body, deleteGrade);
+export const deleteMoWeights = (body) => batchDelete(body, deleteMoWeight);
+export const deleteCcfs = (body) => batchDelete(body, deleteCcf);
+export const deleteCrmRules = (body) => batchDelete(body, deleteCrmRule);
+export const deleteExposureRules = (body) => batchDelete(body, deleteExposureRule);

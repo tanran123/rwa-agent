@@ -1,10 +1,11 @@
 <script setup>
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import {
-  createProduct, createProductField, deleteProduct, deleteProductField,
+  createProduct, createProductField, deleteProduct, deleteProductField, deleteProductFields, deleteProducts,
   fetchProductFields, fetchProducts, saveProduct, saveProductField
 } from "@/api/product";
 import { useContext } from "@/composables/useContext";
+import { runBatch, useBatchNote, usePick } from "@/composables/usePick";
 import AsyncView from "@/components/AsyncView.vue";
 import RuleForm from "@/components/RuleForm.vue";
 import { askConfirm } from "@/utils/confirm";
@@ -17,6 +18,11 @@ const error = ref("");
 const saving = ref(false);
 const productsView = ref(null);
 const fieldsView = ref(null);
+const productPick = usePick();
+const fieldPick = usePick();
+const batch = useBatchNote();
+
+watch(code, () => fieldPick.clear());
 
 const loadProducts = async () => {
   const rows = await fetchProducts();
@@ -212,12 +218,28 @@ async function removeField() {
     saving.value = false;
   }
 }
+
+async function removeProducts(rows) {
+  const result = await runBatch(productPick, rows, "code", deleteProducts, batch, productForm, (row) => row.code);
+  if (!result) return;
+  if (result.deleted.indexOf(code.value) >= 0) fieldForm.value = null;
+  if (productsView.value) await productsView.value.reload();
+}
+
+async function removeFields(rows) {
+  const result = await runBatch(fieldPick, rows, "code", (ids) => deleteProductFields(code.value, ids), batch, fieldForm, (row) => row.code);
+  if (!result) return;
+  if (fieldsView.value) await fieldsView.value.reload();
+  if (productsView.value) await productsView.value.reload();
+}
 </script>
 
 <template>
+  <p v-if="batch.state.text" class="notice" :class="batch.state.kind">{{ batch.state.text }}</p>
   <AsyncView ref="productsView" :load="loadProducts">
     <template #default="{ data }">
       <div class="field-actions">
+        <button type="button" class="btn sm danger" :disabled="!productPick.visibleIds(data, 'code').length" @click="removeProducts(data)">删除所选</button>
         <button type="button" class="btn sm primary" @click="createProductRow">新建产品</button>
       </div>
       <div class="grid c4" style="margin-bottom: 14px">
@@ -229,6 +251,7 @@ async function removeField() {
           @click="code = item.code"
         >
           <div class="fh">
+            <input type="checkbox" :checked="productPick.on(item.code)" @click.stop @change="productPick.toggle(item.code)" />
             <span
               :style="{
                 width: '22px', height: '22px', borderRadius: '5px', background: item.color, color: '#fff',
@@ -257,15 +280,20 @@ async function removeField() {
               <h3>{{ current(data).label }} · 标准字段配置</h3>
               <span class="sub">{{ fields.length }} 个字段，其中 {{ fields.filter((row) => row.required).length }} 个必填 · 关联监管规则版本 {{ current(data).ruleVersion }}</span>
               <span class="spacer"></span>
+              <button type="button" class="btn sm danger" :disabled="!fieldPick.visibleIds(fields, 'code').length" @click="removeFields(fields)">删除所选</button>
               <button type="button" class="btn sm primary" :disabled="!code" @click="createFieldRow">新建字段</button>
             </div>
             <div class="panel-body tight">
               <table class="tbl compact">
                 <thead>
-                  <tr><th>字段编码</th><th>标准字段名称</th><th>对应规则字段</th><th>数据类型</th><th>必填</th><th>来源系统</th><th>来源字段</th><th>转换规则</th><th>被引用</th></tr>
+                  <tr>
+                    <th class="pick" @click.stop><input type="checkbox" :checked="fieldPick.allOn(fields, 'code')" @change="fieldPick.toggleAll(fields, 'code')" /></th>
+                    <th>字段编码</th><th>标准字段名称</th><th>对应规则字段</th><th>数据类型</th><th>必填</th><th>来源系统</th><th>来源字段</th><th>转换规则</th><th>被引用</th>
+                  </tr>
                 </thead>
                 <tbody>
                   <tr v-for="row in fields" :key="row.code" class="clickable" @click="editField(row)">
+                    <td class="pick" @click.stop><input type="checkbox" :checked="fieldPick.on(row.code)" @change="fieldPick.toggle(row.code)" /></td>
                     <td class="mono">{{ row.code }}</td>
                     <td>{{ row.name }}</td>
                     <td class="mono">{{ row.stdField || "—" }}</td>

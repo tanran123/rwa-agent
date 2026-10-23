@@ -16,6 +16,7 @@ Vue 3 + Vue Router + Vuex + axios。开发服务把 `/api` 代理到 `http://127
 | `src/utils/nav.js` | 左侧菜单。页签不单列菜单项，用 `PARENT` 指回父菜单。 |
 | `src/store/index.js` | 当前客户、机构、地区、规则版本、基准日。数据来自 `GET /api/bootstrap`。 |
 | `src/composables/useContext.js` | 页面读取和修改上面这份上下文。 |
+| `src/composables/usePick.js` | 规则列表的勾选、全选和批量删除确认。 |
 | `src/api/request.js` | axios 实例。成功时直接返回响应体。 |
 | `src/api/*.js` | 按业务拆开的请求函数。页面只从这里要数据。 |
 | `src/view/` | 一个路由一个 `.vue`。按菜单再分子目录。 |
@@ -65,10 +66,10 @@ Vue 3 + Vue Router + Vuex + axios。开发服务把 `/api` 代理到 `http://127
 | --- | --- |
 | `api/bootstrap.js` | `/bootstrap` |
 | `api/dashboard.js` | `/dashboard` |
-| `api/rule.js` | 版本、条款、参数的读取和增删改 |
-| `api/product.js` | 产品、标准字段、字段映射的读取和增删改 |
-| `api/exposure.js` | 暴露分类页签、单份分类 JSON、权重、缓释、产品规则的读取和增删改，决策树对话的提议、确认写入，以及按产品保存对话 |
-| `api/ead.js` | EAD 计算配置的读取和保存、公式校验、试算、转换系数的读取和增删改 |
+| `api/rule.js` | 版本、条款、参数的读取、增删改和批量删除 |
+| `api/product.js` | 产品、标准字段、字段映射的读取、增删改和批量删除 |
+| `api/exposure.js` | 暴露分类页签、单份分类 JSON、权重、缓释、产品规则的读取、增删改和批量删除，决策树对话的提议、确认写入，以及按产品保存对话 |
+| `api/ead.js` | EAD 计算配置的读取和保存、公式校验、试算、转换系数的读取、增删改和批量删除 |
 | `api/crm.js` | 信用风险缓释配置的读取和保存（`/crm-config`）。`/crm` 的缓释规则列表在 `api/exposure.js`。 |
 | `api/batch.js` | 批次、计量演示、底稿、上传样例、产品识别、字段映射 |
 | `api/assistant.js` | 规则助手 |

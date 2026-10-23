@@ -1,6 +1,7 @@
 <script setup>
 import { ref } from "vue";
-import { createParam, deleteParam, fetchParams, saveParam } from "@/api/rule";
+import { createParam, deleteParam, deleteParams, fetchParams, saveParam } from "@/api/rule";
+import { runBatch, useBatchNote, usePick } from "@/composables/usePick";
 import AsyncView from "@/components/AsyncView.vue";
 import RuleForm from "@/components/RuleForm.vue";
 import { askConfirm } from "@/utils/confirm";
@@ -9,6 +10,8 @@ const form = ref(null);
 const error = ref("");
 const saving = ref(false);
 const view = ref(null);
+const pick = usePick();
+const batch = useBatchNote();
 
 function blank() {
   return { creating: true, id: "", grp: "", name: "", value: "", unit: "", usedFor: "" };
@@ -67,9 +70,15 @@ async function remove() {
     saving.value = false;
   }
 }
+
+async function removeSelected(rows) {
+  const result = await runBatch(pick, rows, "id", deleteParams, batch, form, (row) => row.id);
+  if (result) await refresh();
+}
 </script>
 
 <template>
+  <p v-if="batch.state.text" class="notice" :class="batch.state.kind">{{ batch.state.text }}</p>
   <AsyncView ref="view" :load="fetchParams">
     <template #default="{ data }">
       <div class="panel">
@@ -77,13 +86,20 @@ async function remove() {
           <h3>共用参数</h3>
           <span class="sub">{{ data.length }} 项</span>
           <span class="spacer"></span>
+          <button type="button" class="btn sm danger" :disabled="!pick.visibleIds(data).length" @click="removeSelected(data)">删除所选</button>
           <button type="button" class="btn sm primary" @click="create">新建</button>
         </div>
         <div class="panel-body tight">
           <table class="tbl">
-            <thead><tr><th>分组</th><th>名称</th><th>值</th><th>单位</th><th>用途</th></tr></thead>
+            <thead>
+              <tr>
+                <th class="pick" @click.stop><input type="checkbox" :checked="pick.allOn(data)" @change="pick.toggleAll(data)" /></th>
+                <th>分组</th><th>名称</th><th>值</th><th>单位</th><th>用途</th>
+              </tr>
+            </thead>
             <tbody>
               <tr v-for="row in data" :key="row.id" class="clickable" @click="edit(row)">
+                <td class="pick" @click.stop><input type="checkbox" :checked="pick.on(row.id)" @change="pick.toggle(row.id)" /></td>
                 <td>{{ row.grp }}</td>
                 <td>{{ row.name }}</td>
                 <td class="mono">{{ row.value }}</td>

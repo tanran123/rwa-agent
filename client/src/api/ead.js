@@ -15,3 +15,5 @@ export const createCcf = (body) => request.post('/ccf', body)
 export const saveCcf = (id, body) => request.put('/ccf/' + encodeURIComponent(id), body)
 
 export const deleteCcf = (id) => request.delete('/ccf/' + encodeURIComponent(id))
+
+export const deleteCcfs = (ids) => request.post('/ccf/batch-delete', { ids })
