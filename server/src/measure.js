@@ -1487,7 +1487,10 @@ function runWeight(source, dest) {
     child.on("close", (code) => {
       clearTimeout(timer);
       if (code !== 0) {
-        const error = new Error((err || out || "权重计算没有完成").trim().slice(-500) || "权重计算没有完成");
+        const text = (err || out || "").trim();
+        const line = text.split("\n").map((item) => item.trim()).filter((item) => item.startsWith("ValueError:") || item.startsWith("RuntimeError:")).pop();
+        const message = line ? line.replace(/^(ValueError|RuntimeError):\s*/, "") : (text.slice(-300) || "权重计算没有完成");
+        const error = new Error(message);
         error.status = 400;
         reject(error);
         return;

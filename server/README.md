@@ -9,6 +9,7 @@ Koa 2，前缀 `/api`，默认 `http://127.0.0.1:8780`。数据在 MySQL，连�
 | 路径 | 作用 |
 | --- | --- |
 | `src/index.js` | 全部 HTTP 路由，以及行数据到 JSON 的形状。 |
+| `src/ruleWrite.js` | 规则配置的新增、修改、删除：版本、条款、参数、产品、字段、映射、权重、转换系数、缓释规则、专属规则。 |
 | `src/exposureDocs.js` | 从 `exposure_document` 读页签分类（`seq > 0`）：通用、贷款、债券，以及后来新增的页签。确认写入也写回这张表。页签可以删除，标签为「通用」的那一页不能删。每个产品的决策树对话仍在仓库根目录 `决策树对话.json`。 |
 | `src/db.js` | 读取 `.env`，导出 `query(sql, params)`。 |
 | `src/measure.js` | `GET /measure`、`POST /measure/workbook`、`GET /measure/workbook.xlsx`、`POST /measure/runs` 和审计底稿。模拟债项在 `data/`，上传的 xlsx 用本机 Python 的 openpyxl 读。计量在 `lib/`。分类规则读 `exposure_document` 的 `id = 1`，EAD 读 `ead_product_config`、`ead_product_rule`，缓释读 `crm_product_config`、`crm_slot_column`、`crm_eligible_type`。跑完写入 `measure_batch.rules_json` 和 `measure_line.detail`。上传的工作簿会在原表每一行后面写上风险权重、EAD、RWA 和计算过程，`GET /measure/workbook.xlsx?uploadId=` 下载这份写回的文件。 |
@@ -29,16 +30,17 @@ Koa 2，前缀 `/api`，默认 `http://127.0.0.1:8780`。数据在 MySQL，连�
 | GET | `/health` | 存活检查。 |
 | GET | `/bootstrap` | 客户、机构、地区、版本。给前端 Vuex。 |
 | GET | `/dashboard` | 总览数字。 |
-| GET | `/rule-versions`、`/clauses`、`/params` | 规则版本、条款、共用参数。参数用 `PUT /params/:id` 修改。 |
-| GET | `/products`、`/products/:code/fields`、`/field-mappings` | 产品、标准字段、字段映射。 |
-| GET | `/exposure-classes`、`/exposure-class`、`/weights`、`/crm`、`/product-rules` | 分类 JSON 页签、单份分类、权重表、缓释、产品专属规则。`/exposure-class?name=` 读 `exposure_document` 里 `seq > 0` 的那一行；不带 name 时仍读 `id = 1` 的权重法分类。 |
+| GET、POST、PUT、DELETE | `/rule-versions`、`/clauses`、`/params` | 规则版本、条款、共用参数。写入在 `src/ruleWrite.js`。编号创建后不改。版本被产品、EAD、专属规则或计量批次引用时不能删。条款被专属规则或 EAD 规则引用时不能删。参数被银行评级档、转换系数或 EAD 规则引用时不能删。 |
+| GET、POST、PUT、DELETE | `/products`、`/products/:code/fields`、`/field-mappings` | 产品、标准字段、字段映射。删产品时一并删掉该产品的字段、映射、EAD 配置、缓释配置和专属规则。 |
+| GET | `/exposure-classes`、`/exposure-class` | 分类 JSON 页签、单份分类。`/exposure-class?name=` 读 `exposure_document` 里 `seq > 0` 的那一行；不带 name 时仍读 `id = 1` 的权重法分类。 |
+| GET、POST、PUT、DELETE | `/weights`、`/weight-rules`、`/bank-grades`、`/mo-weights`、`/crm`、`/product-rules` | 权重表一次读出三张表。权重规则、第一档银行评级、澳门评级档、缓释规则、产品专属规则各自增删改。被银行评级档引用的权重规则不能删。 |
 | POST | `/exposure-tree/copy`、`/exposure-tree/delete`、`/exposure-tree/propose`、`/exposure-tree/save` | 添加页签时复制通用。删除页签时按 name 删掉 `seq > 0` 的那一行，标签为「通用」的不删。对话先说明当前规则，确认后询问是否保存，保存才写入。没在对话里出现的权重不写入。 |
 | GET、POST | `/exposure-tree/chat` | 按分类 name 读取或保存决策树对话。内容写在仓库根目录 `决策树对话.json`，不提交。 |
 | GET、PUT | `/ead-config` | 表内外 EAD 计算配置。读写在 `ead_product_config`、`ead_product_rule` 两张表；保存前整份校验产品 code、公式语法、字段范围和适用条件，对不上就报错不写。 |
 | GET、PUT | `/crm-config` | 信用风险缓释配置。读写在 `crm_product_config`、`crm_slot_column`、`crm_eligible_type` 三张表；保存前整份校验产品 code、笔数上限（1–6）、列名是否属于该产品的源表列、同属性内与同一笔内的列名冲突、字典编码是否重复，对不上就报错不写。三个属性（`crm_type`/`crm_value`/`crm_weight`）都是必选：第 1 笔必须填满，其余笔要么整笔留空、要么三个都填。 |
 | POST | `/ead-formula/check` | 校验一条公式：语法，以及引用字段是否属于该产品的标准字段。公式编辑器实时调它。 |
 | POST | `/ead-trial` | 按配置的公式试算一条规则。 | 
-| GET | `/ccf` | 转换系数。 |
+| GET、POST、PUT、DELETE | `/ccf` | 转换系数。 |
 | GET、POST | `/batches`、`/batches/:id`、`/batches/:id/lines` | 计量批次、一次已保存的计量过程、逐笔明细。 |
 | GET、POST | `/measure`、`/measure/runs`、`/measure/workbook`、`/measure/workbook.xlsx`、`/measure/apply`、`/measure/map`、`/measure/products`、`/measure/classify` | 模拟计量，或读取上传的 xlsx。`POST /measure/products` 把每一组产品代码和抽样交给模型，从已配置产品里选。`POST /measure/apply` 按向导里选定的产品、表头列和分类文档重算。`POST /measure/map` 先按产品标准字段对表头，对不上的再交给模型，并带上各列抽样值和 RWA 用途说明。`POST /measure/classify` 把上传的工作簿交给 `agent/subagents/weight`，按权重法风险暴露分类逐笔取暴露和权重。`POST /measure/runs` 把这次用的分类、EAD、缓释和 RWA 写入批次。带 `uploadId` 时写入的是刚上传的工作簿，带 `choiceId` 时写入的是刚重算的模拟结果。`GET /measure/workbook.xlsx?uploadId=` 下载已经写回风险权重、EAD、RWA 和计算过程的那份上传工作簿。 |
 | GET | `/working-paper`、`/upload-samples`、`/audit.xlsx` | 信用风险底稿缓存、上传样例、审计工作簿。 |

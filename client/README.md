@@ -19,7 +19,7 @@ Vue 3 + Vue Router + Vuex + axios。开发服务把 `/api` 代理到 `http://127
 | `src/api/request.js` | axios 实例。成功时直接返回响应体。 |
 | `src/api/*.js` | 按业务拆开的请求函数。页面只从这里要数据。 |
 | `src/view/` | 一个路由一个 `.vue`。按菜单再分子目录。 |
-| `src/components/` | 多页共用的抽屉、瀑布、加载、智能体停靠栏、确认框。确认框由 `utils/confirm.js` 的 `askConfirm` 打开，不使用浏览器默认确认框。 |
+| `src/components/` | 多页共用的抽屉、瀑布、加载、智能体停靠栏、确认框、规则表单抽屉 `RuleForm.vue`。确认框由 `utils/confirm.js` 的 `askConfirm` 打开，不使用浏览器默认确认框。 |
 | `src/utils/` | 菜单、规则文案、瀑布布局。决策图的拖拽跟在 `mermaidStage.js`。 |
 | `src/assets/main.css` | 引入 `src/assets/css/` 里的样式。新样式加在那些 css 里，或只写在单个组件上。 |
 | `src/assets/mermaid.min.js` | 决策图用的 Mermaid 10.9.1。页面从这里加载，不访问外网。 |
@@ -65,10 +65,10 @@ Vue 3 + Vue Router + Vuex + axios。开发服务把 `/api` 代理到 `http://127
 | --- | --- |
 | `api/bootstrap.js` | `/bootstrap` |
 | `api/dashboard.js` | `/dashboard` |
-| `api/rule.js` | 版本、条款、参数 |
-| `api/product.js` | 产品、标准字段、字段映射 |
-| `api/exposure.js` | 暴露分类页签、单份分类 JSON、权重、缓释、产品规则、决策树对话的提议、确认写入，以及按产品保存对话 |
-| `api/ead.js` | EAD 计算配置的读取和保存、公式校验、试算、转换系数 |
+| `api/rule.js` | 版本、条款、参数的读取和增删改 |
+| `api/product.js` | 产品、标准字段、字段映射的读取和增删改 |
+| `api/exposure.js` | 暴露分类页签、单份分类 JSON、权重、缓释、产品规则的读取和增删改，决策树对话的提议、确认写入，以及按产品保存对话 |
+| `api/ead.js` | EAD 计算配置的读取和保存、公式校验、试算、转换系数的读取和增删改 |
 | `api/crm.js` | 信用风险缓释配置的读取和保存（`/crm-config`）。`/crm` 的缓释规则列表在 `api/exposure.js`。 |
 | `api/batch.js` | 批次、计量演示、底稿、上传样例、产品识别、字段映射 |
 | `api/assistant.js` | 规则助手 |

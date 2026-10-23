@@ -1,15 +1,19 @@
 <script setup>
-import { computed, ref } from "vue";
-import { fetchRuleVersions } from "@/api/rule";
+import { ref } from "vue";
+import { createRuleVersion, deleteRuleVersion, fetchRuleVersions, saveRuleVersion } from "@/api/rule";
 import { useContext } from "@/composables/useContext";
 import AsyncView from "@/components/AsyncView.vue";
-import Drawer from "@/components/Drawer.vue";
+import RuleForm from "@/components/RuleForm.vue";
+import { askConfirm } from "@/utils/confirm";
 
 const { session } = useContext();
 const jur = ref("");
 const status = ref("");
 const q = ref("");
-const picked = ref(null);
+const form = ref(null);
+const error = ref("");
+const saving = ref(false);
+const view = ref(null);
 const load = () => fetchRuleVersions(jur.value);
 const labels = { draft: "草稿", reviewing: "审核中", published: "已发布", superseded: "已被取代", disabled: "已停用" };
 const tones = { draft: "muted", reviewing: "warn", published: "ok", superseded: "muted", disabled: "danger" };
@@ -25,20 +29,113 @@ function shown(rows) {
   });
 }
 
-function open(row) {
-  picked.value = row;
+function blank() {
+  return {
+    creating: true,
+    id: "",
+    jurisdiction: session.jurisdiction || (session.jurisdictions[0] ? session.jurisdictions[0].code : ""),
+    version: "",
+    name: "",
+    ruleType: "",
+    effectiveFrom: "",
+    effectiveTo: "",
+    status: "draft",
+    institution: "",
+    rulesetFile: "",
+    publishedAt: "",
+    author: "",
+    changelog: ""
+  };
+}
+
+function create() {
+  error.value = "";
+  form.value = blank();
+}
+
+function edit(row) {
+  error.value = "";
+  form.value = {
+    ...row,
+    effectiveFrom: row.effectiveFrom || "",
+    effectiveTo: row.effectiveTo || "",
+    creating: false
+  };
+}
+
+function payload(row) {
+  return {
+    id: row.id,
+    jurisdiction: row.jurisdiction,
+    version: row.version,
+    name: row.name,
+    ruleType: row.ruleType,
+    effectiveFrom: row.effectiveFrom || null,
+    effectiveTo: row.effectiveTo || null,
+    status: row.status,
+    institution: row.institution,
+    rulesetFile: row.rulesetFile,
+    publishedAt: row.publishedAt,
+    author: row.author,
+    changelog: row.changelog
+  };
+}
+
+async function refresh() {
+  if (view.value) await view.value.reload();
+}
+
+async function save() {
+  error.value = "";
+  saving.value = true;
+  try {
+    const body = payload(form.value);
+    if (form.value.creating) await createRuleVersion(body);
+    else await saveRuleVersion(form.value.id, body);
+    form.value = null;
+    await refresh();
+  } catch (err) {
+    error.value = err.message;
+  } finally {
+    saving.value = false;
+  }
+}
+
+async function remove() {
+  const yes = await askConfirm("删除版本「" + form.value.version + "」。被产品、EAD、专属规则或计量批次引用的版本删不掉。", {
+    title: "删除版本",
+    confirmText: "删除",
+    danger: true
+  });
+  if (!yes) return;
+  error.value = "";
+  saving.value = true;
+  try {
+    await deleteRuleVersion(form.value.id);
+    form.value = null;
+    await refresh();
+  } catch (err) {
+    error.value = err.message;
+  } finally {
+    saving.value = false;
+  }
+}
+
+function openVersion(row) {
   session.versionId = row.id;
   session.jurisdiction = row.jurisdiction;
 }
 </script>
 
 <template>
-  <AsyncView :key="jur" :load="load">
+  <AsyncView ref="view" :key="jur" :load="load">
     <template #default="{ data }">
       <div class="panel">
         <div class="panel-head">
           <h3>监管规则版本列表</h3>
           <span class="sub">共 {{ data.length }} 个版本</span>
+          <span class="spacer"></span>
+          <button type="button" class="btn sm primary" @click="create">新建</button>
         </div>
         <div class="panel-body">
           <div class="inline-fields" style="margin-bottom: 12px">
@@ -63,7 +160,7 @@ function open(row) {
               <tr><th>司法管辖区</th><th>版本编号</th><th>规则名称</th><th>规则类型</th><th>生效日期</th><th>适用机构</th><th>状态</th><th>维护人</th><th>操作</th></tr>
             </thead>
             <tbody>
-              <tr v-for="row in shown(data)" :key="row.id" class="clickable" :class="{ sel: picked && picked.id === row.id }" @click="picked = row">
+              <tr v-for="row in shown(data)" :key="row.id" class="clickable" @click="edit(row)">
                 <td>{{ jurLabel(row.jurisdiction) }}</td>
                 <td class="mono">{{ row.version }}</td>
                 <td>{{ row.name }}</td>
@@ -72,7 +169,7 @@ function open(row) {
                 <td>{{ row.institution }}</td>
                 <td><span class="tag" :class="tones[row.status]">{{ labels[row.status] || row.status }}</span></td>
                 <td>{{ row.author }}</td>
-                <td><button type="button" class="btn sm" @click.stop="open(row)">打开</button></td>
+                <td><button type="button" class="btn sm" @click.stop="openVersion(row)">打开</button></td>
               </tr>
             </tbody>
           </table>
@@ -80,20 +177,60 @@ function open(row) {
       </div>
     </template>
   </AsyncView>
-  <Drawer :open="!!picked" :title="picked ? '版本详情 · ' + picked.version : ''" @close="picked = null">
-    <div v-if="picked" class="panel">
-      <div class="panel-body">
-        <div class="kv">
-          <div class="k">规则名称</div><div class="v">{{ picked.name }}</div>
-          <div class="k">地区</div><div class="v">{{ jurLabel(picked.jurisdiction) }}</div>
-          <div class="k">规则类型</div><div class="v">{{ picked.ruleType }}</div>
-          <div class="k">适用机构</div><div class="v">{{ picked.institution }}</div>
-          <div class="k">状态</div><div class="v">{{ labels[picked.status] || picked.status }}</div>
-          <div class="k">生效</div><div class="v">{{ picked.effectiveFrom }}<template v-if="picked.effectiveTo"> 至 {{ picked.effectiveTo }}</template></div>
-          <div class="k">维护人</div><div class="v">{{ picked.author }}</div>
-          <div class="k">变更说明</div><div class="v">{{ picked.changelog }}</div>
-        </div>
-      </div>
-    </div>
-  </Drawer>
+  <RuleForm
+    :open="!!form"
+    :title="form && form.creating ? '新建版本' : '编辑版本'"
+    :error="error"
+    :saving="saving"
+    :creating="!!(form && form.creating)"
+    @close="form = null"
+    @save="save"
+    @remove="remove"
+  >
+    <template v-if="form">
+      <label class="field">编号
+        <input v-model="form.id" type="text" :disabled="!form.creating" />
+      </label>
+      <label class="field">地区
+        <select v-model="form.jurisdiction">
+          <option v-for="item in session.jurisdictions" :key="item.code" :value="item.code">{{ item.label }}</option>
+        </select>
+      </label>
+      <label class="field">版本编号
+        <input v-model="form.version" type="text" />
+      </label>
+      <label class="field">规则名称
+        <input v-model="form.name" type="text" />
+      </label>
+      <label class="field">规则类型
+        <input v-model="form.ruleType" type="text" />
+      </label>
+      <label class="field">状态
+        <select v-model="form.status">
+          <option v-for="(label, key) in labels" :key="key" :value="key">{{ label }}</option>
+        </select>
+      </label>
+      <label class="field">生效日期
+        <input v-model="form.effectiveFrom" type="date" />
+      </label>
+      <label class="field">失效日期
+        <input v-model="form.effectiveTo" type="date" />
+      </label>
+      <label class="field">适用机构
+        <input v-model="form.institution" type="text" />
+      </label>
+      <label class="field">规则文件
+        <input v-model="form.rulesetFile" type="text" />
+      </label>
+      <label class="field">发布时间
+        <input v-model="form.publishedAt" type="text" />
+      </label>
+      <label class="field">维护人
+        <input v-model="form.author" type="text" />
+      </label>
+      <label class="field full">变更说明
+        <textarea v-model="form.changelog"></textarea>
+      </label>
+    </template>
+  </RuleForm>
 </template>

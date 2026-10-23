@@ -471,18 +471,25 @@ def _header_width(ws, header_row: int) -> int:
 
 def _sheet_outline(ws) -> list[dict]:
     """挑出像表头的行给模型看，避免只看到标题就把整张明细漏掉。"""
+    words = ("balance", "余额", "餘額", "敞口", "equiv to", "额度", "額度")
     rows = []
     fallback = []
-    for index, row in enumerate(ws.iter_rows(max_row=30, max_col=18, values_only=True), 1):
+    for index, row in enumerate(ws.iter_rows(max_row=30, max_col=40, values_only=True), 1):
         cells = []
+        amounts = []
         for value in row:
             text = _sample(value)
-            if text:
+            if not text:
+                continue
+            if len(cells) < 8:
                 cells.append(text[:28])
-        if len(cells) >= 2 and len(fallback) < 2:
-            fallback.append({"row": index, "cells": cells[:8]})
-        if len(cells) >= 4:
-            rows.append({"row": index, "cells": cells[:8]})
+            elif any(word in text.lower() or word in text for word in words) and len(amounts) < 4:
+                amounts.append(text[:28])
+        shown = cells + [item for item in amounts if item not in cells]
+        if len(shown) >= 2 and len(fallback) < 2:
+            fallback.append({"row": index, "cells": shown[:12]})
+        if len(shown) >= 4:
+            rows.append({"row": index, "cells": shown[:12]})
         if len(rows) >= 3:
             break
     return rows or fallback
@@ -497,6 +504,8 @@ def _plan_system() -> str:
         "\"sheets\":[{\"sheet\":\"表名\",\"header_row\":表头行号,\"off\":false,\"notional\":false,\"skip\":false,\"reason\":\"一句\"}]}。"
         "header_row 从 1 开始，必须是真正的列名行，不是标题、单位或空行。"
         "只选带逐笔金额的明细：贷款、债券、存放、票据、透支、承诺额度和信用卡未用额度。"
+        "表上有逐笔名称，并且有账面余额、Equiv to MOP、Value Balance、信贷敞口或未使用额度时，这是明细，skip 必须为 false。"
+        "旁边有评级、RATING GRADES 或 RWA% 列，也不要把持仓明细当成评级对照。"
         "客户名单、中小企名单、抵押品清单、评级对照、限额、科目对照、监管汇总和资产负债表不要逐笔算，skip 为 true。"
         "只有外汇名义本金、没有信用等值金额的表，notional 为 true 且 skip 为 true。"
         "表外承诺、未使用额度 off 为 true。"
@@ -608,15 +617,11 @@ def plan_workbook_sheets(book) -> tuple[list[dict], str]:
     note = str(parsed.get("note") or "").strip()[:180]
     if skipped:
         note = (note + " " if note else "") + "模型跳过 " + "；".join(skipped[:6])
-    skipped_names = set()
-    for item in parsed.get("sheets") or []:
-        if isinstance(item, dict) and (item.get("skip") is True or item.get("notional") is True):
-            skipped_names.add(str(item.get("sheet") or ""))
     specs = [item for item in specs if _amount_header_row(book[item["sheet"]])]
     chosen = {item["sheet"] for item in specs}
     added = []
     for name in book.sheetnames:
-        if name in chosen or (name in skipped_names and name != "现金" and not _sheet_has_field_column(book[name])):
+        if name in chosen:
             continue
         header = _amount_header_row(book[name])
         if not header or _fx_notional_header(book[name], header):
@@ -647,8 +652,21 @@ def _resolve_sheet_plan(book) -> tuple[list[dict], str]:
         planned, note = plan_workbook_sheets(book)
     except Exception as exc:
         planned, note = [], "模型暂时没能判断表结构，改用这本表上能认出的明细。" + str(exc)[:60]
+    if not planned and amount_names:
+        planned = []
+        for name in amount_names:
+            header = _amount_header_row(book[name])
+            if not header:
+                continue
+            planned.append({
+                "sheet": name,
+                "header_row": header,
+                "off": any(token in name for token in ("额度", "額度", "未使用", "承诺", "承諾", "表外")),
+                "reason": "表头有金额，逐笔计算",
+            })
+        note = (note + " " if note else "") + "模型没有留下明细表，仍按金额列逐笔计算。"
     if planned:
-        lead = "模型判断明细表：" + "、".join(item["sheet"] for item in planned[:8]) + "。"
+        lead = "逐笔计算：" + "、".join(item["sheet"] for item in planned[:8]) + "。"
         return planned, (lead + " " + note).strip()
     if known:
         return known, note or "模型没有给出可用的明细表，这本已知底稿仍按其原表明细计算。"
@@ -952,10 +970,10 @@ def _draft_rows(spec: dict, mapping: dict[str, dict], field_by_id: dict) -> list
         facts = _facts_from_row(row, mapping, field_by_id, spec["sheet"], header_by_letter)
         amount = facts.pop("_amount", None)
         ccf = _num(row.get(ccf_letter)) if ccf_letter else None
-        if amount is None or amount == 0:
-            continue
         if not _row_has_identity(row, header_by_letter):
             continue
+        if amount is None:
+            amount = 0.0
         if spec["off"] and ccf is not None and 0 < ccf <= 1:
             amount = amount * ccf
         elif spec["off"]:

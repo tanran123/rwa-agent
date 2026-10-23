@@ -1,11 +1,18 @@
 <script setup>
 import { ref } from "vue";
-import { fetchProductRules } from "@/api/exposure";
+import { createProductRule, deleteProductRule, fetchProductRules, saveProductRule } from "@/api/exposure";
 import { fetchProducts } from "@/api/product";
 import AsyncView from "@/components/AsyncView.vue";
+import RuleForm from "@/components/RuleForm.vue";
+import { askConfirm } from "@/utils/confirm";
 
 const code = ref("");
+const form = ref(null);
+const error = ref("");
+const saving = ref(false);
+const view = ref(null);
 const load = () => Promise.all([fetchProducts(), fetchProductRules()]);
+const labels = { draft: "草稿", reviewing: "审核中", published: "已发布", superseded: "已被取代", disabled: "已停用" };
 
 function rulesOf(rows) {
   return (rows || []).filter((item) => !code.value || item.product === code.value);
@@ -13,15 +20,99 @@ function rulesOf(rows) {
 function countFor(rows, product) {
   return (rows || []).filter((item) => item.product === product).length;
 }
+
+function create(products) {
+  error.value = "";
+  form.value = {
+    creating: true,
+    id: "",
+    product: code.value || (products[0] ? products[0].code : ""),
+    name: "",
+    label: "",
+    priority: 0,
+    version: "",
+    when: "",
+    targetClass: "",
+    targetSub: "",
+    weight: "",
+    clause: "",
+    status: "draft"
+  };
+}
+
+function edit(row) {
+  error.value = "";
+  form.value = { ...row, creating: false };
+}
+
+function payload(row) {
+  return {
+    id: row.id,
+    product: row.product,
+    name: row.name,
+    label: row.label,
+    priority: Number(row.priority),
+    version: row.version,
+    when: row.when,
+    targetClass: row.targetClass,
+    targetSub: row.targetSub,
+    weight: row.weight,
+    clause: row.clause,
+    status: row.status
+  };
+}
+
+async function refresh() {
+  if (view.value) await view.value.reload();
+}
+
+async function save() {
+  error.value = "";
+  saving.value = true;
+  try {
+    const body = payload(form.value);
+    if (form.value.creating) await createProductRule(body);
+    else await saveProductRule(form.value.id, body);
+    code.value = body.product;
+    form.value = null;
+    await refresh();
+  } catch (err) {
+    error.value = err.message;
+  } finally {
+    saving.value = false;
+  }
+}
+
+async function remove() {
+  const yes = await askConfirm("删除专属规则「" + form.value.label + "」。", {
+    title: "删除专属规则",
+    confirmText: "删除",
+    danger: true
+  });
+  if (!yes) return;
+  error.value = "";
+  saving.value = true;
+  try {
+    await deleteProductRule(form.value.id);
+    form.value = null;
+    await refresh();
+  } catch (err) {
+    error.value = err.message;
+  } finally {
+    saving.value = false;
+  }
+}
 </script>
 
 <template>
-  <AsyncView :load="load">
+  <AsyncView ref="view" :load="load">
     <template #default="{ data }">
       <div class="panel">
         <div class="panel-head">
           <h3>产品专属规则向导</h3>
           <span class="sub">选择产品 → 看它挂上的通用规则分支</span>
+          <span class="spacer"></span>
+          <button type="button" class="btn sm primary" @click="create(data[0])">新建</button>
         </div>
         <div class="panel-body">
           <div class="steps">
@@ -29,7 +120,7 @@ function countFor(rows, product) {
             <span class="step-arrow">›</span>
             <div class="step" :class="{ active: !!code, done: !!code }"><span class="sn">2</span>通用规则分支</div>
           </div>
-          <p class="dim" style="font-size: 12px">选择要查看的产品。同一产品的专属规则挂在通用分类下面。</p>
+          <p class="dim" style="font-size: 12px">选择要查看的产品。同一产品的专属规则挂在通用分类下面。点一行可以改。</p>
           <div class="grid c3">
             <button
               v-for="item in data[0]"
@@ -52,21 +143,75 @@ function countFor(rows, product) {
         </div>
         <div class="panel-body tight">
           <table class="tbl compact">
-            <thead><tr><th>顺序</th><th>规则</th><th>条件</th><th>归入</th><th>权重</th><th>条款</th></tr></thead>
+            <thead><tr><th>顺序</th><th>规则</th><th>条件</th><th>归入</th><th>权重</th><th>条款</th><th>状态</th></tr></thead>
             <tbody>
-              <tr v-for="row in rulesOf(data[1])" :key="row.id">
+              <tr v-for="row in rulesOf(data[1])" :key="row.id" class="clickable" @click="edit(row)">
                 <td>{{ row.priority }}</td>
                 <td>{{ row.label }}<div class="mono dim">{{ row.name }}</div></td>
                 <td>{{ row.when }}</td>
                 <td>{{ row.targetClass }} · {{ row.targetSub }}</td>
                 <td>{{ row.weight }}</td>
                 <td class="mono">{{ row.clause }}</td>
+                <td>{{ labels[row.status] || row.status }}</td>
               </tr>
             </tbody>
           </table>
           <p v-if="!countFor(data[1], code)" class="dim" style="padding: 14px">这个产品还没有专属规则，计量时直接用通用暴露分类。</p>
         </div>
       </div>
+      <RuleForm
+        :open="!!form"
+        :title="form && form.creating ? '新建专属规则' : '编辑专属规则'"
+        :error="error"
+        :saving="saving"
+        :creating="!!(form && form.creating)"
+        @close="form = null"
+        @save="save"
+        @remove="remove"
+      >
+        <template v-if="form">
+          <label class="field">编号
+            <input v-model="form.id" type="text" :disabled="!form.creating" />
+          </label>
+          <label class="field">产品
+            <select v-model="form.product">
+              <option v-for="item in data[0]" :key="item.code" :value="item.code">{{ item.label }}</option>
+            </select>
+          </label>
+          <label class="field">规则编码
+            <input v-model="form.name" type="text" />
+          </label>
+          <label class="field">规则
+            <input v-model="form.label" type="text" />
+          </label>
+          <label class="field">顺序
+            <input v-model="form.priority" type="number" />
+          </label>
+          <label class="field">状态
+            <select v-model="form.status">
+              <option v-for="(label, key) in labels" :key="key" :value="key">{{ label }}</option>
+            </select>
+          </label>
+          <label class="field">规则版本
+            <input v-model="form.version" type="text" />
+          </label>
+          <label class="field">条款
+            <input v-model="form.clause" type="text" />
+          </label>
+          <label class="field">暴露大类
+            <input v-model="form.targetClass" type="text" />
+          </label>
+          <label class="field">子类
+            <input v-model="form.targetSub" type="text" />
+          </label>
+          <label class="field">权重
+            <input v-model="form.weight" type="text" />
+          </label>
+          <label class="field full">条件
+            <textarea v-model="form.when"></textarea>
+          </label>
+        </template>
+      </RuleForm>
     </template>
   </AsyncView>
 </template>
