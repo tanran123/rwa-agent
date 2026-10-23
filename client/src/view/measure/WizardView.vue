@@ -894,7 +894,6 @@ onMounted(async () => {
         <div class="btn-group">
           <button type="button" class="btn primary" @click="router.push('/results?batch=' + savedId)">打开结果明细</button>
           <a v-if="uploadId && pack.workbookReady" class="btn" :href="'/api/measure/workbook.xlsx?uploadId=' + uploadId">下载写回的工作簿</a>
-          <button type="button" class="btn" @click="router.push('/export')">导出审计底稿</button>
         </div>
       </div>
     </div>

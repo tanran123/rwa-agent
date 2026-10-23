@@ -139,7 +139,7 @@ function toggle(id) {
         <AgentDock />
         <ConfirmDialog />
         <div id="auditBody">
-          <p v-if="session.error" class="notice danger">{{ session.error }}先执行 sql 目录里的两个脚本，再启动 Koa。</p>
+          <p v-if="session.error" class="notice danger">{{ session.error }}</p>
           <router-view :key="viewKey" />
         </div>
       </main>

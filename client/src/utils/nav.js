@@ -17,9 +17,7 @@ export const NAV = [
     label: "计量执行",
     items: [
       { label: "计量向导", path: "/wizard" },
-      { label: "结果明细", path: "/results" },
-      { label: "计量批次", path: "/batches" },
-      { label: "审计底稿", path: "/export" }
+      { label: "结果明细", path: "/results" }
     ]
   }
 ];
@@ -32,7 +30,9 @@ const PARENT = {
   "/weights": "/tree",
   "/ead-on": "/ead",
   "/ead-off": "/ead",
-  "/engine": "/wizard"
+  "/engine": "/wizard",
+  "/batches": "/results",
+  "/export": "/results"
 };
 
 export function menuPath(path) {

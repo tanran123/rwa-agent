@@ -1,14 +1,18 @@
 <script setup>
 import { ref } from "vue";
 import { useRoute } from "vue-router";
-import { fetchBatch, fetchMeasure } from "@/api/batch";
+import { fetchBatch, fetchBatches, fetchMeasure } from "@/api/batch";
 import AsyncView from "@/components/AsyncView.vue";
 import Drawer from "@/components/Drawer.vue";
 
 const route = useRoute();
 const product = ref("");
-function loadMeasure() {
-  return route.query.batch ? fetchBatch(String(route.query.batch)) : fetchMeasure();
+async function loadMeasure() {
+  if (route.query.batch) return fetchBatch(String(route.query.batch));
+  const list = await fetchBatches();
+  const latest = [...(list || [])].sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))[0];
+  if (latest && latest.id) return fetchBatch(latest.id);
+  return fetchMeasure();
 }
 const klass = ref("");
 const status = ref("");

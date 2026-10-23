@@ -1,6 +1,6 @@
 import request from './request'
 
-export const fetchBatches = () => request.get('/batches')
+export const fetchBatches = () => request.get('/batches', { timeout: 60000 })
 
 export const fetchBatchLines = (id) => request.get('/batches/' + id + '/lines')
 

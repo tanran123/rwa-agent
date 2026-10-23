@@ -11,7 +11,7 @@ const steps = [
   ["1", "规则配置", "版本、条款、字段、暴露分类、EAD、缓释", "/versions"],
   ["2", "暴露分类规则", "通用、贷款、债券各自一份分类 JSON", "/tree"],
   ["3", "EAD 计算规则", "按产品配置，表内和表外互斥", "/ead"],
-  ["4", "计量执行", "计量向导 → 结果明细 → 计量批次 → 审计底稿", "/wizard"]
+  ["4", "计量执行", "计量向导 → 结果明细", "/wizard"]
 ];
 const statusLabel = { completed: "已完成", running: "进行中", failed: "失败", draft: "草稿", pending: "待处理" };
 const rank = { "BATCH-202609-MO-01": 0, "BATCH-202606-MO-01": 1, "BATCH-202609-CN-01": 2 };
@@ -48,14 +48,12 @@ function money(row) {
       <div class="panel">
         <div class="panel-head">
           <h3>最近计量批次</h3>
-          <span class="spacer"></span>
-          <button type="button" class="btn sm" @click="router.push('/batches')">全部批次</button>
         </div>
         <div class="panel-body tight">
           <table class="tbl compact">
             <thead><tr><th>批次编号</th><th>基准日</th><th>版本</th><th>债项</th><th>EAD</th><th>RWA</th><th>状态</th></tr></thead>
             <tbody>
-              <tr v-for="row in rowsOf(data.batches)" :key="row.id" class="clickable" @click="router.push('/batches')">
+              <tr v-for="row in rowsOf(data.batches)" :key="row.id" class="clickable" @click="router.push('/results?batch=' + row.id)">
                 <td class="mono">{{ row.id }}</td>
                 <td>{{ row.baseDate }}</td>
                 <td>{{ row.version }}</td>

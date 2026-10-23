@@ -1,3 +1,3 @@
 import request from './request'
 
-export const fetchBootstrap = () => request.get('/bootstrap')
+export const fetchBootstrap = () => request.get('/bootstrap', { timeout: 30000 })

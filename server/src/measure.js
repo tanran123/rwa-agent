@@ -1744,29 +1744,43 @@ export async function saveMeasureRun(body) {
   return { ...header, summary: data.summary, ruleset: data.ruleset, rulesetTitle: data.rulesetTitle };
 }
 
+function jsonNum(value) {
+  if (value == null || value === "" || value === "null") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function weightFromText(text) {
+  if (text == null || text === "") return null;
+  const n = Number(String(text).replace("%", "").trim());
+  return Number.isFinite(n) ? n / 100 : null;
+}
+
 function presentLine(row) {
   const detail = documentOf(row.detail) || {};
+  const reference = detail.reference || documentOf(row.detail_reference) || null;
+  const crmNote = row.detail_crm_note && row.detail_crm_note !== "null" ? row.detail_crm_note : "";
   return {
     loanId: row.loan_id,
-    customer: detail.customer || "",
-    name: detail.name || row.customer_name || "",
+    customer: detail.customer || (row.detail_customer && row.detail_customer !== "null" ? row.detail_customer : ""),
+    name: detail.name || row.customer_name || (row.detail_name && row.detail_name !== "null" ? row.detail_name : ""),
     product: row.product_code,
-    balance: detail.balance == null ? null : Number(detail.balance),
+    balance: detail.balance == null ? jsonNum(row.detail_balance) : Number(detail.balance),
     exposureClass: row.exposure_class,
-    exposureSubClass: detail.exposureSubClass || "",
-    matchedRule: detail.matchedRule || "",
-    riskWeight: detail.riskWeight == null ? null : Number(detail.riskWeight),
-    onEad: detail.onEad == null ? null : Number(detail.onEad),
-    offEad: detail.offEad == null ? null : Number(detail.offEad),
+    exposureSubClass: detail.exposureSubClass || (row.detail_sub && row.detail_sub !== "null" ? row.detail_sub : ""),
+    matchedRule: detail.matchedRule || (row.detail_rule && row.detail_rule !== "null" ? row.detail_rule : ""),
+    riskWeight: detail.riskWeight == null ? (jsonNum(row.detail_weight) == null ? weightFromText(row.weight_text) : jsonNum(row.detail_weight)) : Number(detail.riskWeight),
+    onEad: detail.onEad == null ? jsonNum(row.detail_on_ead) : Number(detail.onEad),
+    offEad: detail.offEad == null ? jsonNum(row.detail_off_ead) : Number(detail.offEad),
     ead: Number(row.ead),
     rwa: Number(row.rwa),
     status: row.status,
-    reference: detail.reference || null,
+    reference,
     exceptions: detail.exceptions || [],
-    eadFormula: detail.eadFormula || "",
+    eadFormula: detail.eadFormula || (row.detail_formula && row.detail_formula !== "null" ? row.detail_formula : ""),
     eadSteps: detail.eadSteps || [],
     rwaSteps: detail.rwaSteps || [],
-    crm: detail.crm || null
+    crm: detail.crm || (crmNote ? { note: crmNote } : null)
   };
 }
 
@@ -1776,7 +1790,18 @@ export async function readMeasureRun(id) {
   const batch = rows[0];
   const rules = documentOf(batch.rules_json) || {};
   const lines = await query(
-    `SELECT loan_id, customer_name, product_code, exposure_class, weight_text, ead, rwa, status, detail
+    `SELECT loan_id, customer_name, product_code, exposure_class, weight_text, ead, rwa, status,
+            JSON_UNQUOTE(JSON_EXTRACT(detail, '$.customer')) AS detail_customer,
+            JSON_UNQUOTE(JSON_EXTRACT(detail, '$.name')) AS detail_name,
+            JSON_EXTRACT(detail, '$.balance') AS detail_balance,
+            JSON_UNQUOTE(JSON_EXTRACT(detail, '$.exposureSubClass')) AS detail_sub,
+            JSON_UNQUOTE(JSON_EXTRACT(detail, '$.matchedRule')) AS detail_rule,
+            JSON_EXTRACT(detail, '$.riskWeight') AS detail_weight,
+            JSON_EXTRACT(detail, '$.onEad') AS detail_on_ead,
+            JSON_EXTRACT(detail, '$.offEad') AS detail_off_ead,
+            JSON_UNQUOTE(JSON_EXTRACT(detail, '$.eadFormula')) AS detail_formula,
+            JSON_UNQUOTE(JSON_EXTRACT(detail, '$.crm.note')) AS detail_crm_note,
+            JSON_EXTRACT(detail, '$.reference') AS detail_reference
      FROM measure_line WHERE batch_id = ? ORDER BY id`,
     [id]
   );
