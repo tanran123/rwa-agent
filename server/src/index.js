@@ -9,6 +9,15 @@ import { trialEad } from "./ead.js";
 import { checkEadFormula, readEadConfig, saveEadConfig } from "./eadConfig.js";
 import { readCrmConfig, saveCrmConfig } from "./crmConfig.js";
 import { copyExposureDoc, deleteExposureDoc, exposureChat, exposureDoc, exposureDocs, saveExposureChat, saveExposureDoc } from "./exposureDocs.js";
+import {
+  createCcf, createClause, createCrmRule, createExposureRule, createField, createGrade, createMapping, createMoWeight,
+  createParam, createProduct, createRuleVersion, createWeightRule, deleteCcf, deleteCcfs, deleteClause, deleteClauses,
+  deleteCrmRule, deleteCrmRules, deleteExposureRule, deleteExposureRules, deleteField, deleteFields, deleteGrade, deleteGrades,
+  deleteMapping, deleteMappings, deleteMoWeight, deleteMoWeights, deleteParam, deleteParams, deleteProduct, deleteProducts,
+  deleteRuleVersion, deleteRuleVersions, deleteWeightRule, deleteWeightRules,
+  updateCcf, updateClause, updateCrmRule, updateExposureRule, updateField, updateGrade, updateMapping, updateMoWeight,
+  updateParam, updateProduct, updateRuleVersion, updateWeightRule
+} from "./ruleWrite.js";
 
 const app = new Koa();
 const router = new Router({ prefix: "/api" });
@@ -39,7 +48,24 @@ function version(row) {
     institution: row.institution,
     author: row.author,
     changelog: row.changelog,
-    publishedAt: row.published_at
+    publishedAt: row.published_at,
+    rulesetFile: row.ruleset_file
+  };
+}
+
+function clauseBody(row, referencedBy) {
+  return {
+    id: row.id,
+    jurisdiction: row.jurisdiction,
+    doc: row.doc,
+    docVersion: row.doc_version,
+    clause: row.clause_no,
+    title: row.title,
+    text: row.body,
+    scope: row.scope,
+    effectiveFrom: date(row.effective_from),
+    source: row.source,
+    referencedBy: referencedBy || []
   };
 }
 
@@ -121,6 +147,23 @@ router.get("/rule-versions", async (ctx) => {
   ctx.body = rows.map(version);
 });
 
+router.post("/rule-versions", async (ctx) => {
+  ctx.body = version(await createRuleVersion(ctx.request.body || {}));
+});
+
+router.put("/rule-versions/:id", async (ctx) => {
+  ctx.body = version(await updateRuleVersion(ctx.params.id, ctx.request.body || {}));
+});
+
+router.delete("/rule-versions/:id", async (ctx) => {
+  await deleteRuleVersion(ctx.params.id);
+  ctx.body = { ok: true };
+});
+
+router.post("/rule-versions/batch-delete", async (ctx) => {
+  ctx.body = await deleteRuleVersions(ctx.request.body || {});
+});
+
 router.get("/clauses", async (ctx) => {
   const jur = ctx.query.jurisdiction || "";
   const q = "%" + (ctx.query.q || "") + "%";
@@ -136,19 +179,26 @@ router.get("/clauses", async (ctx) => {
   refs.forEach((item) => {
     (byId[item.clause_id] || (byId[item.clause_id] = [])).push(item.rule_name);
   });
-  ctx.body = rows.map((row) => ({
-    id: row.id,
-    jurisdiction: row.jurisdiction,
-    doc: row.doc,
-    docVersion: row.doc_version,
-    clause: row.clause_no,
-    title: row.title,
-    text: row.body,
-    scope: row.scope,
-    effectiveFrom: date(row.effective_from),
-    source: row.source,
-    referencedBy: byId[row.id] || []
-  }));
+  ctx.body = rows.map((row) => clauseBody(row, byId[row.id]));
+});
+
+router.post("/clauses", async (ctx) => {
+  const saved = await createClause(ctx.request.body || {});
+  ctx.body = clauseBody(saved.row, saved.referencedBy);
+});
+
+router.put("/clauses/:id", async (ctx) => {
+  const saved = await updateClause(ctx.params.id, ctx.request.body || {});
+  ctx.body = clauseBody(saved.row, saved.referencedBy);
+});
+
+router.delete("/clauses/:id", async (ctx) => {
+  await deleteClause(ctx.params.id);
+  ctx.body = { ok: true };
+});
+
+router.post("/clauses/batch-delete", async (ctx) => {
+  ctx.body = await deleteClauses(ctx.request.body || {});
 });
 
 router.get("/products", async (ctx) => {
@@ -168,6 +218,23 @@ router.get("/products", async (ctx) => {
     onboarding: row.onboarding,
     fieldCount: Number(row.field_count)
   }));
+});
+
+router.post("/products", async (ctx) => {
+  ctx.body = await createProduct(ctx.request.body || {});
+});
+
+router.put("/products/:code", async (ctx) => {
+  ctx.body = await updateProduct(ctx.params.code, ctx.request.body || {});
+});
+
+router.delete("/products/:code", async (ctx) => {
+  await deleteProduct(ctx.params.code);
+  ctx.body = { ok: true };
+});
+
+router.post("/products/batch-delete", async (ctx) => {
+  ctx.body = await deleteProducts(ctx.request.body || {});
 });
 
 router.get("/products/:code/fields", async (ctx) => {
@@ -192,6 +259,23 @@ router.get("/products/:code/fields", async (ctx) => {
   }));
 });
 
+router.post("/products/:code/fields", async (ctx) => {
+  ctx.body = await createField(ctx.params.code, ctx.request.body || {});
+});
+
+router.put("/products/:code/fields/:fieldCode", async (ctx) => {
+  ctx.body = await updateField(ctx.params.code, ctx.params.fieldCode, ctx.request.body || {});
+});
+
+router.delete("/products/:code/fields/:fieldCode", async (ctx) => {
+  await deleteField(ctx.params.code, ctx.params.fieldCode);
+  ctx.body = { ok: true };
+});
+
+router.post("/products/:code/fields/batch-delete", async (ctx) => {
+  ctx.body = await deleteFields(ctx.params.code, ctx.request.body || {});
+});
+
 router.get("/field-mappings", async (ctx) => {
   const code = ctx.query.product || "";
   const rows = await query(
@@ -199,6 +283,7 @@ router.get("/field-mappings", async (ctx) => {
     [code, code]
   );
   ctx.body = rows.map((row) => ({
+    id: row.id,
     product: row.product_code,
     stdField: row.std_field,
     stdCode: row.std_code,
@@ -209,6 +294,23 @@ router.get("/field-mappings", async (ctx) => {
     hitRate: Number(row.hit_rate),
     sample: row.sample
   }));
+});
+
+router.post("/field-mappings", async (ctx) => {
+  ctx.body = await createMapping(ctx.request.body || {});
+});
+
+router.put("/field-mappings/:id", async (ctx) => {
+  ctx.body = await updateMapping(ctx.params.id, ctx.request.body || {});
+});
+
+router.delete("/field-mappings/:id", async (ctx) => {
+  await deleteMapping(ctx.params.id);
+  ctx.body = { ok: true };
+});
+
+router.post("/field-mappings/batch-delete", async (ctx) => {
+  ctx.body = await deleteMappings(ctx.request.body || {});
 });
 
 router.get("/exposure-classes", async (ctx) => {
@@ -248,13 +350,21 @@ router.get("/params", async (ctx) => {
   ctx.body = rows;
 });
 
+router.post("/params", async (ctx) => {
+  ctx.body = await createParam(ctx.request.body || {});
+});
+
 router.put("/params/:id", async (ctx) => {
-  const value = String((ctx.request.body && ctx.request.body.value) || "").trim();
-  if (!value) ctx.throw(400, "参数值不能为空");
-  const ret = await query("UPDATE rule_param SET value = ? WHERE id = ?", [value, ctx.params.id]);
-  if (!ret.affectedRows) ctx.throw(404, "参数不存在");
-  const rows = await query("SELECT id, grp, name, value, unit, used_for AS usedFor FROM rule_param WHERE id = ?", [ctx.params.id]);
-  ctx.body = rows[0];
+  ctx.body = await updateParam(ctx.params.id, ctx.request.body || {});
+});
+
+router.delete("/params/:id", async (ctx) => {
+  await deleteParam(ctx.params.id);
+  ctx.body = { ok: true };
+});
+
+router.post("/params/batch-delete", async (ctx) => {
+  ctx.body = await deleteParams(ctx.request.body || {});
 });
 
 router.get("/weights", async (ctx) => {
@@ -272,6 +382,57 @@ router.get("/weights", async (ctx) => {
     })),
     mo: mo.map((row) => ({ id: row.id, bucket: row.bucket, weights: json(row.weights_json), note: row.note }))
   };
+});
+
+router.post("/weight-rules", async (ctx) => {
+  ctx.body = await createWeightRule(ctx.request.body || {});
+});
+
+router.put("/weight-rules/:id", async (ctx) => {
+  ctx.body = await updateWeightRule(ctx.params.id, ctx.request.body || {});
+});
+
+router.delete("/weight-rules/:id", async (ctx) => {
+  await deleteWeightRule(ctx.params.id);
+  ctx.body = { ok: true };
+});
+
+router.post("/weight-rules/batch-delete", async (ctx) => {
+  ctx.body = await deleteWeightRules(ctx.request.body || {});
+});
+
+router.post("/bank-grades", async (ctx) => {
+  ctx.body = await createGrade(ctx.request.body || {});
+});
+
+router.put("/bank-grades/:id", async (ctx) => {
+  ctx.body = await updateGrade(ctx.params.id, ctx.request.body || {});
+});
+
+router.delete("/bank-grades/:id", async (ctx) => {
+  await deleteGrade(ctx.params.id);
+  ctx.body = { ok: true };
+});
+
+router.post("/bank-grades/batch-delete", async (ctx) => {
+  ctx.body = await deleteGrades(ctx.request.body || {});
+});
+
+router.post("/mo-weights", async (ctx) => {
+  ctx.body = await createMoWeight(ctx.request.body || {});
+});
+
+router.put("/mo-weights/:id", async (ctx) => {
+  ctx.body = await updateMoWeight(ctx.params.id, ctx.request.body || {});
+});
+
+router.delete("/mo-weights/:id", async (ctx) => {
+  await deleteMoWeight(ctx.params.id);
+  ctx.body = { ok: true };
+});
+
+router.post("/mo-weights/batch-delete", async (ctx) => {
+  ctx.body = await deleteMoWeights(ctx.request.body || {});
 });
 
 router.get("/ead-config", async (ctx) => {
@@ -304,9 +465,43 @@ router.get("/ccf", async (ctx) => {
   ctx.body = rows.map((row) => ({ ...row, conds: json(row.conds_json) }));
 });
 
+router.post("/ccf", async (ctx) => {
+  ctx.body = await createCcf(ctx.request.body || {});
+});
+
+router.put("/ccf/:id", async (ctx) => {
+  ctx.body = await updateCcf(ctx.params.id, ctx.request.body || {});
+});
+
+router.delete("/ccf/:id", async (ctx) => {
+  await deleteCcf(ctx.params.id);
+  ctx.body = { ok: true };
+});
+
+router.post("/ccf/batch-delete", async (ctx) => {
+  ctx.body = await deleteCcfs(ctx.request.body || {});
+});
+
 router.get("/crm", async (ctx) => {
   const rows = await query("SELECT id, type_name AS type, tool, substitute, floor_param AS floorParam, constraints_json, priority AS pri FROM crm_rule ORDER BY priority DESC");
   ctx.body = rows.map((row) => ({ ...row, constraints: json(row.constraints_json) }));
+});
+
+router.post("/crm", async (ctx) => {
+  ctx.body = await createCrmRule(ctx.request.body || {});
+});
+
+router.put("/crm/:id", async (ctx) => {
+  ctx.body = await updateCrmRule(ctx.params.id, ctx.request.body || {});
+});
+
+router.delete("/crm/:id", async (ctx) => {
+  await deleteCrmRule(ctx.params.id);
+  ctx.body = { ok: true };
+});
+
+router.post("/crm/batch-delete", async (ctx) => {
+  ctx.body = await deleteCrmRules(ctx.request.body || {});
 });
 
 router.get("/product-rules", async (ctx) => {
@@ -321,6 +516,23 @@ router.get("/product-rules", async (ctx) => {
     [code, code]
   );
   ctx.body = rows;
+});
+
+router.post("/product-rules", async (ctx) => {
+  ctx.body = await createExposureRule(ctx.request.body || {});
+});
+
+router.put("/product-rules/:id", async (ctx) => {
+  ctx.body = await updateExposureRule(ctx.params.id, ctx.request.body || {});
+});
+
+router.delete("/product-rules/:id", async (ctx) => {
+  await deleteExposureRule(ctx.params.id);
+  ctx.body = { ok: true };
+});
+
+router.post("/product-rules/batch-delete", async (ctx) => {
+  ctx.body = await deleteExposureRules(ctx.request.body || {});
 });
 
 router.get("/batches/:id", async (ctx) => {

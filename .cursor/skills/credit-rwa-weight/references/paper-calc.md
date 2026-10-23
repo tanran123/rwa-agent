@@ -19,7 +19,7 @@
 `_resolve_sheet_plan` 按这个顺序：
 
 1. 表头前 8 行里出现分类字段 `name`，或「中文名（字段名）」这种表头，并且该表有金额列、不是纯外汇名义本金。若这类表的张数等于全部「有金额列且不是名义本金」的表，直接用它们，不调用模型。说明是「这些表的表头写了分类字段，直接按列计算。」
-2. 否则调用 `plan_workbook_sheets`。模型失败时，退回文件里的 `SHEETS`：term-Loan、Mortgage、BILLS、`212 222 存放同业`、Bonds、OD、額度詳情表、信用卡未使用額度表、TS-D-005。工作簿里没有的表名跳过。一张都对不上则报错「没有认出逐笔明细」。
+2. 否则调用 `plan_workbook_sheets`。模型把某张表标成 skip 时，只要该表有金额列且不是外汇名义本金，仍逐笔计算。模型失败或一个明细表都没留下时，先用这些金额列；再退回文件里的 `SHEETS`：term-Loan、Mortgage、BILLS、`212 222 存放同业`、Bonds、OD、額度詳情表、信用卡未使用額度表、TS-D-005。工作簿里没有的表名跳过。金额列和已知表名都对不上，才报错「没有认出逐笔明细」。
 
 读完选定的表后，`_supplement_sheets` 再从 `FS-ASSETS` 合成三张没有逐笔明细的表：库存现金（`現金`）、存放中央银行（`AMCM`）、其他资产（不动产、设备、递延费用、开办费用、未完成不动产）。表上没有对应行就不生成。
 
@@ -63,7 +63,7 @@
 - 有抵押品价值且没有声明 `ltv` 列时，`ltv` 等于账面余额除以抵押品价值。
 - 主权按国别：中国写成 `cn_central_government`，其他国家写成 `foreign_sovereign`。
 
-`_draft_rows` 只保留有金额、并且 `_row_has_identity` 认得出客户、合同、科目或 ISIN 的行。金额就是这行的 `single_exposure`。
+`_draft_rows` 保留 `_row_has_identity` 认得出客户、合同、科目或 ISIN 的行。金额就是这行的 `single_exposure`；单元格没有金额时按 0 计入，这一行仍做风险暴露分类。
 
 全部表的草稿加总得到全行合计。`_roll_up_debtors` 再按客户把金额加总，写回每一行的 `single_exposure`，并标 `_debtor_rolled`。同一债务人的每一行都变成加总后的数。
 

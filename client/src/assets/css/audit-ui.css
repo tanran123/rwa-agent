@@ -151,6 +151,14 @@
   width: 96px; max-width: 100%; padding: 6px 10px;
   background: #f7f9fc; border-color: #e6ebf2;
 }
+#auditBody table.tbl th.pick, .drawer table.tbl th.pick, .modal table.tbl th.pick,
+#auditBody table.tbl td.pick, .drawer table.tbl td.pick, .modal table.tbl td.pick{
+  width: 36px; text-align: center;
+}
+#auditBody table.tbl th.pick input, .drawer table.tbl th.pick input, .modal table.tbl th.pick input,
+#auditBody table.tbl td.pick input, .drawer table.tbl td.pick input, .modal table.tbl td.pick input{
+  width: auto; padding: 0; background: transparent; border: 0;
+}
 #auditBody table.tbl .btn.sm, .drawer table.tbl .btn.sm, .modal table.tbl .btn.sm{
   background: transparent; border-color: transparent; color: var(--brand); padding: 4px 8px;
 }
