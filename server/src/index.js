@@ -636,8 +636,15 @@ router.get("/assistant", async (ctx) => {
 router.post("/exposure-tree/propose", async (ctx) => {
   const body = ctx.request.body || {};
   const name = String(body.name || "");
-  const item = name ? await exposureDoc(name) : (await exposureDocs())[0];
+  const docs = await exposureDocs();
+  const item = name ? docs.find((row) => row.name === name) : docs[0];
   if (!item) ctx.throw(404, "没有这份分类 JSON");
+  const generic = docs.find((row) => row.label === "通用") || docs[0];
+  const clauses = await query(
+    `SELECT c.jurisdiction, j.label AS region, c.clause_no, c.title, c.body, c.scope
+     FROM clause_doc c LEFT JOIN jurisdiction j ON j.code = c.jurisdiction
+     ORDER BY c.jurisdiction, c.clause_no`
+  );
   try {
     const response = await fetch("http://127.0.0.1:8766/api/exposure-tree/propose", {
       method: "POST",
@@ -645,7 +652,16 @@ router.post("/exposure-tree/propose", async (ctx) => {
       body: JSON.stringify({
         messages: body.messages || [],
         label: item.label,
-        document: item.document
+        document: item.document,
+        generic: generic && generic.name !== item.name ? generic.document : null,
+        clauses: clauses.map((row) => ({
+          jurisdiction: row.jurisdiction,
+          region: row.region,
+          clause: row.clause_no,
+          title: row.title,
+          text: row.body,
+          scope: row.scope
+        }))
       })
     });
     const text = await response.text();

@@ -1,12 +1,14 @@
 <script setup>
 import { ref } from "vue";
 import { createProductRule, deleteProductRule, deleteProductRules, fetchProductRules, saveProductRule } from "@/api/exposure";
+import { useContext } from "@/composables/useContext";
 import { runBatch, useBatchNote, usePick } from "@/composables/usePick";
 import { fetchProducts } from "@/api/product";
 import AsyncView from "@/components/AsyncView.vue";
 import RuleForm from "@/components/RuleForm.vue";
 import { askConfirm } from "@/utils/confirm";
 
+const { scopeVersion } = useContext();
 const code = ref("");
 const form = ref(null);
 const error = ref("");
@@ -17,7 +19,13 @@ const batch = useBatchNote();
 const labels = { draft: "草稿", reviewing: "审核中", published: "已发布", superseded: "已被取代", disabled: "已停用" };
 
 function load() {
-  return fetchProducts();
+  return fetchProducts().then((rows) => rows.filter((item) => item.ruleVersion === scopeVersion.value));
+}
+
+function loadRules(products) {
+  const product = code.value || (products[0] ? products[0].code : "");
+  if (!product) return Promise.resolve([]);
+  return fetchProductRules(product).then((rows) => rows.filter((item) => item.version === scopeVersion.value));
 }
 
 function create(products) {
@@ -30,7 +38,7 @@ function create(products) {
     name: "",
     label: "",
     priority: 0,
-    version: "",
+    version: scopeVersion.value,
     when: "",
     targetClass: "",
     targetSub: "",
@@ -119,12 +127,12 @@ async function removeSelected(rows) {
           :key="item.code"
           type="button"
           class="section-tab"
-          :class="{ active: (code || data[0].code) === item.code }"
+          :class="{ active: (code || (data[0] && data[0].code)) === item.code }"
           @click="code = item.code"
         >{{ item.label }}</button>
         <button type="button" class="btn sm primary" @click="create(data)">新建</button>
       </div>
-      <AsyncView :key="code || (data[0] && data[0].code)" :load="() => fetchProductRules(code || data[0].code)">
+      <AsyncView :key="code || (data[0] && data[0].code)" :load="() => loadRules(data)">
         <template #default="{ data: rules, reload }">
           <div class="panel">
             <div class="panel-head">

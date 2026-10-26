@@ -47,7 +47,7 @@ function fail(message, status = 400) {
 
 /** 产品清单和标准字段都从库里读，配置只写产品 code 和列名。 */
 async function productsWithFields() {
-  const products = await query("SELECT code, label, icon, color FROM product_type ORDER BY code");
+  const products = await query("SELECT code, label, icon, color, rule_version FROM product_type ORDER BY code");
   const fields = await query(
     `SELECT product_code, code, name, meaning, std_field, required, source_system, source_field
      FROM product_field ORDER BY id`
@@ -57,6 +57,7 @@ async function productsWithFields() {
     label: row.label,
     icon: row.icon,
     color: row.color,
+    ruleVersion: row.rule_version,
     fields: fields
       .filter((field) => field.product_code === row.code)
       .map((field) => ({
@@ -135,6 +136,7 @@ export async function readCrmConfig() {
       label: product.label,
       icon: product.icon,
       color: product.color,
+      ruleVersion: product.ruleVersion,
       fields: product.fields,
       sourceColumns: sourceColumnsOf(product.fields),
       needed: row ? !!Number(row.needed) : false,

@@ -8,7 +8,7 @@ import { askConfirm } from "@/utils/confirm";
 
 const STATUS = { draft: "草稿", reviewing: "审核中", published: "已发布", superseded: "已被取代", disabled: "已停用" };
 const router = useRouter();
-const { session, currentVersion, versionOptions, setOrg, setJurisdiction } = useContext();
+const { session, currentVersion, scopeVersion, versionOptions, setOrg, setJurisdiction } = useContext();
 const pack = ref(null);
 const error = ref("");
 const step = ref(1);
@@ -492,7 +492,7 @@ onMounted(async () => {
   batchName.value = suggestedName();
   try {
     const [book, list] = await Promise.all([fetchMeasure(), fetchProducts()]);
-    configuredProducts.value = list || [];
+    configuredProducts.value = (list || []).filter((item) => item.ruleVersion === scopeVersion.value);
     replacePack(book);
   } catch (err) {
     error.value = (err.response && err.response.data && err.response.data.error) || "计量数据没有读到";

@@ -57,6 +57,26 @@ function leaves(document) {
   return rows;
 }
 
+function nodeByName(document, name) {
+  let found = null;
+  const walk = (node) => {
+    if (found || !node || typeof node !== "object") return;
+    if (node.name === name) {
+      found = node;
+      return;
+    }
+    (node.children || []).forEach(walk);
+    if (node.otherwise) walk(node.otherwise);
+  };
+  ((document && document.rules) || []).forEach(walk);
+  return found;
+}
+
+async function regulationText() {
+  const rows = await query("SELECT body FROM clause_doc");
+  return rows.map((row) => String(row.body || "")).join("\n");
+}
+
 function checkWhen(when, fields, label) {
   if (!when || typeof when !== "object") reject("「" + label + "」的判断条件不完整");
   const groups = ["all", "any"];
@@ -184,9 +204,18 @@ export async function saveExposureDoc(body) {
     const previous = leaves(existing.document).find((item) => item.name === node.name);
     return !previous || previous.value !== node.value;
   });
+  const generic = rows.find((item) => item.label === "通用");
+  const clauses = await regulationText();
   fresh.forEach((node) => {
     if (typeof node.value !== "number") return;
-    if (!mentioned(said, node.value)) reject("「" + node.label + "」的权重没有出现在对话里，先不要写入");
+    if (mentioned(said, node.value)) return;
+    if (action === "update") {
+      const previous = leaves(existing.document).find((item) => item.name === node.name);
+      const origin = generic && nodeByName(generic.document, node.name);
+      if (!previous && origin && origin.value === node.value) return;
+      if (!previous && mentioned(clauses, node.value)) return;
+    }
+    reject("「" + node.label + "」的权重没有出现在对话里，先不要写入");
   });
   if (action === "update") {
     const result = await query(

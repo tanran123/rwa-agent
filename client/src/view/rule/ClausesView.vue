@@ -8,7 +8,6 @@ import RuleForm from "@/components/RuleForm.vue";
 import { askConfirm } from "@/utils/confirm";
 
 const { session } = useContext();
-const jur = ref("");
 const q = ref("");
 const form = ref(null);
 const error = ref("");
@@ -16,7 +15,7 @@ const saving = ref(false);
 const view = ref(null);
 const pick = usePick();
 const batch = useBatchNote();
-const load = () => fetchClauses({ jurisdiction: jur.value, q: q.value });
+const load = () => fetchClauses({ jurisdiction: session.jurisdiction, q: q.value });
 
 function lines(value) {
   return String(value || "").split("\n").map((item) => item.trim()).filter(Boolean);
@@ -119,14 +118,10 @@ async function removeSelected(rows) {
 <template>
   <p v-if="batch.state.text" class="notice" :class="batch.state.kind">{{ batch.state.text }}</p>
   <div class="inline-fields" style="margin-bottom: 12px">
-    <select v-model="jur">
-      <option value="">全部地区</option>
-      <option v-for="item in session.jurisdictions" :key="item.code" :value="item.code">{{ item.label }}</option>
-    </select>
     <input v-model="q" type="search" placeholder="条款编号、标题或制度" />
     <button type="button" class="btn sm primary" @click="create">新建</button>
   </div>
-  <AsyncView ref="view" :key="jur + q" :load="load">
+  <AsyncView ref="view" :key="q" :load="load">
     <template #default="{ data }">
       <div class="panel">
         <div class="panel-head">

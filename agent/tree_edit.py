@@ -3,35 +3,23 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from agent.chat import model
 
-_PROMPT = """你是当前这一份信用风险暴露划分决策树的助手。按问答往下走，一次只做一步。
-不要新开产品，不要改 name，不要改其他页签。
-用户没写出的权重、判断条件、字段编码不要补，也不要改成另一个数。
-字段的 code 只能用当前文档 fields.options 里已有的 code。比较只用 eq、in、gt、gte、lt、lte。
-叶子上的 value 用小数，并且必须是用户说过的百分比。不要用 0 或 1 充数。
+_SKILL = Path(__file__).resolve().parent / "skills" / "decision-tree" / "SKILL.md"
+_OPS = {"eq": True, "in": True, "gt": True, "gte": True, "lt": True, "lte": True}
 
-用户点了某一条规则、还没说改成什么样：action 用 explain。
-在当前 document 里找到那一条，用白话说明它现在的判断条件和权重是什么意思，然后问要改成什么样。
-不要带 document，不要提保存。
 
-用户已经说了改成什么样：action 用 draft，不要再追问是不是这个意思。
-不要返回整份 document。changes 里只放被改动的节点，每个节点必须带原来的 name。
-只改权重时，节点只写 name 和 value。改判断条件时带上 when。增加或删除子规则时带上完整 children。
-没点名的节点不要放进 changes。
-reply 只用白话说明改了哪一条、条件是什么意思、权重变成多少，并请用户确认。
-不要在 reply 里写 JSON、字段编码或 name。不要提保存。
-
-还没说清是哪一条，或改法里缺权重、缺判断条件：action 用 ask，不要带 changes，在 reply 里问清楚。
-
-只返回一个 JSON 对象，不要 Markdown：
-{"action":"explain","reply":"..."}
-{"action":"ask","reply":"..."}
-{"action":"draft","reply":"...","changes":[{...}]}
-"""
+def _instructions() -> str:
+    text = _SKILL.read_text(encoding="utf-8")
+    if text.startswith("---"):
+        end = text.find("\n---", 3)
+        if end >= 0:
+            text = text[end + 4 :]
+    return text.strip()
 
 
 def _plain(reply: str) -> str:
@@ -107,7 +95,308 @@ def _apply(document: dict, changes: list) -> dict:
     return doc
 
 
-def propose(messages: list, document: dict, label: str) -> dict:
+def _walk(node, visit):
+    if not isinstance(node, dict):
+        return
+    visit(node)
+    for child in node.get("children") or []:
+        _walk(child, visit)
+    other = node.get("otherwise")
+    if isinstance(other, dict):
+        _walk(other, visit)
+
+
+def _each(document, visit):
+    for rule in (document or {}).get("rules") or []:
+        _walk(rule, visit)
+
+
+def _find(document, name):
+    found = {}
+
+    def visit(node):
+        if node.get("name") == name and "node" not in found:
+            found["node"] = node
+
+    _each(document, visit)
+    return found.get("node")
+
+
+def _index(document):
+    found = {}
+
+    def visit(node):
+        if isinstance(node.get("name"), str) and node["name"] and node["name"] not in found:
+            found[node["name"]] = node
+
+    _each(document, visit)
+    return found
+
+
+def _mentioned(text, value):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    pct = value * 100
+    if abs(pct - round(pct)) < 1e-9:
+        pct_text = str(int(round(pct)))
+    else:
+        rounded = round(pct * 10) / 10
+        pct_text = str(int(rounded)) if rounded == int(rounded) else str(rounded)
+    if pct_text + "%" in text:
+        return True
+    dec = str(value)
+    return "." in dec and dec in text
+
+
+def _has_weight(node):
+    value = node.get("value")
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return True
+    weight = node.get("weight")
+    if not isinstance(weight, dict):
+        return False
+    if isinstance(weight.get("same_as"), str) and weight.get("same_as"):
+        return True
+    return isinstance(weight.get("greater_of"), list) and len(weight["greater_of"]) > 0
+
+
+def _check_when(when, fields, label):
+    if not isinstance(when, dict) or not any(key in when for key in ("all", "any")):
+        raise ValueError("「" + label + "」的判断条件不完整")
+    for key in ("all", "any"):
+        group = when.get(key)
+        if group is None:
+            continue
+        if not isinstance(group, list):
+            raise ValueError("「" + label + "」的判断条件不完整")
+        for item in group:
+            field = fields.get(item.get("field") if isinstance(item, dict) else None)
+            if not field:
+                raise ValueError("「" + label + "」用了文档里没有的字段")
+            if item.get("op") not in _OPS:
+                raise ValueError("「" + label + "」用了文档里没有的比较")
+            codes = [opt.get("code") for opt in (field.get("options") or []) if isinstance(opt, dict)]
+            values = item.get("match")
+            values = values if isinstance(values, list) else [values]
+            if codes and any(isinstance(value, str) and value not in codes for value in values):
+                raise ValueError("「" + label + "」用了字段里没有的取值")
+
+
+def _check_node(node, fields, names):
+    if not isinstance(node, dict) or not node.get("name") or not node.get("label"):
+        raise ValueError("有一条规则缺 name 或名称")
+    if node["name"] in names:
+        raise ValueError("「" + node["label"] + "」已经在当前分类里，要改的话直接说改哪一条")
+    names.add(node["name"])
+    label = node["label"]
+    if node.get("when"):
+        _check_when(node["when"], fields, label)
+    children = node.get("children") or []
+    if not isinstance(children, list):
+        raise ValueError("「" + label + "」的下级不是列表")
+    for child in children:
+        _check_node(child, fields, names)
+    other = node.get("otherwise")
+    if isinstance(other, dict):
+        _check_node(other, fields, names)
+    if not children and not other and not _has_weight(node):
+        raise ValueError("「" + label + "」没有权重，先不要写入")
+
+
+def _copy_fields(doc, generic, raw):
+    source = {}
+    for field in (generic or {}).get("fields") or []:
+        if isinstance(field, dict) and isinstance(field.get("name"), str) and field["name"]:
+            source[field["name"]] = field
+    have = {field.get("name") for field in (doc.get("fields") or []) if isinstance(field, dict)}
+    for item in raw or []:
+        name = item if isinstance(item, str) else item.get("name") if isinstance(item, dict) else ""
+        if not name or name in have:
+            continue
+        if name not in source:
+            raise ValueError("「" + name + "」不在通用分类的字段里")
+        doc.setdefault("fields", []).append(json.loads(json.dumps(source[name])))
+        have.add(name)
+
+
+def _leaves(node):
+    rows = []
+
+    def visit(item):
+        children = item.get("children") or []
+        other = item.get("otherwise") if isinstance(item.get("otherwise"), dict) else None
+        if not children and not other:
+            rows.append(item)
+
+    _walk(node, visit)
+    return rows
+
+
+def _contains_existing(node, names):
+    if not isinstance(node, dict):
+        return False
+    if node.get("name") in names:
+        return True
+    for child in node.get("children") or []:
+        if _contains_existing(child, names):
+            return True
+    other = node.get("otherwise")
+    return isinstance(other, dict) and _contains_existing(other, names)
+
+
+def _apply_add(document, generic, attach, field_names, said):
+    doc = json.loads(json.dumps(document or {}))
+    base = generic if isinstance(generic, dict) and generic.get("name") != doc.get("name") else doc
+    _copy_fields(doc, base if base is not doc else generic or doc, field_names)
+    if not isinstance(attach, list) or not attach:
+        raise ValueError("没有指出加在哪一条下面")
+    names = set(_index(doc))
+    fields = {}
+    for field in doc.get("fields") or []:
+        if isinstance(field, dict) and field.get("name"):
+            fields[field["name"]] = field
+    generic_nodes = _index(generic if isinstance(generic, dict) else {})
+    added = []
+    for item in attach:
+        if not isinstance(item, dict):
+            raise ValueError("没有指出加在哪一条下面")
+        parent = item.get("parent") if isinstance(item.get("parent"), str) else ""
+        node = item.get("node")
+        if not parent or not isinstance(node, dict):
+            raise ValueError("没有指出加在哪一条下面")
+        if _contains_existing(node, names):
+            continue
+        _check_node(node, fields, names)
+        copy = json.loads(json.dumps(node))
+        if parent == "rules":
+            doc.setdefault("rules", []).append(copy)
+        else:
+            host = _find(doc, parent)
+            if not host:
+                raise ValueError("「" + parent + "」不在当前分类里")
+            host.setdefault("children", []).append(copy)
+        added.append(copy)
+    if not added:
+        raise ValueError("这些分类在当前规则里已经有了。直接说要改哪一条、改成什么样。")
+    for node in added:
+        for leaf in _leaves(node):
+            value = leaf.get("value")
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                continue
+            origin = generic_nodes.get(leaf.get("name"))
+            if isinstance(origin, dict) and origin.get("value") == value:
+                continue
+            if _mentioned(said, value):
+                continue
+            raise ValueError("「" + str(leaf.get("label") or "") + "」的权重没有出现在监管条款或对话里，先不要写入")
+    doc["name"] = (document or {}).get("name") or doc.get("name")
+    return doc
+
+
+_CLAUSE_KEYS = (
+    ("商业银行", "银行"),
+    ("多边开发银行", "多边开发银行"),
+    ("公共部门", "公共部门"),
+    ("主权", "主权"),
+    ("居住", "住宅"),
+    ("商用", "商用"),
+    ("违约", "逾期"),
+    ("零售", "零售"),
+    ("资产担保", "资产担保"),
+    ("公司", "公司"),
+)
+
+
+def _flat_nodes(document):
+    rows = []
+
+    def visit(node, depth):
+        rows.append((depth, node))
+        for child in node.get("children") or []:
+            if isinstance(child, dict):
+                visit(child, depth + 1)
+        other = node.get("otherwise")
+        if isinstance(other, dict):
+            visit(other, depth + 1)
+
+    for rule in (document or {}).get("rules") or []:
+        if isinstance(rule, dict):
+            visit(rule, 0)
+    return rows
+
+
+def _match_clause(title, nodes):
+    for needle, key in _CLAUSE_KEYS:
+        if needle not in title:
+            continue
+        hits = []
+        for depth, node in nodes:
+            label = str(node.get("label") or "")
+            if key not in label:
+                continue
+            if needle == "商业银行" and ("多边" in label or "开发" in label):
+                continue
+            hits.append((depth, node))
+        if hits:
+            hits.sort(key=lambda item: item[0])
+            return hits[0][1]
+    return None
+
+
+def _user_lines(cleaned):
+    prefix = "user："
+    return [line[len(prefix):].strip() for line in cleaned if line.startswith(prefix)]
+
+
+def _library_request(cleaned):
+    users = _user_lines(cleaned)
+    if not users:
+        return False
+    last = users[-1]
+    blob = "\n".join(users)
+    if "条款" not in blob and "监管" not in blob:
+        return False
+    if "全部" in last or last in ("都要", "所有", "所有条款"):
+        return True
+    return len(users) == 1 and ("新增" in last or "加" in last) and "第" not in last
+
+
+def _same_region(clauses, document, label, user_text):
+    blob = str((document or {}).get("title") or "") + str(label or "") + user_text
+    picked = [item for item in clauses if str(item.get("region") or "") and str(item.get("region")) in blob]
+    if picked:
+        return picked
+    if "澳门" in blob:
+        return [item for item in clauses if item.get("jurisdiction") == "MO"]
+    return list(clauses)
+
+
+def _first_version(document, label, clauses, user_text):
+    nodes = _flat_nodes(document)
+    lines = ["已按监管条款库对过当前分类，这是第一版。"]
+    pending = []
+    for item in _same_region(clauses, document, label, user_text):
+        title = str(item.get("title") or "")
+        if "EAD" in title or "转换系数" in title:
+            continue
+        clause = str(item.get("clause") or "")
+        node = _match_clause(title, nodes)
+        if node:
+            lines.append(clause + " " + title + "：当前是「" + str(node.get("label") or "") + "」。")
+        else:
+            pending.append(clause + " " + title)
+            text = str(item.get("text") or "").strip()
+            lines.append(clause + " " + title + "：当前分类里还没有。" + text)
+    if len(lines) == 1:
+        return ""
+    if pending:
+        lines.append("还没有的先不写入。要补上或要改已有的，直接说哪一条、改成什么样。")
+    else:
+        lines.append("这些分类都已经在当前规则里。要改哪一条，直接说。")
+    return "\n".join(lines)
+
+
+def propose(messages: list, document: dict, label: str, generic: dict | None = None, clauses: list | None = None) -> dict:
     cleaned = []
     for item in (messages or [])[-8:]:
         role = item.get("role") if isinstance(item, dict) else ""
@@ -116,16 +405,31 @@ def propose(messages: list, document: dict, label: str) -> dict:
             cleaned.append(role + "：" + content)
     if not cleaned or not cleaned[-1].startswith("user："):
         raise ValueError("请先输入要改的内容")
-    prompt = (
-        "当前页签是 " + str(label or "") + "。\n"
-        "当前分类 JSON：\n" + json.dumps(document or {}, ensure_ascii=False) + "\n\n"
-        + "\n".join(cleaned)
+    user_text = "\n".join(_user_lines(cleaned))
+    if _library_request(cleaned):
+        reply = _first_version(document, label, clauses or [], user_text)
+        if reply:
+            return {"action": "ask", "reply": reply[:2000]}
+    clause_text = "\n".join(
+        str((item or {}).get("text") or "") for item in (clauses or []) if isinstance(item, dict)
     )
-    result = model().invoke([SystemMessage(content=_PROMPT), HumanMessage(content=prompt)])
+    parts = ["当前页签是 " + str(label or "") + "。", "当前分类 JSON：\n" + json.dumps(document or {}, ensure_ascii=False)]
+    if isinstance(generic, dict) and generic.get("name") and generic.get("name") != (document or {}).get("name"):
+        parts.append("通用分类 JSON：\n" + json.dumps(generic, ensure_ascii=False))
+    else:
+        parts.append("当前页签就是通用分类。新增时就在这份 JSON 上扩展，不要另造一套键。")
+    if clauses:
+        parts.append("监管条款：\n" + json.dumps(clauses, ensure_ascii=False))
+    parts.append("\n".join(cleaned))
+    prompt = "\n\n".join(parts)
+    result = model().invoke([SystemMessage(content=_instructions()), HumanMessage(content=prompt)])
     text = getattr(result, "content", "")
     if not isinstance(text, str):
         text = str(text or "")
-    body = _parse(text)
+    try:
+        body = _parse(text)
+    except ValueError:
+        return {"action": "ask", "reply": "这次没有形成可调整的第一版。直接说要改哪一条、改成什么样。"}
     action = body.get("action")
     if action == "update":
         action = "draft"
@@ -137,7 +441,15 @@ def propose(messages: list, document: dict, label: str) -> dict:
     if action != "draft":
         return {"action": action, "reply": reply[:2000]}
     try:
-        if isinstance(body.get("changes"), list):
+        if body.get("intent") == "add":
+            doc = _apply_add(
+                document,
+                generic if isinstance(generic, dict) else None,
+                body.get("attach"),
+                body.get("fields"),
+                user_text + "\n" + clause_text,
+            )
+        elif isinstance(body.get("changes"), list):
             doc = _apply(document, body.get("changes"))
         elif isinstance(body.get("document"), dict):
             doc = body.get("document")

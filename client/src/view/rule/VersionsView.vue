@@ -8,7 +8,6 @@ import RuleForm from "@/components/RuleForm.vue";
 import { askConfirm } from "@/utils/confirm";
 
 const { session } = useContext();
-const jur = ref("");
 const status = ref("");
 const q = ref("");
 const form = ref(null);
@@ -17,7 +16,7 @@ const saving = ref(false);
 const view = ref(null);
 const pick = usePick();
 const batch = useBatchNote();
-const load = () => fetchRuleVersions(jur.value);
+const load = () => fetchRuleVersions(session.jurisdiction);
 const labels = { draft: "草稿", reviewing: "审核中", published: "已发布", superseded: "已被取代", disabled: "已停用" };
 const tones = { draft: "muted", reviewing: "warn", published: "ok", superseded: "muted", disabled: "danger" };
 
@@ -137,7 +136,7 @@ function openVersion(row) {
 
 <template>
   <p v-if="batch.state.text" class="notice" :class="batch.state.kind">{{ batch.state.text }}</p>
-  <AsyncView ref="view" :key="jur" :load="load">
+  <AsyncView ref="view" :load="load">
     <template #default="{ data }">
       <div class="panel">
         <div class="panel-head">
@@ -149,12 +148,6 @@ function openVersion(row) {
         </div>
         <div class="panel-body">
           <div class="inline-fields" style="margin-bottom: 12px">
-            <label class="field">司法管辖区
-              <select v-model="jur">
-                <option value="">全部地区</option>
-                <option v-for="item in session.jurisdictions" :key="item.code" :value="item.code">{{ item.label }}</option>
-              </select>
-            </label>
             <label class="field">规则状态
               <select v-model="status">
                 <option value="">全部状态</option>

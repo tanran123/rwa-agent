@@ -1,18 +1,36 @@
 <script setup>
 import { ref } from "vue";
 import { useRoute } from "vue-router";
-import { fetchBatch, fetchBatches, fetchMeasure } from "@/api/batch";
+import { fetchBatch, fetchBatches } from "@/api/batch";
+import { useContext } from "@/composables/useContext";
 import AsyncView from "@/components/AsyncView.vue";
 import Drawer from "@/components/Drawer.vue";
 
 const route = useRoute();
+const { session, scopeVersion } = useContext();
 const product = ref("");
 async function loadMeasure() {
-  if (route.query.batch) return fetchBatch(String(route.query.batch));
   const list = await fetchBatches();
-  const latest = [...(list || [])].sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))[0];
-  if (latest && latest.id) return fetchBatch(latest.id);
-  return fetchMeasure();
+  const scoped = (list || []).filter((row) => row.jurisdiction === session.jurisdiction && row.version === scopeVersion.value);
+  const asked = route.query.batch ? String(route.query.batch) : "";
+  const hit = scoped.find((row) => row.id === asked)
+    || [...scoped].sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")))[0];
+  if (hit) return fetchBatch(hit.id);
+  return {
+    batchId: "",
+    name: "",
+    institution: "",
+    jurisdiction: session.jurisdiction,
+    version: scopeVersion.value,
+    baseDate: session.baseDate,
+    createdAt: "",
+    status: "",
+    ruleset: "",
+    rulesetTitle: "",
+    products: {},
+    summary: { total: 0, ok: 0, warning: 0, exception: 0, onEad: 0, offEad: 0, ead: 0, rwa: 0, rwaRate: 0 },
+    results: []
+  };
 }
 const klass = ref("");
 const status = ref("");

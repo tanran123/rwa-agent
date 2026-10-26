@@ -1,13 +1,19 @@
 <script setup>
 import { useRouter } from "vue-router";
 import { fetchBatches } from "@/api/batch";
+import { useContext } from "@/composables/useContext";
 import AsyncView from "@/components/AsyncView.vue";
 
 const router = useRouter();
+const { session, scopeVersion } = useContext();
+const load = async () => {
+  const rows = await fetchBatches();
+  return rows.filter((row) => row.jurisdiction === session.jurisdiction && row.version === scopeVersion.value);
+};
 </script>
 
 <template>
-  <AsyncView :load="fetchBatches">
+  <AsyncView :load="load">
     <template #default="{ data }">
       <div class="panel">
         <div class="panel-head">

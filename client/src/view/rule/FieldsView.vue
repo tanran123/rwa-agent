@@ -10,7 +10,7 @@ import AsyncView from "@/components/AsyncView.vue";
 import RuleForm from "@/components/RuleForm.vue";
 import { askConfirm } from "@/utils/confirm";
 
-const { session } = useContext();
+const { session, scopeVersion } = useContext();
 const code = ref("");
 const productForm = ref(null);
 const fieldForm = ref(null);
@@ -25,7 +25,7 @@ const batch = useBatchNote();
 watch(code, () => fieldPick.clear());
 
 const loadProducts = async () => {
-  const rows = await fetchProducts();
+  const rows = (await fetchProducts()).filter((item) => item.ruleVersion === scopeVersion.value);
   if (!rows.some((item) => item.code === code.value)) code.value = rows[0] ? rows[0].code : "";
   return rows;
 };

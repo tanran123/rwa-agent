@@ -11,7 +11,7 @@ Vue 3 + Vue Router + Vuex + axios。开发服务把 `/api` 代理到 `http://127
 | `index.html` | 页面壳。 |
 | `vite.config.js` | 开发端口、`@` 别名、`/api` 代理。 |
 | `src/main.js` | 挂上路由、Vuex 和 axios。 |
-| `src/App.vue` | 顶栏、菜单、客户和版本上下文。所有页面都包在这里。右下角挂 `AgentDock`。 |
+| `src/App.vue` | 顶栏、菜单、机构、地区和版本。客户选择不显示，客户编号仍在 store。所有页面都包在这里。右下角挂 `AgentDock`。 |
 | `src/router/index.js` | 路由。`meta.group` 是菜单分组，`meta.sections` 是页内页签。 |
 | `src/utils/nav.js` | 左侧菜单。页签不单列菜单项，用 `PARENT` 指回父菜单。 |
 | `src/store/index.js` | 当前客户、机构、地区、规则版本、基准日。数据来自 `GET /api/bootstrap`。 |
@@ -77,4 +77,4 @@ Vue 3 + Vue Router + Vuex + axios。开发服务把 `/api` 代理到 `http://127
 
 ## 智能体停靠栏
 
-`components/AgentDock.vue` 在每一页都在。暴露分类规则页上，页签「添加」先复制通用。除标签为「通用」的页签外，页签上的 × 可以删除。对话先说明当前规则，确认后再问要不要保存，保存后才画到画布。每个产品的对话单独记在服务端，切换页签或刷新后还在。其他页面把当前路由和最近对话交给 `sendAgentChat`。返回的 `pages` 用来跳转。不要在业务页面里再接一条智能体请求。
+`components/AgentDock.vue` 在每一页都在。暴露分类规则页上，页签「添加」先复制通用。除标签为「通用」的页签外，页签上的 × 可以删除。对话先判断是改已有规则还是新增一类。修改先说明当前规则。新增按监管条款从通用分类扩展。用户说全部或按条款库时，先出一版草稿，再由用户调整。确认后再问要不要保存，保存后才画到画布。每个产品的对话单独记在服务端，切换页签或刷新后还在。其他页面把当前路由和最近对话交给 `sendAgentChat`。返回的 `pages` 用来跳转。不要在业务页面里再接一条智能体请求。

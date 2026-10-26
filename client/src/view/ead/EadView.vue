@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, reactive, ref } from "vue";
 import { checkEadFormula, fetchEadConfig, saveEadConfig, trialEad } from "@/api/ead";
+import { useContext } from "@/composables/useContext";
 import { OP_LABELS } from "@/utils/ruleText";
 import AsyncView from "@/components/AsyncView.vue";
 import Drawer from "@/components/Drawer.vue";
@@ -10,6 +11,7 @@ const OPS = ["+", "−", "×", "÷", "(", ")"];
 const FNS = ["max(", "min(", "abs(", "round("];
 const COND_OPS = Object.keys(OP_LABELS);
 
+const { scopeVersion } = useContext();
 const view = ref(null);
 const data = ref(null);
 const active = ref("");
@@ -55,11 +57,17 @@ function hydrate(cfg) {
   return cfg;
 }
 
+function scopedProducts(cfg) {
+  const version = scopeVersion.value;
+  return ((cfg && cfg.products) || []).filter((item) => item.ruleVersion === version);
+}
+
 async function load() {
   const cfg = hydrate(await fetchEadConfig());
   data.value = cfg;
-  if (!active.value || !cfg.products.some((item) => item.code === active.value)) {
-    active.value = cfg.products[0] ? cfg.products[0].code : "";
+  const visible = scopedProducts(cfg);
+  if (!active.value || !visible.some((item) => item.code === active.value)) {
+    active.value = visible[0] ? visible[0].code : "";
   }
   return cfg;
 }
@@ -323,12 +331,12 @@ async function rerun() {
           <div class="ead-left-head">
             <b>产品清单</b>
             <div class="dim" style="font-size: 11px; margin-top: 2px">
-              来自 product_type · 共 {{ data.products.length }} 个产品
+              来自 product_type · 共 {{ scopedProducts(data).length }} 个产品
             </div>
           </div>
           <div class="ead-list">
             <div
-              v-for="item in data.products"
+              v-for="item in scopedProducts(data)"
               :key="item.code"
               class="ead-item"
               :class="{ on: active === item.code }"

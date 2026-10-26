@@ -426,7 +426,13 @@ def rules_basis():
 def exposure_tree_propose():
     data = request.get_json(silent=True) or {}
     try:
-        result = propose_tree(data.get("messages") or [], data.get("document") or {}, data.get("label") or "")
+        result = propose_tree(
+            data.get("messages") or [],
+            data.get("document") or {},
+            data.get("label") or "",
+            data.get("generic") if isinstance(data.get("generic"), dict) else None,
+            data.get("clauses") if isinstance(data.get("clauses"), list) else None,
+        )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     except Exception as exc:

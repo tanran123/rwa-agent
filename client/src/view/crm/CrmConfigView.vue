@@ -1,6 +1,7 @@
 <script setup>
 import { computed, reactive, ref } from "vue";
 import { fetchCrmConfig, saveCrmConfig } from "@/api/crm";
+import { useContext } from "@/composables/useContext";
 import AsyncView from "@/components/AsyncView.vue";
 import { askConfirm } from "@/utils/confirm";
 
@@ -14,6 +15,7 @@ const ATTRS = [
     hint: "覆盖部分直接采用该权重" }
 ];
 
+const { scopeVersion } = useContext();
 const view = ref(null);
 const data = ref(null);
 const active = ref("");
@@ -72,11 +74,17 @@ function resetDraft(item) {
   draftTypes.value = item ? item.eligibleTypes.map((type) => ({ ...type })) : [];
 }
 
+function scopedProducts(cfg) {
+  const version = scopeVersion.value;
+  return ((cfg && cfg.products) || []).filter((item) => item.ruleVersion === version);
+}
+
 async function load() {
   const cfg = hydrate(await fetchCrmConfig());
   data.value = cfg;
-  if (!active.value || !cfg.products.some((item) => item.code === active.value)) {
-    active.value = cfg.products[0] ? cfg.products[0].code : "";
+  const visible = scopedProducts(cfg);
+  if (!active.value || !visible.some((item) => item.code === active.value)) {
+    active.value = visible[0] ? visible[0].code : "";
   }
   resetDraft(product.value);
   return cfg;
@@ -425,7 +433,7 @@ function statusOf(item) {
 }
 
 const neededCount = computed(() =>
-  data.value ? data.value.products.filter((item) => item.needed).length : 0);
+  scopedProducts(data.value).filter((item) => item.needed).length);
 </script>
 
 <template>
@@ -439,12 +447,12 @@ const neededCount = computed(() =>
           <div class="ead-left-head">
             <b>产品清单</b>
             <div class="dim" style="font-size: 11px; margin-top: 2px">
-              来自 product_type · 共 {{ data.products.length }} 个产品
+              来自 product_type · 共 {{ scopedProducts(data).length }} 个产品
             </div>
           </div>
           <div class="ead-list">
             <div
-              v-for="item in data.products"
+              v-for="item in scopedProducts(data)"
               :key="item.code"
               class="ead-item"
               :class="{ on: active === item.code }"
@@ -472,7 +480,7 @@ const neededCount = computed(() =>
           <div class="ead-left-foot">
             <div class="dim" style="font-size: 11px; line-height: 1.7">
               需要配置：{{ neededCount }} 个产品<br>
-              无需配置：{{ data.products.length - neededCount }} 个产品<br>
+              无需配置：{{ scopedProducts(data).length - neededCount }} 个产品<br>
               新产品的默认状态是「无需配置」，先在第 1 步切成「需要配置」。<br>
               「保存绑定」「保存字典」「保存全部配置」都会立即写库。
             </div>
