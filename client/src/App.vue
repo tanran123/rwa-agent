@@ -24,6 +24,7 @@ const { session, versionOptions, scopeVersion, setOrg, setJurisdiction, loadBoot
 
 const STATUS = { draft: "草稿", reviewing: "审核中", published: "已发布", superseded: "已被取代", disabled: "已停用" };
 const activePath = computed(() => menuPath(route.path));
+const orgsHere = computed(() => session.orgs.filter((item) => item.jurisdiction === session.jurisdiction));
 const viewKey = computed(() => (route.meta.chart ? "tree" : route.path + "|" + session.jurisdiction + "|" + session.versionId + "|" + scopeVersion.value));
 
 function versionText(item) {
@@ -100,7 +101,7 @@ function toggle(id) {
         <div class="client-switch">
           <label>机构</label>
           <select :value="session.orgId" aria-label="机构" @change="setOrg($event.target.value)">
-            <option v-for="item in session.orgs" :key="item.id" :value="item.id">{{ item.name }}</option>
+            <option v-for="item in orgsHere" :key="item.id" :value="item.id">{{ item.name }}</option>
           </select>
         </div>
         <div class="client-switch">

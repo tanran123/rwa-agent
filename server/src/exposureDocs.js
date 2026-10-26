@@ -17,15 +17,28 @@ function present(row) {
     title: row.title,
     label: row.label,
     sourceFile: row.source_file,
+    ruleVersion: row.rule_version || "",
     document: documentOf(row.body)
   };
 }
 
-const LIST_SQL = "SELECT name, title, label, source_file, body FROM exposure_document WHERE seq > 0 ORDER BY seq, id";
+function versionOf(value) {
+  return String(value || "").trim();
+}
 
-export async function exposureDocs() {
-  const rows = await query(LIST_SQL);
+const DOC_SQL = "SELECT name, title, label, source_file, rule_version, body FROM exposure_document";
+
+export async function exposureDocs(version) {
+  const rows = await query(
+    DOC_SQL + " WHERE seq > 0 AND rule_version = ? ORDER BY seq, id",
+    [versionOf(version)]
+  );
   return rows.map(present);
+}
+
+async function docByName(name) {
+  const rows = await query(DOC_SQL + " WHERE name = ? AND seq > 0", [name]);
+  return rows[0] ? present(rows[0]) : null;
 }
 
 const OPS = { eq: true, in: true, gt: true, gte: true, lt: true, lte: true };
@@ -133,24 +146,101 @@ async function nextSlot() {
   return { id: Number(rows[0].id) + 1, seq: Number(rows[0].seq) + 1 };
 }
 
-async function insertDoc(label, document) {
+async function insertDoc(label, document, version) {
   const slot = await nextSlot();
   await query(
-    "INSERT INTO exposure_document (id, name, title, label, seq, source_file, body) VALUES (?, ?, ?, ?, ?, ?, CAST(? AS JSON))",
-    [slot.id, document.name, document.title, label, slot.seq, label + "风险暴露.json", JSON.stringify(document)]
+    "INSERT INTO exposure_document (id, name, title, label, seq, source_file, rule_version, body) VALUES (?, ?, ?, ?, ?, ?, ?, CAST(? AS JSON))",
+    [slot.id, document.name, document.title, label, slot.seq, label + "风险暴露.json", versionOf(version), JSON.stringify(document)]
   );
+}
+
+function slug(version) {
+  const text = String(version || "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  return text || "v";
+}
+
+function docName(base, version, taken) {
+  const stem = String(base || "exposure").toLowerCase().replace(/[^a-z0-9_]/g, "_").replace(/^[^a-z]+/, "") || "exposure";
+  let n = 0;
+  let name = "";
+  do {
+    const suffix = n ? "_" + n.toString(36) : "";
+    name = (stem + "_" + slug(version) + suffix).slice(0, 64);
+    if (!/^[a-z]/.test(name)) name = ("x" + name).slice(0, 64);
+    n += 1;
+  } while (taken.has(name) && n < 1000);
+  if (taken.has(name)) reject("分类 name 重复");
+  taken.add(name);
+  return name;
+}
+
+async function takenNames() {
+  const rows = await query("SELECT name FROM exposure_document");
+  return new Set(rows.map((row) => row.name));
+}
+
+async function sourceVersion(version, jurisdiction) {
+  const peers = await query(
+    "SELECT version, status FROM rule_version WHERE jurisdiction = ? AND version <> ? ORDER BY effective_from DESC",
+    [jurisdiction, version]
+  );
+  const published = peers.filter((row) => row.status === "published").concat(peers);
+  for (const row of published) {
+    const hit = await query(
+      "SELECT id FROM exposure_document WHERE seq > 0 AND rule_version = ? LIMIT 1",
+      [row.version]
+    );
+    if (hit.length) return row.version;
+  }
+  const anchor = await query(
+    "SELECT rule_version FROM exposure_document WHERE seq > 0 AND label = ? ORDER BY id LIMIT 1",
+    ["通用"]
+  );
+  return anchor[0] ? anchor[0].rule_version : "";
+}
+
+export async function provisionExposureDocs(body) {
+  const version = versionOf(body && body.version);
+  if (!version) reject("没有规则版本");
+  const versions = await query(
+    "SELECT version, jurisdiction FROM rule_version WHERE version = ?",
+    [version]
+  );
+  if (!versions.length) reject("没有这个规则版本");
+  const owned = await query(
+    "SELECT id FROM exposure_document WHERE seq > 0 AND rule_version = ? LIMIT 1",
+    [version]
+  );
+  if (owned.length) reject("这个版本已经有风险暴露分类规则");
+  const source = await sourceVersion(version, versions[0].jurisdiction);
+  const rows = await query(
+    DOC_SQL + " WHERE seq > 0 AND rule_version = ? ORDER BY seq, id",
+    [source]
+  );
+  if (!rows.length) reject("还没有可以复制的风险暴露分类规则");
+  const taken = await takenNames();
+  const documents = [];
+  for (const row of rows) {
+    const document = JSON.parse(JSON.stringify(documentOf(row.body)));
+    document.name = docName(document.name || row.name, version, taken);
+    if (!document.title) document.title = row.title;
+    await insertDoc(row.label, document, version);
+    documents.push({ name: document.name, title: document.title, label: row.label });
+  }
+  return { version, source, documents };
 }
 
 export async function deleteExposureDoc(body) {
   const name = String((body && body.name) || "").trim();
+  const version = versionOf(body && body.version);
   if (!name) reject("没有这份分类 JSON");
-  const rows = await exposureDocs();
+  const rows = await exposureDocs(version);
   const item = rows.find((row) => row.name === name);
   if (!item) reject("没有这份分类 JSON");
   if (item.label === "通用") reject("通用页签不能删除");
   const result = await query(
-    "DELETE FROM exposure_document WHERE name = ? AND seq > 0 AND label <> ?",
-    [name, "通用"]
+    "DELETE FROM exposure_document WHERE name = ? AND seq > 0 AND label <> ? AND rule_version = ?",
+    [name, "通用", version]
   );
   if (!result.affectedRows) reject("没有这份分类 JSON");
   const chats = readChats();
@@ -163,25 +253,31 @@ export async function deleteExposureDoc(body) {
 
 export async function copyExposureDoc(body) {
   const label = String((body && body.label) || "").trim();
+  const version = versionOf(body && body.version);
+  if (!version) reject("没有规则版本");
   if (!label || /[\\/]/.test(label) || label.includes(".")) reject("页签名不能包含路径");
-  const rows = await exposureDocs();
-  const source = rows[0];
-  if (!source) reject("没有通用分类");
+  const rows = await exposureDocs(version);
+  const source = rows.find((item) => item.label === "通用") || rows[0];
+  if (!source) reject("这个版本还没有风险暴露分类规则");
   if (rows.some((item) => item.label === label)) reject("已经有这个页签");
   const document = JSON.parse(JSON.stringify(source.document));
-  let name = "mo_product_" + Date.now().toString(36);
-  while (rows.some((item) => item.name === name)) name += "x";
-  document.name = name;
+  const taken = await takenNames();
+  document.name = docName("mo_product_" + Date.now().toString(36), version, taken);
   document.title = label;
-  await insertDoc(label, document);
-  return { name, title: document.title, label, first: false };
+  await insertDoc(label, document, version);
+  return { name: document.name, title: document.title, label, first: false };
 }
 
 export async function saveExposureDoc(body) {
   const action = body && body.action;
   const document = body && body.document;
   const said = (body && body.messages || []).map((item) => String(item || "")).join("\n");
-  const rows = await exposureDocs();
+  let version = versionOf(body && body.version);
+  if (!version && body && body.name) {
+    const pinned = await docByName(body.name);
+    version = pinned ? pinned.ruleVersion : "";
+  }
+  const rows = await exposureDocs(version);
   let existing = rows.find((item) => item.name === (document && document.name));
   if (action === "update") {
     const pinned = body.name ? rows.find((item) => item.name === body.name) : rows[0];
@@ -219,8 +315,8 @@ export async function saveExposureDoc(body) {
   });
   if (action === "update") {
     const result = await query(
-      "UPDATE exposure_document SET title = ?, body = CAST(? AS JSON) WHERE name = ? AND seq > 0",
-      [document.title, JSON.stringify(document), document.name]
+      "UPDATE exposure_document SET title = ?, body = CAST(? AS JSON) WHERE name = ? AND seq > 0 AND rule_version = ?",
+      [document.title, JSON.stringify(document), document.name, version]
     );
     if (!result.affectedRows) reject("没有这份分类 JSON");
   } else if (action === "add") {
@@ -228,11 +324,11 @@ export async function saveExposureDoc(body) {
     const label = String(body.label || "").trim();
     if (!label || /[\\/]/.test(label) || label.includes(".")) reject("页签名不能包含路径");
     if (rows.some((item) => item.label === label)) reject("已经有这个页签");
-    await insertDoc(label, document);
+    await insertDoc(label, document, version);
   } else {
     reject("这次没有要写入的分类");
   }
-  const saved = await exposureDocs();
+  const saved = await exposureDocs(version);
   const item = saved.find((row) => row.name === document.name);
   return {
     name: item.name,
@@ -242,11 +338,15 @@ export async function saveExposureDoc(body) {
   };
 }
 
-export async function exposureDoc(name) {
-  const rows = await query(
-    "SELECT name, title, label, source_file, body FROM exposure_document WHERE name = ? AND seq > 0",
-    [name]
-  );
+export async function exposureDoc(name, version) {
+  const params = [name];
+  let sql = DOC_SQL + " WHERE name = ? AND seq > 0";
+  const scoped = versionOf(version);
+  if (scoped) {
+    sql += " AND rule_version = ?";
+    params.push(scoped);
+  }
+  const rows = await query(sql, params);
   return rows[0] ? present(rows[0]) : null;
 }
 
@@ -261,11 +361,16 @@ function readChats() {
   }
 }
 
-async function chatItem(name) {
-  const rows = await exposureDocs();
-  const item = name ? rows.find((row) => row.name === name) : rows[0];
-  if (!item) reject("没有这份分类 JSON");
-  return item;
+async function chatItem(name, version) {
+  const scoped = versionOf(version);
+  if (name) {
+    const item = await docByName(name);
+    if (!item || (scoped && item.ruleVersion !== scoped)) reject("没有这份分类 JSON");
+    return item;
+  }
+  const rows = await exposureDocs(scoped);
+  if (!rows[0]) reject("没有这份分类 JSON");
+  return rows[0];
 }
 
 function chatMessage(item) {
@@ -281,8 +386,8 @@ function chatMessage(item) {
   };
 }
 
-export async function exposureChat(name) {
-  const item = await chatItem(String(name || ""));
+export async function exposureChat(name, version) {
+  const item = await chatItem(String(name || ""), version);
   const row = readChats()[item.name] || {};
   const messages = Array.isArray(row.messages) ? row.messages.map(chatMessage).filter(Boolean) : [];
   const draft = row.draft && row.draft.document && typeof row.draft.document === "object"
@@ -292,7 +397,7 @@ export async function exposureChat(name) {
 }
 
 export async function saveExposureChat(body) {
-  const item = await chatItem(String((body && body.name) || ""));
+  const item = await chatItem(String((body && body.name) || ""), body && body.version);
   const messages = ((body && body.messages) || []).map(chatMessage).filter(Boolean).slice(-40);
   const draftBody = body && body.draft;
   const draft = draftBody && draftBody.document && typeof draftBody.document === "object"

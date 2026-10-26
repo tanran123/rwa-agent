@@ -405,7 +405,7 @@
 }
 .app-frame .main-col.chart-page .section-tab { border-radius: 10px 10px 0 0; }
 .app-frame .main-col.chart-page .section-tab.active {
-  background: #141d33; color: #f8fafc; box-shadow: none;
+  background: #fff; color: #1e3a5f; box-shadow: none;
 }
 #auditBody .section-tabs input.section-add { width: 8em; flex: 0 0 auto; margin: 0 4px; padding: 6px 10px; border-radius: 8px; }
 .app-frame .main-col.chart-page #auditBody .dt-shell {
@@ -414,72 +414,82 @@
 #auditBody .dt-shell{
   position: relative; display: flex; flex-direction: column;
   height: calc(100vh - 148px); min-height: 520px;
-  background: #0b1020; color: #e8eefc; overflow: hidden;
-  border-radius: 0 0 16px 16px;
-  box-shadow: 0 18px 44px rgba(15, 23, 42, .18);
+  background: #f7f9fc; color: #0f172a; overflow: hidden;
+  border: 1px solid #e3e8f0; border-top: 0; border-radius: 0 0 16px 16px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, .06);
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
 }
+#auditBody .dt-shell:fullscreen{
+  height: 100%; min-height: 0; border: 0; border-radius: 0;
+  background: #f7f9fc;
+}
 #auditBody .dt-head{
-  padding: 12px 16px; border-bottom: 1px solid #233152;
-  background: linear-gradient(180deg, #141d33, #0d1425);
+  padding: 12px 16px; border-bottom: 1px solid #e3e8f0;
+  background: #fff;
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
 }
-#auditBody .dt-head h3{ flex: 1; min-width: 12em; font-size: 16px; margin: 0; font-weight: 650; letter-spacing: .3px; color: #e8eefc; }
-#auditBody .dt-head h3 small{ display: block; font-weight: 400; color: #93a4c4; font-size: 11.5px; margin-top: 3px; }
+#auditBody .dt-head h3{ flex: 1 0 auto; min-width: max-content; font-size: 16px; margin: 0; font-weight: 650; letter-spacing: .3px; color: #0f172a; }
+#auditBody .dt-head h3 small{ display: block; font-weight: 400; color: #64748b; font-size: 11.5px; margin-top: 3px; }
 #auditBody .dt-grow{ display: none; }
 #auditBody .dt-zoom{
   display: flex; gap: 0; padding: 2px; border-radius: 10px;
-  border: 1px solid #233152; background: #121a2e;
+  border: 1px solid #e3e8f0; background: #fff;
 }
 #auditBody .dt-shell .dt-zoom button{ border: 0; background: transparent; border-radius: 8px; }
-#auditBody .dt-shell .dt-zoom button:hover{ background: #1c2b4a; border-color: transparent; }
+#auditBody .dt-shell .dt-zoom button:hover{ background: #eef3f9; border-color: transparent; }
 #auditBody .dt-shell button, #auditBody .dt-shell select{
   width: auto; flex: 0 0 auto;
-  background: #121a2e; color: #e8eefc; border: 1px solid #233152;
+  background: #fff; color: #1e293b; border: 1px solid #d7dee8;
   border-radius: 8px; padding: 7px 12px; font-size: 12.5px; cursor: pointer;
   font-family: inherit;
 }
-#auditBody .dt-shell button:hover, #auditBody .dt-shell select:hover{ border-color: #60a5fa; background: #16223c; }
+#auditBody .dt-shell button:hover, #auditBody .dt-shell select:hover{ border-color: #93c5fd; background: #f8fbff; }
 #auditBody .dt-canvas{
   flex: 1; overflow: hidden; padding: 18px 18px 58px; cursor: grab; touch-action: none;
-  background: radial-gradient(circle at 1px 1px, #1b2740 1px, transparent 0) 0 0 / 26px 26px;
+  background:
+    radial-gradient(circle at 1px 1px, #d5deea 1px, transparent 0) 0 0 / 22px 22px,
+    #f7f9fc;
 }
 #auditBody .dt-canvas.grabbing, #auditBody .dt-canvas.nodedrag{ cursor: grabbing; }
 #auditBody .dt-stage{ transform-origin: 0 0; display: inline-block; min-width: 100%; }
 #auditBody .dt-shell .mermaid{ display: flex; justify-content: center; }
 #auditBody .dt-shell .mermaid svg{ max-width: none !important; background: transparent !important; }
 #auditBody .dt-shell g.node{ cursor: grab; }
-#auditBody .dt-shell g.node:hover{ filter: drop-shadow(0 0 6px rgba(96, 165, 250, .85)); }
-#auditBody .dt-shell g.node.dragging{ cursor: grabbing; filter: drop-shadow(0 0 12px rgba(96, 165, 250, 1)); }
+#auditBody .dt-shell g.node:hover{ filter: drop-shadow(0 2px 6px rgba(37, 99, 235, .28)); }
+#auditBody .dt-shell g.node.dragging{ cursor: grabbing; filter: drop-shadow(0 4px 10px rgba(37, 99, 235, .35)); }
 #auditBody .dt-shell g.node.changed rect,
 #auditBody .dt-shell g.node.changed polygon,
-#auditBody .dt-shell g.node.changed path{ stroke: #fde68a !important; stroke-width: 4px !important; }
-#auditBody .dt-shell g.node.changed{ filter: drop-shadow(0 0 12px rgba(251, 191, 36, .95)); }
+#auditBody .dt-shell g.node.changed path{ stroke: #ea580c !important; stroke-width: 4px !important; }
+#auditBody .dt-shell g.node.changed{ filter: drop-shadow(0 2px 8px rgba(234, 88, 12, .35)); }
 #auditBody .dt-shell g.node text, #auditBody .dt-shell g.node .label, #auditBody .dt-shell g.node foreignObject{ pointer-events: none; }
+#auditBody .dt-shell span.edgeLabel{
+  color: #0f172a !important; font-weight: 650; letter-spacing: 0;
+  background: #fff; line-height: 1.55;
+}
 #auditBody .dt-legend{
   position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 9;
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px;
-  background: rgba(18, 26, 46, .92); border: 1px solid #233152; border-radius: 12px;
-  padding: 8px 12px; font-size: 12px; color: #c5d2ea; line-height: 1.4;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, .35); backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, .94); border: 1px solid #e3e8f0; border-radius: 12px;
+  padding: 8px 12px; font-size: 12px; color: #475569; line-height: 1.4;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, .08); backdrop-filter: blur(10px);
 }
-#auditBody .dt-legend b{ color: #e8eefc; font-weight: 600; }
-#auditBody .dt-legend-foot b{ color: #60a5fa; }
+#auditBody .dt-legend b{ color: #0f172a; font-weight: 600; }
+#auditBody .dt-legend-foot b{ color: #2563eb; }
 #auditBody .dt-legend .sw{
   display: inline-block; width: 10px; height: 10px; border-radius: 3px;
   margin-right: 6px; vertical-align: middle;
 }
 #auditBody .dt-legend-foot{
-  margin: 0 0 0 auto; border: 0; padding: 0; color: #93a4c4;
+  margin: 0 0 0 auto; border: 0; padding: 0; color: #64748b;
 }
 #auditBody .dt-src{
   display: block; margin: 0; padding: 18px 22px; overflow: auto; flex: 1;
-  background: #0f1729; color: #b9c8e6; font-size: 12px; line-height: 1.6;
+  background: #f8fafc; color: #334155; font-size: 12px; line-height: 1.6;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre;
 }
 #auditBody .dt-err{
-  padding: 16px 20px; background: #3b1620; color: #ffb4c0;
-  border-bottom: 1px solid #7f2233; font-size: 12.5px; white-space: pre-wrap;
+  padding: 16px 20px; background: #fef2f2; color: #991b1b;
+  border-bottom: 1px solid #fecaca; font-size: 12.5px; white-space: pre-wrap;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 

@@ -1,22 +1,25 @@
 <script setup>
 import { nextTick, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { copyExposureTree, deleteExposureTree, fetchExposureClass, fetchExposureClasses } from "@/api/exposure";
+import { copyExposureTree, createExposureVersion, deleteExposureTree, fetchExposureClass, fetchExposureClasses } from "@/api/exposure";
 import { fetchClauses } from "@/api/rule";
+import { useContext } from "@/composables/useContext";
 import DecisionChart from "@/components/DecisionChart.vue";
 import RuleDetail from "@/components/RuleDetail.vue";
 import { askConfirm } from "@/utils/confirm";
 
 const route = useRoute();
 const router = useRouter();
+const { session, scopeVersion } = useContext();
 const picked = ref(null);
 const list = ref([]);
 const current = ref("");
 const doc = ref(null);
 const clauses = ref([]);
 const error = ref("");
-const loading = ref(false);
+const loading = ref(true);
 const adding = ref(false);
+const creating = ref(false);
 const draft = ref("");
 const addError = ref("");
 const addBox = ref(null);
@@ -53,18 +56,24 @@ function changedNames(before, after) {
 async function show(name, rev) {
   const token = ++seq;
   error.value = "";
+  if (!session.ready) return;
   try {
     if (rev || !list.value.length) {
       if (!doc.value) loading.value = true;
-      list.value = (await fetchExposureClasses()) || [];
+      list.value = (await fetchExposureClasses(scopeVersion.value)) || [];
     }
     if (token !== seq) return;
+    if (!list.value.length) {
+      current.value = "";
+      doc.value = null;
+      return;
+    }
     const item = name ? list.value.find((row) => row.name === name) : list.value[0];
     if (!item) throw new Error("没有这份分类 JSON");
     if (!rev && item.name === current.value && doc.value) return;
     current.value = item.name;
     loading.value = true;
-    const pending = [fetchExposureClass(item.name)];
+    const pending = [fetchExposureClass(item.name, scopeVersion.value)];
     if (!clauses.value.length) pending.push(fetchClauses().catch(() => []));
     const result = await Promise.all(pending);
     if (token !== seq) return;
@@ -97,7 +106,7 @@ async function removeTab(item) {
   if (!ok) return;
   addError.value = "";
   try {
-    await deleteExposureTree(item.name);
+    await deleteExposureTree(item.name, scopeVersion.value);
     picked.value = null;
     const next = current.value === item.name ? "/tree" : "/tree/" + current.value;
     router.push({ path: next, query: { rev: String(Date.now()) } });
@@ -118,7 +127,7 @@ async function commitAdd() {
   if (!label || loading.value) return;
   addError.value = "";
   try {
-    const saved = await copyExposureTree(label);
+    const saved = await copyExposureTree(label, scopeVersion.value);
     adding.value = false;
     draft.value = "";
     picked.value = null;
@@ -132,14 +141,58 @@ function choose(payload) {
   picked.value = payload;
 }
 
+async function provision() {
+  if (!scopeVersion.value || creating.value) return;
+  const yes = await askConfirm("为版本「" + scopeVersion.value + "」创建风险暴露分类规则。会从已有分类复制一份，再在这一版上改。", {
+    title: "创建风险暴露分类规则",
+    confirmText: "创建"
+  });
+  if (!yes) return;
+  addError.value = "";
+  creating.value = true;
+  try {
+    await createExposureVersion(scopeVersion.value);
+    doc.value = null;
+    list.value = [];
+    router.push({ path: "/tree", query: { rev: String(Date.now()) } });
+  } catch (err) {
+    addError.value = err.message || "没有创建";
+  } finally {
+    creating.value = false;
+  }
+}
+
 watch(() => (route.params.name || "") + "\n" + (route.query.rev || ""), () => {
   show(route.params.name || "", String(route.query.rev || ""));
 }, { immediate: true });
+
+watch(() => session.ready, (ready) => {
+  if (ready) show(route.params.name || "", String(route.query.rev || ""));
+});
+
+watch(scopeVersion, (next, prev) => {
+  if (!session.ready || next === prev) return;
+  picked.value = null;
+  adding.value = false;
+  doc.value = null;
+  list.value = [];
+  current.value = "";
+  router.replace({ path: "/tree", query: { rev: String(Date.now()) } });
+});
 </script>
 
 <template>
   <div v-if="loading && !doc" class="loading"><span class="spin"></span>正在读取</div>
   <div v-else-if="error && !doc" class="notice danger">{{ error }}</div>
+  <div v-else-if="session.ready && !list.length" class="panel">
+    <div class="panel-body">
+      <div class="empty">
+        <p>版本 {{ scopeVersion }} 还没有风险暴露分类规则。</p>
+        <button type="button" class="btn primary" :disabled="creating" @click="provision">创建风险暴露分类规则</button>
+        <p v-if="addError" class="notice danger">{{ addError }}</p>
+      </div>
+    </div>
+  </div>
   <template v-else-if="doc">
     <div class="section-tabs" role="tablist">
       <button

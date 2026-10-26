@@ -546,7 +546,11 @@ onMounted(async () => {
             </select>
             <input v-else :value="institutionText" @input="institutionText = $event.target.value" />
           </div>
-          <div class="field" style="grid-column: 1 / -1"><label>计量批次名称</label><input v-model="batchName" type="text" @input="nameTouched = true" /></div>
+          <div class="field" style="grid-column: 1 / -1">
+            <label>计量批次名称</label>
+            <input v-model="batchName" type="text" @input="nameTouched = true" />
+            <div class="hint">这次执行结果的主键。结果明细按这个名称列出。同名不能再执行一次。</div>
+          </div>
         </div>
         <div class="notice info"><span class="ni">i</span><div>规则版本决定本次计量适用的全部规则。计量的规则版本会被固化记录在批次中，规则更新后，历史批次不会自动套用新规则。</div></div>
         <div class="grid c4">
@@ -884,7 +888,7 @@ onMounted(async () => {
     <div v-else class="panel">
       <div class="panel-head"><h3>第九步：查看计量结果及审计证据</h3></div>
       <div class="panel-body">
-        <div class="notice ok"><span class="ni">✓</span><div>批次「{{ batchName }}」已写入数据库，编号 {{ savedId }}。分类、EAD、缓释和 RWA 都记在这一笔里。<template v-if="uploadId && pack.workbookReady"> 上传的工作簿每一行后面也写了风险权重、EAD、RWA 和计算过程。</template></div></div>
+        <div class="notice ok"><span class="ni">✓</span><div>批次「{{ batchName }}」已写入结果明细。分类、EAD、缓释和 RWA 都记在这个名称下。<template v-if="uploadId && pack.workbookReady"> 上传的工作簿每一行后面也写了风险权重、EAD、RWA 和计算过程。</template></div></div>
         <div class="grid c4">
           <div class="kpi accent"><div class="k-label">债项</div><div class="k-value">{{ pack.summary.total }}</div></div>
           <div class="kpi"><div class="k-label">EAD</div><div class="k-value">{{ shortMoney(pack.summary.ead) }}</div></div>

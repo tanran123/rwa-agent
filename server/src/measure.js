@@ -68,9 +68,29 @@ async function loadRuleset(name) {
   };
 }
 
-async function loadCatalog() {
+async function tabsForVersion(version) {
+  const ver = String(version || "");
+  if (ver) {
+    const owned = await query(
+      "SELECT id, name, title, label, seq, body FROM exposure_document WHERE seq > 0 AND rule_version = ? ORDER BY seq, id",
+      [ver]
+    );
+    if (owned.length) return owned;
+  }
+  const anchor = await query(
+    "SELECT rule_version FROM exposure_document WHERE seq > 0 AND label = ? ORDER BY id LIMIT 1",
+    ["通用"]
+  );
+  const ruleVersion = anchor[0] ? anchor[0].rule_version : "";
+  return query(
+    "SELECT id, name, title, label, seq, body FROM exposure_document WHERE seq > 0 AND rule_version = ? ORDER BY seq, id",
+    [ruleVersion]
+  );
+}
+
+async function loadCatalog(version) {
   const [docs, products] = await Promise.all([
-    query("SELECT id, name, title, label, seq, body FROM exposure_document ORDER BY seq, id"),
+    tabsForVersion(version),
     query("SELECT code, label FROM product_type")
   ]);
   const parsed = docs.map((row) => ({
@@ -1079,6 +1099,7 @@ function choicesOf(body) {
   });
   return {
     rulesetName: body && body.rulesetName ? String(body.rulesetName) : "",
+    version: body && body.version ? String(body.version) : "",
     productById,
     columnsByProduct
   };
@@ -1119,7 +1140,7 @@ async function measureLoans(loans, intakeMeta, choices) {
     const std = fillStd(loan, code, headers, master, picked.columnsByProduct);
     return std ? { ...loan, std } : loan;
   });
-  const catalog = await loadCatalog();
+  const catalog = await loadCatalog(picked.version);
   const engine = require(path.join(root, "server/lib/engine.cjs"));
   const rulesetByProduct = { "": catalog.general };
   const productOf = (loan) => picked.productById[loan.id] || loan.productAssigned || pipeline.detectProduct(loan, mock.PRODUCT_DETECT_RULES).product || "";
@@ -1673,6 +1694,18 @@ export async function applyMeasureChoices(body) {
 }
 
 export async function saveMeasureRun(body) {
+  const name = String((body && body.name) || "").trim();
+  if (!name) {
+    const error = new Error("请填写计量批次名称");
+    error.status = 400;
+    throw error;
+  }
+  const taken = await query("SELECT id FROM measure_batch WHERE name = ? LIMIT 1", [name]);
+  if (taken.length) {
+    const error = new Error("已经有这个批次名称。每次执行要用不同的批次名称");
+    error.status = 400;
+    throw error;
+  }
   const uploaded = body && body.uploadId && uploads.get(body.uploadId);
   const chosen = body && body.choiceId && chosenDemo && chosenDemo.id === body.choiceId ? chosenDemo.pack : null;
   const data = uploaded ? uploaded.pack : (chosen || await measureDemo());
@@ -1689,7 +1722,7 @@ export async function saveMeasureRun(body) {
   };
   const header = {
     id,
-    name: (body && body.name) || "新建计量批次",
+    name,
     institution: (body && body.institution) || "",
     jurisdiction: (body && body.jurisdiction) || "MO",
     version: (body && body.version) || "",
@@ -1793,18 +1826,7 @@ export async function readMeasureRun(id) {
   const batch = rows[0];
   const rules = documentOf(batch.rules_json) || {};
   const lines = await query(
-    `SELECT loan_id, customer_name, product_code, exposure_class, weight_text, ead, rwa, status,
-            JSON_UNQUOTE(JSON_EXTRACT(detail, '$.customer')) AS detail_customer,
-            JSON_UNQUOTE(JSON_EXTRACT(detail, '$.name')) AS detail_name,
-            JSON_EXTRACT(detail, '$.balance') AS detail_balance,
-            JSON_UNQUOTE(JSON_EXTRACT(detail, '$.exposureSubClass')) AS detail_sub,
-            JSON_UNQUOTE(JSON_EXTRACT(detail, '$.matchedRule')) AS detail_rule,
-            JSON_EXTRACT(detail, '$.riskWeight') AS detail_weight,
-            JSON_EXTRACT(detail, '$.onEad') AS detail_on_ead,
-            JSON_EXTRACT(detail, '$.offEad') AS detail_off_ead,
-            JSON_UNQUOTE(JSON_EXTRACT(detail, '$.eadFormula')) AS detail_formula,
-            JSON_UNQUOTE(JSON_EXTRACT(detail, '$.crm.note')) AS detail_crm_note,
-            JSON_EXTRACT(detail, '$.reference') AS detail_reference
+    `SELECT loan_id, customer_name, product_code, exposure_class, weight_text, ead, rwa, status, detail
      FROM measure_line WHERE batch_id = ? ORDER BY id`,
     [id]
   );

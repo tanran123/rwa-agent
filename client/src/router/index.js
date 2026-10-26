@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import DashboardView from '../view/DashboardView.vue'
 import VersionsView from '../view/rule/VersionsView.vue'
+import OrgsView from '../view/rule/OrgsView.vue'
 import ParamsView from '../view/rule/ParamsView.vue'
 import ClausesView from '../view/rule/ClausesView.vue'
 import FieldsView from '../view/rule/FieldsView.vue'
@@ -37,6 +38,7 @@ const classTabs = [
 const routes = [
   { path: '/', name: 'dashboard', component: DashboardView, meta: { group: '总览', title: '首页 / 计量工作台', blurb: '按菜单顺序走：规则配置，然后计量。' } },
   { path: '/versions', name: 'versions', component: VersionsView, meta: { group: '规则配置', title: '监管规则版本管理', blurb: '三地规则分开维护。在已有版本上复制后再改，避免互相覆盖。', sections: versionTabs } },
+  { path: '/orgs', name: 'orgs', component: OrgsView, meta: { group: '规则配置', title: '机构', blurb: '左上角机构和版本的适用机构都用这份名单。按当前地区列出。' } },
   { path: '/params', name: 'params', component: ParamsView, meta: { group: '规则配置', title: '共用参数', blurb: '多条规则共用的门槛。评级百分比在权重表里改。', sections: versionTabs } },
   { path: '/clauses', name: 'clauses', component: ClausesView, meta: { group: '规则配置', title: '监管条款库', blurb: '条款和引用它的规则放在同一张表里。点一行看原文和引用。' } },
   { path: '/fields', name: 'fields', component: FieldsView, meta: { group: '规则配置', title: '产品标准字段管理', blurb: '规则写字段 name，不写 Excel 表头。手工字段不要从表格对齐。', sections: fieldTabs } },

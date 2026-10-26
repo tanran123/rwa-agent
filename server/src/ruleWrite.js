@@ -180,6 +180,81 @@ export async function updateRuleVersion(id, body) {
   }), "版本编号已存在");
 }
 
+async function orgRow(q, id) {
+  const rows = await q("SELECT id, name, jurisdiction FROM org_unit WHERE id = ?", [id]);
+  if (!rows[0]) fail(404, "机构不存在");
+  return rows[0];
+}
+
+async function orgFields(q, body) {
+  const name = text(body, "name", "名称", 64);
+  const jurisdiction = await requireJurisdiction(q, body.jurisdiction);
+  return { name, jurisdiction };
+}
+
+async function orgNameTaken(q, name, jurisdiction, exceptId) {
+  const rows = await q(
+    "SELECT id FROM org_unit WHERE name = ? AND jurisdiction = ? AND id <> ? LIMIT 1",
+    [name, jurisdiction, exceptId || ""]
+  );
+  if (rows[0]) fail(400, "这个地区已经有同名机构");
+}
+
+async function orgUsed(q, name, jurisdiction) {
+  const [versions, batches] = await Promise.all([
+    q("SELECT id FROM rule_version WHERE institution = ? AND jurisdiction = ? LIMIT 1", [name, jurisdiction]),
+    q("SELECT id FROM measure_batch WHERE institution = ? AND jurisdiction = ? LIMIT 1", [name, jurisdiction])
+  ]);
+  return !!(versions[0] || batches[0]);
+}
+
+export async function createOrg(body) {
+  const id = keyOf(body.id, "编号");
+  if (id.length > 32) fail(400, "编号不能超过 32 个字");
+  return write(() => tx(async (q) => {
+    const fields = await orgFields(q, body);
+    await orgNameTaken(q, fields.name, fields.jurisdiction, "");
+    await q(
+      "INSERT INTO org_unit (id, name, jurisdiction) VALUES (?, ?, ?)",
+      [id, fields.name, fields.jurisdiction]
+    );
+    return orgRow(q, id);
+  }), "编号已存在");
+}
+
+export async function updateOrg(id, body) {
+  const key = keyOf(id, "编号");
+  return write(() => tx(async (q) => {
+    const prev = await orgRow(q, key);
+    const fields = await orgFields(q, body);
+    await orgNameTaken(q, fields.name, fields.jurisdiction, key);
+    if (fields.jurisdiction !== prev.jurisdiction && await orgUsed(q, prev.name, prev.jurisdiction)) {
+      fail(400, "这个机构还被规则版本或计量批次引用，不能改地区");
+    }
+    await q("UPDATE org_unit SET name = ?, jurisdiction = ? WHERE id = ?", [fields.name, fields.jurisdiction, key]);
+    if (fields.name !== prev.name && fields.jurisdiction === prev.jurisdiction) {
+      await q(
+        "UPDATE rule_version SET institution = ? WHERE institution = ? AND jurisdiction = ?",
+        [fields.name, prev.name, prev.jurisdiction]
+      );
+      await q(
+        "UPDATE measure_batch SET institution = ? WHERE institution = ? AND jurisdiction = ?",
+        [fields.name, prev.name, prev.jurisdiction]
+      );
+    }
+    return orgRow(q, key);
+  }), "编号已存在");
+}
+
+export async function deleteOrg(id) {
+  const key = keyOf(id, "编号");
+  await tx(async (q) => {
+    const row = await orgRow(q, key);
+    if (await orgUsed(q, row.name, row.jurisdiction)) fail(400, "这个机构还被规则版本或计量批次引用");
+    await q("DELETE FROM org_unit WHERE id = ?", [key]);
+  });
+}
+
 export async function deleteRuleVersion(id) {
   const key = keyOf(id, "编号");
   await tx(async (q) => {
@@ -971,6 +1046,7 @@ async function batchDelete(body, removeOne) {
 }
 
 export const deleteRuleVersions = (body) => batchDelete(body, deleteRuleVersion);
+export const deleteOrgs = (body) => batchDelete(body, deleteOrg);
 export const deleteClauses = (body) => batchDelete(body, deleteClause);
 export const deleteParams = (body) => batchDelete(body, deleteParam);
 export const deleteProducts = (body) => batchDelete(body, deleteProduct);
