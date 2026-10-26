@@ -1,4 +1,4 @@
-"""Load the deepagents project files: agent.json, AGENTS.md, and skills."""
+"""Load the dcode project files: AGENTS.md, skills, and subagent definitions."""
 
 from __future__ import annotations
 
@@ -6,7 +6,9 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-SKILLS = ["/skills/"]
+MEMORY = ["./AGENTS.md"]
+SKILLS = ["./.deepagents/skills/"]
+AGENTS = ROOT / ".deepagents" / "agents"
 
 
 def read_text(path: Path) -> str:
@@ -28,9 +30,19 @@ def coordinator_prompt() -> str:
     return read_text(ROOT / "AGENTS.md")
 
 
-def subagent_prompt(directory: Path) -> tuple[str, str]:
-    data = read_json(directory / "agent.json")
-    description = str(data.get("description") or "").strip()
-    if not description:
-        raise ValueError(str(directory / "agent.json") + " 缺少 description")
-    return description, read_text(directory / "AGENTS.md")
+def subagent_prompt(name: str) -> tuple[str, str]:
+    path = AGENTS / name / "AGENTS.md"
+    text = path.read_text(encoding="utf-8")
+    if not text.startswith("---\n"):
+        raise ValueError(str(path) + " 缺少开头的说明")
+    end = text.find("\n---", 3)
+    if end < 0:
+        raise ValueError(str(path) + " 缺少说明的结束")
+    description = ""
+    for line in text[4:end].splitlines():
+        if line.startswith("description:"):
+            description = line.split(":", 1)[1].strip()
+    body = text[end + 4 :].strip()
+    if not description or not body:
+        raise ValueError(str(path) + " 缺少 description 或正文")
+    return description, body

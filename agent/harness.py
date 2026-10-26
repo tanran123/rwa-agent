@@ -1,4 +1,4 @@
-"""Coordinator. Prompts come from AGENTS.md. Each step lives in subagents/."""
+"""Coordinator. Memory is AGENTS.md. Skills and subagent prompts live under .deepagents/."""
 
 from __future__ import annotations
 
@@ -6,13 +6,30 @@ import json
 import re
 
 from agent.chat import model
-from agent.layout import ROOT, SKILLS, coordinator_prompt, project
+from agent.layout import MEMORY, ROOT, SKILLS, project
 from agent.pages import PAGES, open_page
 from agent.pipeline import pipeline_steps
 
 _GRAPH = None
 
 _FENCE = re.compile(r"```json\s*(.*?)```", re.S)
+
+
+def _profile(chat) -> None:
+    from deepagents import GeneralPurposeSubagentProfile, HarnessProfile, register_harness_profile
+    from deepagents._models import get_model_identifier, get_model_provider
+
+    provider = get_model_provider(chat)
+    identifier = get_model_identifier(chat)
+    if not provider or not identifier:
+        raise RuntimeError("通义模型没有对上 deepagents 的配置键")
+    register_harness_profile(
+        provider + ":" + identifier,
+        HarnessProfile(
+            general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False),
+            excluded_tools=frozenset({"write_file", "edit_file", "delete", "execute"}),
+        ),
+    )
 
 
 def graph():
@@ -26,13 +43,14 @@ def graph():
 
         chat = model()
         meta = project()
+        _profile(chat)
         _GRAPH = create_deep_agent(
             model=chat,
             tools=[pipeline_steps, open_page],
-            system_prompt=coordinator_prompt(),
-            subagents=specs(chat),
+            memory=MEMORY,
             skills=SKILLS,
-            backend=FilesystemBackend(root_dir=ROOT, virtual_mode=True),
+            subagents=specs(chat),
+            backend=FilesystemBackend(root_dir=ROOT),
             permissions=[FilesystemPermission(operations=["write"], paths=["/**"], mode="deny")],
             name=str(meta.get("name") or "rwa-pipeline"),
         )

@@ -48,7 +48,7 @@ def run_weight_decision(workbook: str) -> str:
 
 
 def spec(model) -> dict:
-    description, prompt = subagent_prompt(HERE)
+    description, prompt = subagent_prompt(NAME)
     return {
         "name": NAME,
         "description": description,

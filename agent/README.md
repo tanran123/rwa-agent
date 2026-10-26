@@ -1,6 +1,6 @@
 # 智能体
 
-目录按 deepagents 的项目布局。总控的提示在 `AGENTS.md`，配置在 `agent.json`。每个计算步骤目录里有自己的 `agent.json` 和 `AGENTS.md`。技能在 `skills/<名字>/SKILL.md`。
+目录按 dcode 的项目布局。总控记忆是本目录 `AGENTS.md`，用 `memory=["./AGENTS.md"]` 在启动时载入。技能在 `.deepagents/skills/<名字>/SKILL.md`，用 `skills=["./.deepagents/skills/"]` 按需读取。子智能体说明在 `.deepagents/agents/<名字>/AGENTS.md`，开头写 `name` 和 `description`，正文是提示词。计算程序仍在 `subagents/<名字>/`。
 
 页面通过 `POST /api/agent/chat` 进来。Koa 转到 Flask，Flask 调用 `harness.reply`。总控只派发，不自己算数。
 
@@ -21,16 +21,18 @@
 | 路径 | 作用 |
 | --- | --- |
 | `agent.json` | 总控的名字、说明和模型。 |
-| `AGENTS.md` | 总控提示词。`harness.py` 启动时读这一份。 |
-| `harness.py` | 组装 deepagents，处理对话，返回 `{ reply, pages }`。带上 EAD 配置时，回复里的 JSON 草稿放在 `draft`。EAD 页的公式校验不走这里。 |
-| `layout.py` | 读取 `agent.json` 和 `AGENTS.md`。 |
+| `AGENTS.md` | 总控记忆。`create_deep_agent` 的 `memory` 指向 `./AGENTS.md`。 |
+| `harness.py` | 按 dcode 的项目路径组装：`memory`、`.deepagents/skills`、`subagents`、`FilesystemBackend`。关掉框架自带的 general-purpose 子智能体。文件系统拒绝写入，并藏起 `write_file`、`edit_file`、`delete`、`execute`。处理对话，返回 `{ reply, pages }`。带上 EAD 配置时，回复里的 JSON 草稿放在 `draft`。EAD 页的公式校验不走这里。 |
+| `layout.py` | 读取 `agent.json`、总控 `AGENTS.md`，以及 `.deepagents/agents/<名字>/AGENTS.md`。 |
+| `.deepagents/skills/` | 技能。每个子目录一份 `SKILL.md`。 |
+| `.deepagents/agents/` | 子智能体说明。每个子目录一份 `AGENTS.md`。 |
 | `chat.py` | 通义模型。密钥读仓库根目录 `.env`。 |
 | `pipeline.py` | `STEPS` 名单。按名单调用 `program.run`。 |
 | `pages.py` | 总控打开页面。只在用户要看页面时用。 |
-| `tree_edit.py` | 决策树助手。提示词在 `skills/decision-tree/SKILL.md`。先判断修改或新增。修改先说明当前规则。新增按监管条款，从通用分类扩展。用户说全部或按条款库时，先出一版草稿，再由用户调整。不写文件。用户确认并选择保存后，由 Koa 写入。 |
+| `tree_edit.py` | 决策树助手。提示词在 `.deepagents/skills/decision-tree/SKILL.md`。先判断修改或新增。修改先说明当前规则。新增按监管条款，从通用分类扩展。用户说全部或按条款库时，先出一版草稿，再由用户调整。不写文件。用户确认并选择保存后，由 Koa 写入。 |
 | `paths.py` | 仓库根目录。留痕目录从这里找。 |
-| `skills/calculation-order/SKILL.md` | 计算顺序。总控和子智能体都能读。 |
-| `skills/decision-tree/SKILL.md` | 决策树助手。只给暴露分类页用。总控不按它改分类。 |
+| `.deepagents/skills/calculation-order/SKILL.md` | 计算顺序。和决策树技能一起放在 `.deepagents/skills/` 下，总控和子智能体按这个目录加载。 |
+| `.deepagents/skills/decision-tree/SKILL.md` | 决策树助手。只给暴露分类页用。总控不按它改分类。 |
 | `subagents/__init__.py` | `ORDER`。顺序是 weight、ccf、crm、rwa，不能调换。 |
 
 ## 流水线
@@ -50,7 +52,7 @@
 
 | 路径 | 作用 |
 | --- | --- |
-| `weight/agent.json`、`weight/AGENTS.md` | 这一步的说明和提示词。 |
+| `.deepagents/agents/weight/AGENTS.md` | 这一步的说明和提示词。 |
 | `weight/__init__.py` | 工具 `run_weight_decision`。 |
 | `weight/program.py` | `run(context)`。把工作簿交给 `calc/paper_calc.run_workbook`，把结果路径、留痕、敞口和风险加权资产放回 context。 |
 | `weight/calc/paper_calc.py` | 逐笔分类、权重和敞口。 |
@@ -75,7 +77,7 @@
 
 ### ccf 和 crm
 
-各有 `agent.json`、`AGENTS.md`、`__init__.py`、`program.py`。问到就停住。不要在这里补系数或拆分。
+说明在 `.deepagents/agents/ccf/AGENTS.md` 和 `.deepagents/agents/crm/AGENTS.md`。程序各有 `__init__.py`、`program.py`。问到就停住。不要在这里补系数或拆分。
 
 ### rwa
 
@@ -96,9 +98,9 @@
 
 ## 一个子智能体里有什么
 
-`agent.json` 写 `description`，总控靠它决定何时派发。`AGENTS.md` 是这一步的提示词。
+`.deepagents/agents/<名字>/AGENTS.md` 开头写 `description`，总控靠它决定何时派发。正文是这一步的提示词。
 
-`__init__.py` 提供工具和 `spec(model)`。提示词从上面两个文件读，不要再写死在 Python 里。
+`__init__.py` 提供工具和 `spec(model)`。提示词从这份文件读，不要再写死在 Python 里。
 
 `program.py` 给流水线调用：
 
@@ -115,7 +117,7 @@
 
 分类条件和权重只改 `subagents/weight/knowledge/权重法风险暴露分类.json` 里用户点名的规则。`when` 的 `field` 和 `match` 用该文件 `options` 里已有的 `code`。空单元格保持不命中，不要为了算完填一个权重。
 
-子智能体的说明写在该目录 `agent.json` 的 `description`，提示写在该目录 `AGENTS.md`。`__init__.py` 只保留工具函数和 `spec()`，并从 `agent/layout.py` 的 `subagent_prompt` 读取这两份文件。
+子智能体的说明和提示写在 `agent/.deepagents/agents/<名字>/AGENTS.md`。`__init__.py` 只保留工具函数和 `spec()`，并从 `agent/layout.py` 的 `subagent_prompt` 读取这份文件。
 
 `run(context)` 缺路径或缺少必要字段时，设置 `stopped` 和 `stop_reason` 后返回。不要估算敞口或风险加权资产。`ead_yi` 和 `rwa_yi` 只从 `run_workbook` 的返回值抄过来。流水线这一步的 `run_workbook` 在 `weight/calc/paper_calc.py`。
 
@@ -123,7 +125,7 @@
 
 ## 加一步
 
-1. 新建 `subagents/<名字>/`，放入 `agent.json`、`AGENTS.md`、`program.py` 和 `__init__.py`。
+1. 新建 `subagents/<名字>/`，放入 `program.py` 和 `__init__.py`。在 `.deepagents/agents/<名字>/AGENTS.md` 写说明和提示词。
 2. 把这一步加进 `subagents/__init__.py` 的 `ORDER`，位置按监管计算顺序。
 3. 在总控 `AGENTS.md` 里写明什么问题交给它。
 4. `program.run` 能用真实输入跑通之后，才把名字追加到 `agent/pipeline.py` 的 `STEPS`。没跑通不要写进名单。
