@@ -132,17 +132,50 @@ function zoomOut() { if (stageCtl) stageCtl.zoomOut(); }
 function resetZoom() { if (stageCtl) stageCtl.resetZoom(); }
 function restore() { if (stageCtl) stageCtl.restore(); }
 
+const covered = ref(false);
+let bodyOverflow = "";
+
+function fullscreenElement() {
+  return document.fullscreenElement || document.webkitFullscreenElement || null;
+}
+
 function syncFullscreen() {
-  fullscreen.value = document.fullscreenElement === shell.value;
+  fullscreen.value = fullscreenElement() === shell.value || covered.value;
+}
+
+function cover(on) {
+  covered.value = on;
+  if (on) {
+    bodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+  } else {
+    document.body.style.overflow = bodyOverflow;
+  }
+  syncFullscreen();
+}
+
+function onFullscreenKey(e) {
+  if (e.key === "Escape" && covered.value) cover(false);
 }
 
 async function toggleFullscreen() {
   if (!shell.value) return;
+  error.value = "";
+  if (fullscreenElement() === shell.value) {
+    const exit = document.exitFullscreen || document.webkitExitFullscreen;
+    if (exit) await exit.call(document);
+    return;
+  }
+  if (covered.value) {
+    cover(false);
+    return;
+  }
+  const request = shell.value.requestFullscreen || shell.value.webkitRequestFullscreen;
   try {
-    if (document.fullscreenElement === shell.value) await document.exitFullscreen();
-    else await shell.value.requestFullscreen();
+    if (!request) throw new Error("当前浏览器不能全屏");
+    await request.call(shell.value);
   } catch (e) {
-    error.value = "全屏没有打开：" + (e && e.message ? e.message : e);
+    cover(true);
   }
 }
 
@@ -158,16 +191,21 @@ function download() {
 watch(() => [props.document, (props.changed || []).join("\n")], () => { if (graph.value) draw(); });
 onMounted(() => {
   document.addEventListener("fullscreenchange", syncFullscreen);
+  document.addEventListener("webkitfullscreenchange", syncFullscreen);
+  document.addEventListener("keydown", onFullscreenKey);
   draw();
 });
 onBeforeUnmount(() => {
   document.removeEventListener("fullscreenchange", syncFullscreen);
+  document.removeEventListener("webkitfullscreenchange", syncFullscreen);
+  document.removeEventListener("keydown", onFullscreenKey);
+  if (covered.value) document.body.style.overflow = bodyOverflow;
   dispose();
 });
 </script>
 
 <template>
-  <div ref="shell" class="dt-shell" :class="{ 'is-fullscreen': fullscreen }">
+  <div ref="shell" class="dt-shell" :class="{ 'is-fullscreen': fullscreen, 'is-cover': covered }">
     <header class="dt-head">
       <h3>{{ title }}<small>由 JSON 规则集机械推导 · 首个命中者生效 · 共 {{ stats.rules }} 条规则 / {{ stats.leaves }} 个结论</small></h3>
       <span class="dt-grow"></span>
