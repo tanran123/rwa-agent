@@ -41,8 +41,11 @@ const store = createStore({
       state.jurisdictions = data.jurisdictions || []
       state.versions = data.versions || []
       state.orgs = data.orgs || []
-      const published = state.versions.find((item) => item.jurisdiction === 'MO' && item.status === 'published')
-      if (published) state.versionId = published.id
+      const list = versionsFor(state)
+      if (!list.some((item) => item.id === state.versionId)) {
+        const next = list.find((item) => item.status === 'published') || list[0]
+        if (next) state.versionId = next.id
+      }
       alignOrg(state)
       state.ready = true
       state.error = ''

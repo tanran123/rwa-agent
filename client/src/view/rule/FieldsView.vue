@@ -33,7 +33,9 @@ const loadFields = () => code.value ? fetchProductFields(code.value) : Promise.r
 const current = (rows) => (rows || []).find((item) => item.code === code.value) || {};
 
 const versionOptions = computed(() => {
-  const values = (session.versions || []).map((item) => item.version);
+  const values = (session.versions || [])
+    .filter((item) => item.jurisdiction === session.jurisdiction)
+    .map((item) => item.version);
   const currentVersion = productForm.value && productForm.value.ruleVersion;
   if (currentVersion && values.indexOf(currentVersion) < 0) values.unshift(currentVersion);
   return values;

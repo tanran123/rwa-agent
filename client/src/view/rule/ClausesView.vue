@@ -118,7 +118,7 @@ async function removeSelected(rows) {
 <template>
   <p v-if="batch.state.text" class="notice" :class="batch.state.kind">{{ batch.state.text }}</p>
   <div class="inline-fields" style="margin-bottom: 12px">
-    <input v-model="q" type="search" placeholder="条款编号、标题或制度" />
+    <input v-model="q" type="search" placeholder="条款编号、标题、制度或制度版本" />
     <button type="button" class="btn sm primary" @click="create">新建</button>
   </div>
   <AsyncView ref="view" :key="q" :load="load">
@@ -135,7 +135,7 @@ async function removeSelected(rows) {
             <thead>
               <tr>
                 <th class="pick" @click.stop><input type="checkbox" :checked="pick.allOn(data)" @change="pick.toggleAll(data)" /></th>
-                <th>条款</th><th>标题</th><th>地区</th><th>被引用</th>
+                <th>条款</th><th>标题</th><th>制度版本</th><th>地区</th><th>被引用</th>
               </tr>
             </thead>
             <tbody>
@@ -143,6 +143,7 @@ async function removeSelected(rows) {
                 <td class="pick" @click.stop><input type="checkbox" :checked="pick.on(row.id)" @change="pick.toggle(row.id)" /></td>
                 <td class="mono">{{ row.clause }}</td>
                 <td>{{ row.title }}</td>
+                <td>{{ row.docVersion }}</td>
                 <td>{{ row.jurisdiction }}</td>
                 <td>{{ row.referencedBy.length }}</td>
               </tr>

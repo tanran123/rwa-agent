@@ -125,7 +125,7 @@ router.get("/bootstrap", async (ctx) => {
 router.get("/dashboard", async (ctx) => {
   const docs = await query("SELECT body FROM exposure_document WHERE id = 1");
   const doc = json(docs[0] && docs[0].body) || { rules: [] };
-  const batches = await query("SELECT * FROM measure_batch ORDER BY created_at, id LIMIT 5");
+  const batches = await query("SELECT * FROM measure_batch ORDER BY created_at DESC, id DESC");
   const published = await query(
     "SELECT version, jurisdiction FROM rule_version WHERE status = 'published' ORDER BY effective_from DESC LIMIT 1"
   );
@@ -170,9 +170,9 @@ router.get("/clauses", async (ctx) => {
   const rows = await query(
     `SELECT * FROM clause_doc
      WHERE (? = '' OR jurisdiction = ?)
-       AND (clause_no LIKE ? OR title LIKE ? OR doc LIKE ?)
+       AND (clause_no LIKE ? OR title LIKE ? OR doc LIKE ? OR doc_version LIKE ?)
      ORDER BY jurisdiction, clause_no`,
-    [jur, jur, q, q, q]
+    [jur, jur, q, q, q, q]
   );
   const refs = await query("SELECT clause_id, rule_name FROM clause_ref");
   const byId = {};

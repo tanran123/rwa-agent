@@ -29,8 +29,8 @@ Koa 2，前缀 `/api`，默认 `http://127.0.0.1:8780`。数据在 MySQL，连�
 | --- | --- | --- |
 | GET | `/health` | 存活检查。 |
 | GET | `/bootstrap` | 客户、机构、地区、版本。给前端 Vuex。 |
-| GET | `/dashboard` | 总览数字。 |
-| GET、POST、PUT、DELETE | `/rule-versions`、`/clauses`、`/params` | 规则版本、条款、共用参数。写入在 `src/ruleWrite.js`。编号创建后不改。版本被产品、EAD、专属规则或计量批次引用时不能删。条款被专属规则或 EAD 规则引用时不能删。参数被银行评级档、转换系数或 EAD 规则引用时不能删。另有 `POST /rule-versions/batch-delete`、`POST /clauses/batch-delete`、`POST /params/batch-delete`，请求体 `{ "ids": [] }`，返回 `{ deleted, blocked }`。被引用的留在 `blocked`。 |
+| GET | `/dashboard` | 总览数字。批次清单不截断，页面再按顶栏版本筛。 |
+| GET、POST、PUT、DELETE | `/rule-versions`、`/clauses`、`/params` | 规则版本、条款、共用参数。条款关键字匹配条款编号、标题、制度和制度版本。写入在 `src/ruleWrite.js`。编号创建后不改。版本被产品、EAD、专属规则或计量批次引用时不能删。条款被专属规则或 EAD 规则引用时不能删。参数被银行评级档、转换系数或 EAD 规则引用时不能删。另有 `POST /rule-versions/batch-delete`、`POST /clauses/batch-delete`、`POST /params/batch-delete`，请求体 `{ "ids": [] }`，返回 `{ deleted, blocked }`。被引用的留在 `blocked`。 |
 | GET、POST、PUT、DELETE | `/products`、`/products/:code/fields`、`/field-mappings` | 产品、标准字段、字段映射。删产品时一并删掉该产品的字段、映射、EAD 配置、缓释配置和专属规则。另有 `POST /products/batch-delete`、`POST /products/:code/fields/batch-delete`、`POST /field-mappings/batch-delete`，请求体和返回与上面的批量删除相同。 |
 | GET | `/exposure-classes`、`/exposure-class` | 分类 JSON 页签、单份分类。`/exposure-class?name=` 读 `exposure_document` 里 `seq > 0` 的那一行；不带 name 时仍读 `id = 1` 的权重法分类。 |
 | GET、POST、PUT、DELETE | `/weights`、`/weight-rules`、`/bank-grades`、`/mo-weights`、`/crm`、`/product-rules` | 权重表一次读出三张表。权重规则、第一档银行评级、澳门评级档、缓释规则、产品专属规则各自增删改。被银行评级档引用的权重规则不能删。另有 `POST /weight-rules/batch-delete`、`POST /bank-grades/batch-delete`、`POST /mo-weights/batch-delete`、`POST /crm/batch-delete`、`POST /product-rules/batch-delete`。 |
