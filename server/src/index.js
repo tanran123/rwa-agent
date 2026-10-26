@@ -125,7 +125,7 @@ router.get("/bootstrap", async (ctx) => {
 router.get("/dashboard", async (ctx) => {
   const docs = await query("SELECT body FROM exposure_document WHERE id = 1");
   const doc = json(docs[0] && docs[0].body) || { rules: [] };
-  const batches = await query("SELECT * FROM measure_batch ORDER BY created_at, id LIMIT 5");
+  const batches = await query("SELECT * FROM measure_batch ORDER BY created_at DESC, id DESC");
   const published = await query(
     "SELECT version, jurisdiction FROM rule_version WHERE status = 'published' ORDER BY effective_from DESC LIMIT 1"
   );
@@ -170,9 +170,9 @@ router.get("/clauses", async (ctx) => {
   const rows = await query(
     `SELECT * FROM clause_doc
      WHERE (? = '' OR jurisdiction = ?)
-       AND (clause_no LIKE ? OR title LIKE ? OR doc LIKE ?)
+       AND (clause_no LIKE ? OR title LIKE ? OR doc LIKE ? OR doc_version LIKE ?)
      ORDER BY jurisdiction, clause_no`,
-    [jur, jur, q, q, q]
+    [jur, jur, q, q, q, q]
   );
   const refs = await query("SELECT clause_id, rule_name FROM clause_ref");
   const byId = {};
@@ -636,8 +636,15 @@ router.get("/assistant", async (ctx) => {
 router.post("/exposure-tree/propose", async (ctx) => {
   const body = ctx.request.body || {};
   const name = String(body.name || "");
-  const item = name ? await exposureDoc(name) : (await exposureDocs())[0];
+  const docs = await exposureDocs();
+  const item = name ? docs.find((row) => row.name === name) : docs[0];
   if (!item) ctx.throw(404, "没有这份分类 JSON");
+  const generic = docs.find((row) => row.label === "通用") || docs[0];
+  const clauses = await query(
+    `SELECT c.jurisdiction, j.label AS region, c.clause_no, c.title, c.body, c.scope
+     FROM clause_doc c LEFT JOIN jurisdiction j ON j.code = c.jurisdiction
+     ORDER BY c.jurisdiction, c.clause_no`
+  );
   try {
     const response = await fetch("http://127.0.0.1:8766/api/exposure-tree/propose", {
       method: "POST",
@@ -645,7 +652,16 @@ router.post("/exposure-tree/propose", async (ctx) => {
       body: JSON.stringify({
         messages: body.messages || [],
         label: item.label,
-        document: item.document
+        document: item.document,
+        generic: generic && generic.name !== item.name ? generic.document : null,
+        clauses: clauses.map((row) => ({
+          jurisdiction: row.jurisdiction,
+          region: row.region,
+          clause: row.clause_no,
+          title: row.title,
+          text: row.body,
+          scope: row.scope
+        }))
       })
     });
     const text = await response.text();

@@ -3,18 +3,26 @@ import { ref } from "vue";
 import {
   createFieldMapping, deleteFieldMapping, deleteFieldMappings, fetchFieldMappings, fetchProducts, saveFieldMapping
 } from "@/api/product";
+import { useContext } from "@/composables/useContext";
 import { runBatch, useBatchNote, usePick } from "@/composables/usePick";
 import AsyncView from "@/components/AsyncView.vue";
 import RuleForm from "@/components/RuleForm.vue";
 import { askConfirm } from "@/utils/confirm";
 
+const { scopeVersion } = useContext();
 const form = ref(null);
 const error = ref("");
 const saving = ref(false);
 const view = ref(null);
 const pick = usePick();
 const batch = useBatchNote();
-const load = () => Promise.all([fetchProducts(), fetchFieldMappings()]);
+const load = async () => {
+  const [products, mappings] = await Promise.all([fetchProducts(), fetchFieldMappings()]);
+  const scoped = products.filter((item) => item.ruleVersion === scopeVersion.value);
+  const codes = {};
+  scoped.forEach((item) => { codes[item.code] = true; });
+  return [scoped, mappings.filter((row) => codes[row.product])];
+};
 const statusClass = { ok: "ok", warn: "warn", missing: "danger" };
 
 function blank(products) {

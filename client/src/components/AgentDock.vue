@@ -107,7 +107,7 @@ const chatKey = computed(() => (isTree.value ? "tree:" + (route.params.name || "
 const role = computed(() => (isTree.value
   ? {
     name: "决策树助手",
-    welcome: "说要改哪一条规则。我先说明它现在的意思，你再说改成什么样。"
+    welcome: "可以说要改哪一条，也可以说要新增哪一类。改的话我先说明现在的意思。新增的话我按监管条款，从通用分类往外扩。"
   }
   : {
     name: "风险暴露权重智能体",
@@ -344,6 +344,7 @@ async function send(content) {
       </div>
       <div class="agent-chips">
         <button v-if="isTree" type="button" @click="send('我想改一条规则')">改一条规则</button>
+        <button v-if="isTree" type="button" @click="send('我想新增一类')">新增一类</button>
         <button v-if="!isTree" type="button" @click="send('现在的计算做到哪一步')">计算做到哪一步</button>
         <button v-if="!isTree" type="button" @click="send('权重判断之后还有哪些计算')">后续计算</button>
       </div>
@@ -359,7 +360,7 @@ async function send(content) {
         </div>
       </div>
       <form class="agent-input" @submit.prevent="send(text)">
-        <input v-model="text" :placeholder="isTree ? '先说要改哪一条规则' : '给出底稿路径，或问后续计算'" :disabled="sending" />
+        <input v-model="text" :placeholder="isTree ? '可以说要改哪一条，或要新增哪一类' : '给出底稿路径，或问后续计算'" :disabled="sending" />
         <button type="submit" :disabled="sending">发送</button>
       </form>
     </aside>

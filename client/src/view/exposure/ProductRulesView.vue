@@ -1,12 +1,14 @@
 <script setup>
 import { ref } from "vue";
 import { createProductRule, deleteProductRule, deleteProductRules, fetchProductRules, saveProductRule } from "@/api/exposure";
+import { useContext } from "@/composables/useContext";
 import { runBatch, useBatchNote, usePick } from "@/composables/usePick";
 import { fetchProducts } from "@/api/product";
 import AsyncView from "@/components/AsyncView.vue";
 import RuleForm from "@/components/RuleForm.vue";
 import { askConfirm } from "@/utils/confirm";
 
+const { scopeVersion } = useContext();
 const code = ref("");
 const form = ref(null);
 const error = ref("");
@@ -14,7 +16,14 @@ const saving = ref(false);
 const view = ref(null);
 const pick = usePick();
 const batch = useBatchNote();
-const load = () => Promise.all([fetchProducts(), fetchProductRules()]);
+const load = async () => {
+  const [products, rules] = await Promise.all([fetchProducts(), fetchProductRules()]);
+  const version = scopeVersion.value;
+  return [
+    products.filter((item) => item.ruleVersion === version),
+    rules.filter((item) => item.version === version)
+  ];
+};
 const labels = { draft: "草稿", reviewing: "审核中", published: "已发布", superseded: "已被取代", disabled: "已停用" };
 
 function rulesOf(rows) {
@@ -33,7 +42,7 @@ function create(products) {
     name: "",
     label: "",
     priority: 0,
-    version: "",
+    version: scopeVersion.value,
     when: "",
     targetClass: "",
     targetSub: "",

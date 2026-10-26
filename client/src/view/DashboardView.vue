@@ -6,7 +6,7 @@ import { useContext } from "@/composables/useContext";
 import AsyncView from "@/components/AsyncView.vue";
 
 const router = useRouter();
-const { session, currentVersion } = useContext();
+const { session, currentVersion, scopeVersion } = useContext();
 const steps = [
   ["1", "规则配置", "版本、条款、字段、暴露分类、EAD、缓释", "/versions"],
   ["2", "暴露分类规则", "通用、贷款、债券各自一份分类 JSON", "/tree"],
@@ -22,7 +22,9 @@ const jurLabel = computed(() => {
 });
 
 function rowsOf(list) {
-  return [...(list || [])].sort((a, b) => (rank[a.id] ?? 9) - (rank[b.id] ?? 9) || String(a.id).localeCompare(String(b.id)));
+  return [...(list || [])]
+    .filter((row) => row.jurisdiction === session.jurisdiction && row.version === scopeVersion.value)
+    .sort((a, b) => (rank[a.id] ?? 9) - (rank[b.id] ?? 9) || String(a.id).localeCompare(String(b.id)));
 }
 function money(row) {
   const n = Number(row.onEad || 0) + Number(row.offEad || 0) || Number(row.ead || 0);

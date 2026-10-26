@@ -20,11 +20,11 @@ const route = useRoute();
 const router = useRouter();
 const open = ref("");
 const navShown = ref(false);
-const { session, versionOptions, setOrg, setJurisdiction, loadBootstrap } = useContext();
+const { session, versionOptions, scopeVersion, setOrg, setJurisdiction, loadBootstrap } = useContext();
 
 const STATUS = { draft: "草稿", reviewing: "审核中", published: "已发布", superseded: "已被取代", disabled: "已停用" };
 const activePath = computed(() => menuPath(route.path));
-const viewKey = computed(() => (route.meta.chart ? "tree" : route.path));
+const viewKey = computed(() => (route.meta.chart ? "tree" : route.path + "|" + session.jurisdiction + "|" + session.versionId + "|" + scopeVersion.value));
 
 function versionText(item) {
   const extra = item.status && item.status !== "published" ? "（" + (STATUS[item.status] || item.status) + "）" : "";
@@ -97,12 +97,6 @@ function toggle(id) {
     <div class="app-main">
       <div class="content-bar">
         <button type="button" class="btn menu-toggle" @click="navShown = true">菜单</button>
-        <div class="client-switch">
-          <label>客户</label>
-          <select v-model="session.customerId" aria-label="当前客户">
-            <option v-for="item in session.customers" :key="item.id" :value="item.id">{{ item.name }}（{{ item.code }}）</option>
-          </select>
-        </div>
         <div class="client-switch">
           <label>机构</label>
           <select :value="session.orgId" aria-label="机构" @change="setOrg($event.target.value)">
