@@ -1,9 +1,10 @@
 import request from './request'
 
-export const fetchExposureClasses = () => request.get('/exposure-classes')
+export const fetchExposureClasses = (version = '') =>
+  request.get('/exposure-classes', { params: version ? { version } : {} })
 
-export const fetchExposureClass = (name = '') =>
-  request.get('/exposure-class', { params: name ? { name } : {} })
+export const fetchExposureClass = (name = '', version = '') =>
+  request.get('/exposure-class', { params: { ...(name ? { name } : {}), ...(version ? { version } : {}) } })
 
 export const fetchWeights = () => request.get('/weights')
 
@@ -52,17 +53,22 @@ export const deleteProductRule = (id) => request.delete('/product-rules/' + enco
 
 export const deleteProductRules = (ids) => request.post('/product-rules/batch-delete', { ids })
 
-export const proposeExposureTree = (name, messages) =>
-  request.post('/exposure-tree/propose', { name, messages }, { timeout: 120000 })
+export const proposeExposureTree = (name, messages, version = '') =>
+  request.post('/exposure-tree/propose', { name, messages, version }, { timeout: 120000 })
 
 export const saveExposureTree = (body) => request.post('/exposure-tree/save', body)
 
-export const copyExposureTree = (label) => request.post('/exposure-tree/copy', { label })
+export const copyExposureTree = (label, version = '') =>
+  request.post('/exposure-tree/copy', { label, version })
 
-export const deleteExposureTree = (name) => request.post('/exposure-tree/delete', { name })
+export const deleteExposureTree = (name, version = '') =>
+  request.post('/exposure-tree/delete', { name, version })
 
-export const fetchExposureChat = (name = '') =>
-  request.get('/exposure-tree/chat', { params: name ? { name } : {} })
+export const createExposureVersion = (version) =>
+  request.post('/exposure-tree/provision', { version })
 
-export const saveExposureChat = (name, messages, draft) =>
-  request.post('/exposure-tree/chat', { name, messages, draft })
+export const fetchExposureChat = (name = '', version = '') =>
+  request.get('/exposure-tree/chat', { params: { ...(name ? { name } : {}), ...(version ? { version } : {}) } })
+
+export const saveExposureChat = (name, messages, draft, version = '') =>
+  request.post('/exposure-tree/chat', { name, messages, draft, version })

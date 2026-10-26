@@ -152,8 +152,10 @@ CREATE TABLE exposure_document (
   label VARCHAR(64) NOT NULL DEFAULT '',
   seq INT NOT NULL DEFAULT 0,
   source_file VARCHAR(160) NOT NULL,
+  rule_version VARCHAR(40) NOT NULL DEFAULT '',
   body JSON NOT NULL,
-  UNIQUE KEY uq_exposure_document_name (name)
+  UNIQUE KEY uq_exposure_document_name (name),
+  KEY idx_exposure_document_version (rule_version)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE rule_param (
@@ -303,7 +305,8 @@ CREATE TABLE measure_batch (
   created_at VARCHAR(32) NOT NULL,
   status VARCHAR(20) NOT NULL,
   rules_json JSON NULL,
-  KEY idx_batch_date (base_date)
+  KEY idx_batch_date (base_date),
+  UNIQUE KEY uq_measure_batch_name (name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE measure_line (

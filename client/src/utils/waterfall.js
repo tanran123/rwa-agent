@@ -205,9 +205,25 @@ function mermaidText(text) {
 function wrapMermaid(text, size) {
   const clean = mermaidText(text);
   if (clean.length <= size) return clean;
-  const parts = [];
-  for (let i = 0; i < clean.length; i += size) parts.push(clean.slice(i, i + size));
-  return parts.join("<br/>");
+  const lines = [];
+  clean.split("，").forEach((piece, index, all) => {
+    const clause = piece + (index < all.length - 1 ? "，" : "");
+    if (!clause) return;
+    if (clause.length <= size) {
+      lines.push(clause);
+      return;
+    }
+    let buf = "";
+    for (let i = 0; i < clause.length; i++) {
+      if (clause[i] === "或" && clause[i + 1] === "「" && buf.length >= 8) {
+        lines.push(buf);
+        buf = "";
+      }
+      buf += clause[i];
+    }
+    if (buf) lines.push(buf);
+  });
+  return lines.join("<br/>");
 }
 
 function refCaption(rule) {
@@ -295,7 +311,7 @@ export function toMermaid(doc, changedNames) {
         lines.push("    " + id + "[\"" + label + "<br/><b>" + mermaidText(weightText(entry.rule) || "权重未单列") + "</b>\"]");
         (edited ? changed : weight).push(id);
       }
-      const edge = wrapMermaid(entry.edge || chartWhen(entry.rule, book, entry.otherwise, entry.top), 18);
+      const edge = wrapMermaid(entry.edge || chartWhen(entry.rule, book, entry.otherwise, entry.top), 28);
       const arrow = parentId === "ROOT" ? "-.->" : "-->";
       lines.push("    " + parentId + " " + arrow + "|\"" + edge + "\"| " + id);
       lines.push("");
@@ -304,11 +320,11 @@ export function toMermaid(doc, changedNames) {
   }
 
   walk(rules, "ROOT", 0, "");
-  lines.push("    classDef root fill:#1e293b,stroke:#60a5fa,stroke-width:2px,color:#f8fafc;");
-  lines.push("    classDef judge fill:#1e3a8a,stroke:#93c5fd,stroke-width:2px,color:#eff6ff;");
-  lines.push("    classDef weight fill:#065f46,stroke:#34d399,stroke-width:2px,color:#ecfdf5;");
-  lines.push("    classDef ref fill:#78350f,stroke:#fbbf24,stroke-width:2px,color:#fffbeb;");
-  lines.push("    classDef changed fill:#9a3412,stroke:#fde68a,stroke-width:4px,color:#fff7ed;");
+  lines.push("    classDef root fill:#e8eef8,stroke:#3b6cb5,stroke-width:2px,color:#1e3a5f;");
+  lines.push("    classDef judge fill:#dbeafe,stroke:#3b82f6,stroke-width:2px,color:#1e3a8a;");
+  lines.push("    classDef weight fill:#d1fae5,stroke:#059669,stroke-width:2px,color:#065f46;");
+  lines.push("    classDef ref fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#78350f;");
+  lines.push("    classDef changed fill:#ffedd5,stroke:#ea580c,stroke-width:4px,color:#9a3412;");
   lines.push("    class ROOT root;");
   classStmt(judge, "judge").forEach((line) => lines.push(line));
   classStmt(weight, "weight").forEach((line) => lines.push(line));

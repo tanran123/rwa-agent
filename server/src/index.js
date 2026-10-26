@@ -8,15 +8,15 @@ import { paperView, uploadSamples } from "./paper.js";
 import { trialEad } from "./ead.js";
 import { checkEadFormula, readEadConfig, saveEadConfig } from "./eadConfig.js";
 import { readCrmConfig, saveCrmConfig } from "./crmConfig.js";
-import { copyExposureDoc, deleteExposureDoc, exposureChat, exposureDoc, exposureDocs, saveExposureChat, saveExposureDoc } from "./exposureDocs.js";
+import { copyExposureDoc, deleteExposureDoc, exposureChat, exposureDoc, exposureDocs, provisionExposureDocs, saveExposureChat, saveExposureDoc } from "./exposureDocs.js";
 import {
   createCcf, createClause, createCrmRule, createExposureRule, createField, createGrade, createMapping, createMoWeight,
-  createParam, createProduct, createRuleVersion, createWeightRule, deleteCcf, deleteCcfs, deleteClause, deleteClauses,
+  createOrg, createParam, createProduct, createRuleVersion, createWeightRule, deleteCcf, deleteCcfs, deleteClause, deleteClauses,
   deleteCrmRule, deleteCrmRules, deleteExposureRule, deleteExposureRules, deleteField, deleteFields, deleteGrade, deleteGrades,
-  deleteMapping, deleteMappings, deleteMoWeight, deleteMoWeights, deleteParam, deleteParams, deleteProduct, deleteProducts,
+  deleteMapping, deleteMappings, deleteMoWeight, deleteMoWeights, deleteOrg, deleteOrgs, deleteParam, deleteParams, deleteProduct, deleteProducts,
   deleteRuleVersion, deleteRuleVersions, deleteWeightRule, deleteWeightRules,
   updateCcf, updateClause, updateCrmRule, updateExposureRule, updateField, updateGrade, updateMapping, updateMoWeight,
-  updateParam, updateProduct, updateRuleVersion, updateWeightRule
+  updateOrg, updateParam, updateProduct, updateRuleVersion, updateWeightRule
 } from "./ruleWrite.js";
 
 const app = new Koa();
@@ -33,6 +33,10 @@ function json(value) {
     try { return JSON.parse(value); } catch { return value; }
   }
   return value;
+}
+
+function org(row) {
+  return { id: row.id, name: row.name, jurisdiction: row.jurisdiction };
 }
 
 function version(row) {
@@ -118,8 +122,34 @@ router.get("/bootstrap", async (ctx) => {
     customers,
     jurisdictions,
     versions: versions.map(version),
-    orgs
+    orgs: orgs.map(org)
   };
+});
+
+router.get("/orgs", async (ctx) => {
+  const jur = ctx.query.jurisdiction || "";
+  const rows = await query(
+    "SELECT id, name, jurisdiction FROM org_unit WHERE (? = '' OR jurisdiction = ?) ORDER BY jurisdiction, name",
+    [jur, jur]
+  );
+  ctx.body = rows.map(org);
+});
+
+router.post("/orgs", async (ctx) => {
+  ctx.body = org(await createOrg(ctx.request.body || {}));
+});
+
+router.put("/orgs/:id", async (ctx) => {
+  ctx.body = org(await updateOrg(ctx.params.id, ctx.request.body || {}));
+});
+
+router.delete("/orgs/:id", async (ctx) => {
+  await deleteOrg(ctx.params.id);
+  ctx.body = { ok: true };
+});
+
+router.post("/orgs/batch-delete", async (ctx) => {
+  ctx.body = await deleteOrgs(ctx.request.body || {});
 });
 
 router.get("/dashboard", async (ctx) => {
@@ -144,7 +174,12 @@ router.get("/rule-versions", async (ctx) => {
     "SELECT * FROM rule_version WHERE (? = '' OR jurisdiction = ?) ORDER BY jurisdiction, effective_from DESC",
     [jur || "", jur || ""]
   );
-  ctx.body = rows.map(version);
+  const counts = await query(
+    "SELECT rule_version, COUNT(*) AS n FROM exposure_document WHERE seq > 0 GROUP BY rule_version"
+  );
+  const exposureCount = {};
+  counts.forEach((row) => { exposureCount[row.rule_version] = Number(row.n); });
+  ctx.body = rows.map((row) => ({ ...version(row), exposureCount: exposureCount[row.version] || 0 }));
 });
 
 router.post("/rule-versions", async (ctx) => {
@@ -314,7 +349,7 @@ router.post("/field-mappings/batch-delete", async (ctx) => {
 });
 
 router.get("/exposure-classes", async (ctx) => {
-  const rows = await exposureDocs();
+  const rows = await exposureDocs(String(ctx.query.version || ""));
   ctx.body = rows.map((item) => ({
     name: item.name,
     title: item.title,
@@ -325,7 +360,7 @@ router.get("/exposure-classes", async (ctx) => {
 router.get("/exposure-class", async (ctx) => {
   const name = String(ctx.query.name || "");
   if (name) {
-    const doc = await exposureDoc(name);
+    const doc = await exposureDoc(name, String(ctx.query.version || ""));
     if (!doc) ctx.throw(404, "没有这份分类 JSON");
     ctx.body = {
       name: doc.name,
@@ -558,10 +593,14 @@ router.get("/batches/:id/lines", async (ctx) => {
 
 router.post("/batches", async (ctx) => {
   const body = ctx.request.body || {};
+  const name = String(body.name || "").trim();
+  if (!name) ctx.throw(400, "请填写计量批次名称");
+  const taken = await query("SELECT id FROM measure_batch WHERE name = ? LIMIT 1", [name]);
+  if (taken.length) ctx.throw(400, "已经有这个批次名称。每次执行要用不同的批次名称");
   const id = "BATCH-" + new Date().toISOString().slice(0, 10).replace(/-/g, "") + "-" + Math.random().toString(36).slice(2, 6).toUpperCase();
   const row = {
     id,
-    name: body.name || "新建计量批次",
+    name,
     institution: body.institution || "",
     jurisdiction: body.jurisdiction || "MO",
     version: body.version || "",
@@ -636,7 +675,12 @@ router.get("/assistant", async (ctx) => {
 router.post("/exposure-tree/propose", async (ctx) => {
   const body = ctx.request.body || {};
   const name = String(body.name || "");
-  const docs = await exposureDocs();
+  let version = String(body.version || "");
+  if (!version && name) {
+    const pinned = await exposureDoc(name);
+    version = pinned ? pinned.ruleVersion : "";
+  }
+  const docs = await exposureDocs(version);
   const item = name ? docs.find((row) => row.name === name) : docs[0];
   if (!item) ctx.throw(404, "没有这份分类 JSON");
   const generic = docs.find((row) => row.label === "通用") || docs[0];
@@ -683,11 +727,15 @@ router.post("/exposure-tree/propose", async (ctx) => {
 });
 
 router.get("/exposure-tree/chat", async (ctx) => {
-  ctx.body = await exposureChat(String(ctx.query.name || ""));
+  ctx.body = await exposureChat(String(ctx.query.name || ""), String(ctx.query.version || ""));
 });
 
 router.post("/exposure-tree/chat", async (ctx) => {
   ctx.body = await saveExposureChat(ctx.request.body || {});
+});
+
+router.post("/exposure-tree/provision", async (ctx) => {
+  ctx.body = await provisionExposureDocs(ctx.request.body || {});
 });
 
 router.post("/exposure-tree/copy", async (ctx) => {

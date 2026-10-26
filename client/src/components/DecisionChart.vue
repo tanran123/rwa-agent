@@ -10,9 +10,11 @@ const props = defineProps({
 });
 const emit = defineEmits(["select"]);
 
+const shell = ref(null);
 const canvas = ref(null);
 const stage = ref(null);
 const graph = ref(null);
+const fullscreen = ref(false);
 const mmd = ref("");
 const error = ref("");
 const view = ref("chart");
@@ -83,15 +85,15 @@ async function draw() {
           padding: 10
         },
         themeVariables: {
-          background: "#0b1020",
-          primaryColor: "#1e3a8a",
-          primaryTextColor: "#eff6ff",
+          background: "#f7f9fc",
+          primaryColor: "#dbeafe",
+          primaryTextColor: "#1e3a8a",
           primaryBorderColor: "#93c5fd",
-          lineColor: "#5b7099",
-          textColor: "#e8eefc",
-          fontSize: "13px",
-          edgeLabelBackground: "#0f1729",
-          tertiaryColor: "#111a2e"
+          lineColor: "#94a3b8",
+          textColor: "#0f172a",
+          fontSize: "15px",
+          edgeLabelBackground: "#ffffff",
+          tertiaryColor: "#f8fafc"
         }
       });
       mermaidReady = true;
@@ -103,6 +105,16 @@ async function draw() {
     graph.value.innerHTML = rendered.svg;
     const svg = graph.value.querySelector("svg");
     if (svg) svg.style.maxWidth = "none";
+    graph.value.querySelectorAll("g.edgeLabel").forEach((g) => {
+      const fo = g.querySelector("foreignObject");
+      const label = g.querySelector("g.label");
+      if (!fo || !label) return;
+      const w = parseFloat(fo.getAttribute("width")) || 0;
+      const extra = 12;
+      fo.setAttribute("width", String(w + extra));
+      const m = /translate\(\s*([-\d.]+)[ ,]+([-\d.]+)\s*\)/.exec(label.getAttribute("transform") || "");
+      if (m) label.setAttribute("transform", "translate(" + (parseFloat(m[1]) - extra / 2) + ", " + m[2] + ")");
+    });
     stageCtl = mountMermaidStage(canvas.value, stage.value, graph.value, pick);
     (model.changed || []).forEach((id) => {
       const node = graph.value.querySelector("g.node[data-id='" + id + "']");
@@ -120,6 +132,53 @@ function zoomOut() { if (stageCtl) stageCtl.zoomOut(); }
 function resetZoom() { if (stageCtl) stageCtl.resetZoom(); }
 function restore() { if (stageCtl) stageCtl.restore(); }
 
+const covered = ref(false);
+let bodyOverflow = "";
+
+function fullscreenElement() {
+  return document.fullscreenElement || document.webkitFullscreenElement || null;
+}
+
+function syncFullscreen() {
+  fullscreen.value = fullscreenElement() === shell.value || covered.value;
+}
+
+function cover(on) {
+  covered.value = on;
+  if (on) {
+    bodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+  } else {
+    document.body.style.overflow = bodyOverflow;
+  }
+  syncFullscreen();
+}
+
+function onFullscreenKey(e) {
+  if (e.key === "Escape" && covered.value) cover(false);
+}
+
+async function toggleFullscreen() {
+  if (!shell.value) return;
+  error.value = "";
+  if (fullscreenElement() === shell.value) {
+    const exit = document.exitFullscreen || document.webkitExitFullscreen;
+    if (exit) await exit.call(document);
+    return;
+  }
+  if (covered.value) {
+    cover(false);
+    return;
+  }
+  const request = shell.value.requestFullscreen || shell.value.webkitRequestFullscreen;
+  try {
+    if (!request) throw new Error("当前浏览器不能全屏");
+    await request.call(shell.value);
+  } catch (e) {
+    cover(true);
+  }
+}
+
 function download() {
   const blob = new Blob([mmd.value], { type: "text/plain;charset=utf-8" });
   const a = document.createElement("a");
@@ -130,12 +189,23 @@ function download() {
 }
 
 watch(() => [props.document, (props.changed || []).join("\n")], () => { if (graph.value) draw(); });
-onMounted(draw);
-onBeforeUnmount(dispose);
+onMounted(() => {
+  document.addEventListener("fullscreenchange", syncFullscreen);
+  document.addEventListener("webkitfullscreenchange", syncFullscreen);
+  document.addEventListener("keydown", onFullscreenKey);
+  draw();
+});
+onBeforeUnmount(() => {
+  document.removeEventListener("fullscreenchange", syncFullscreen);
+  document.removeEventListener("webkitfullscreenchange", syncFullscreen);
+  document.removeEventListener("keydown", onFullscreenKey);
+  if (covered.value) document.body.style.overflow = bodyOverflow;
+  dispose();
+});
 </script>
 
 <template>
-  <div class="dt-shell">
+  <div ref="shell" class="dt-shell" :class="{ 'is-fullscreen': fullscreen, 'is-cover': covered }">
     <header class="dt-head">
       <h3>{{ title }}<small>由 JSON 规则集机械推导 · 首个命中者生效 · 共 {{ stats.rules }} 条规则 / {{ stats.leaves }} 个结论</small></h3>
       <span class="dt-grow"></span>
@@ -145,6 +215,7 @@ onBeforeUnmount(dispose);
         <button type="button" @click="resetZoom">重置缩放</button>
         <button type="button" title="还原所有节点到自动布局位置" @click="restore">还原布局</button>
       </div>
+      <button type="button" @click="toggleFullscreen">{{ fullscreen ? "退出全屏" : "全屏" }}</button>
       <select v-model="view">
         <option value="chart">决策图</option>
         <option value="src">Mermaid 源码</option>
@@ -157,10 +228,10 @@ onBeforeUnmount(dispose);
     </div>
     <pre v-show="view === 'src'" class="dt-src">{{ mmd }}</pre>
     <div v-show="view === 'chart'" class="dt-legend">
-      <span><span class="sw" style="background:#1e3a8a;border:1px solid #93c5fd"></span><b>菱形</b> 判定条件</span>
-      <span><span class="sw" style="background:#065f46;border:1px solid #34d399"></span><b>矩形</b> 风险权重</span>
-      <span><span class="sw" style="background:#78350f;border:1px solid #fbbf24"></span><b>斜框</b> 参照口径</span>
-      <span v-if="changed.length"><span class="sw" style="background:#9a3412;border:1px solid #fde68a"></span><b>高亮</b> 刚修改</span>
+      <span><span class="sw" style="background:#dbeafe;border:1px solid #3b82f6"></span><b>菱形</b> 判定条件</span>
+      <span><span class="sw" style="background:#d1fae5;border:1px solid #059669"></span><b>矩形</b> 风险权重</span>
+      <span><span class="sw" style="background:#fef3c7;border:1px solid #d97706"></span><b>斜框</b> 参照口径</span>
+      <span v-if="changed.length"><span class="sw" style="background:#ffedd5;border:1px solid #ea580c"></span><b>高亮</b> 刚修改</span>
       <span class="dt-legend-foot"><b>拖动节点</b>重排 · <b>拖动空白</b>平移 · ⌘/Ctrl+滚轮缩放</span>
     </div>
   </div>

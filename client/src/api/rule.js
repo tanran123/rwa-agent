@@ -1,5 +1,16 @@
 import request from './request'
 
+export const fetchOrgs = (jurisdiction = '') =>
+  request.get('/orgs', { params: { jurisdiction } })
+
+export const createOrg = (body) => request.post('/orgs', body)
+
+export const saveOrg = (id, body) => request.put('/orgs/' + encodeURIComponent(id), body)
+
+export const deleteOrg = (id) => request.delete('/orgs/' + encodeURIComponent(id))
+
+export const deleteOrgs = (ids) => request.post('/orgs/batch-delete', { ids })
+
 export const fetchRuleVersions = (jurisdiction = '') =>
   request.get('/rule-versions', { params: { jurisdiction } })
 

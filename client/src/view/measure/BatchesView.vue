@@ -24,10 +24,10 @@ const load = async () => {
         </div>
         <div class="panel-body tight">
           <table class="tbl compact">
-            <thead><tr><th>批次</th><th>机构</th><th>版本</th><th>基准日</th><th>导入</th><th>成功</th><th>异常</th><th>EAD</th><th>RWA</th><th>状态</th></tr></thead>
+            <thead><tr><th>批次名称</th><th>机构</th><th>版本</th><th>基准日</th><th>导入</th><th>成功</th><th>异常</th><th>EAD</th><th>RWA</th><th>状态</th></tr></thead>
             <tbody>
               <tr v-for="row in data" :key="row.id" class="clickable" @click="router.push('/results?batch=' + row.id)">
-                <td><span class="mono">{{ row.id }}</span><div>{{ row.name }}</div></td>
+                <td>{{ row.name }}</td>
                 <td>{{ row.institution }}</td>
                 <td>{{ row.version }}</td>
                 <td>{{ row.baseDate }}</td>

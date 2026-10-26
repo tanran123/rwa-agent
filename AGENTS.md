@@ -41,7 +41,7 @@
 | 试算底稿 | `agent/subagents/weight/samples/`。 |
 | 计算留痕 | 仓库根目录 `output/traces/`。 |
 | 结果工作簿 | 仓库根目录 `output/workbooks/`。底稿不在权重步骤目录里时，写在底稿旁边。 |
-| 子智能体提示 | 该目录的 `agent.json` 和 `AGENTS.md`。不要把提示词写回 Python 字符串。 |
+| 子智能体提示 | `agent/.deepagents/agents/<名字>/AGENTS.md`。说明在开头的 `description`，正文是提示词。不要把提示词写回 Python 字符串。 |
 | 智能体返回 | `agent/harness.py` 的 `reply`。只有 `reply` 和 `pages`。`pages[].path` 只能是 `agent/pages.py` 里 `PAGES` 已有的键。 |
 
 ## 页面上下文里实际有的字段

@@ -9,7 +9,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from agent.chat import model
 
-_SKILL = Path(__file__).resolve().parent / "skills" / "decision-tree" / "SKILL.md"
+_SKILL = Path(__file__).resolve().parent / ".deepagents" / "skills" / "decision-tree" / "SKILL.md"
 _OPS = {"eq": True, "in": True, "gt": True, "gte": True, "lt": True, "lte": True}
 
 

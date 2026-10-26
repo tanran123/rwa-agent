@@ -199,7 +199,7 @@ export function mountMermaidStage(canvas, stage, graph, onQuietClick) {
     const vb = (svg.getAttribute("viewBox") || "").split(/\s+/).map(Number);
     if (vb.length === 4 && vb[2] > 0) {
       const avail = canvas.clientWidth - 60;
-      z = Math.min(1, Math.max(0.72, avail / vb[2]));
+      z = Math.min(1, Math.max(0.9, avail / vb[2]));
     }
     tx = 0;
     ty = 0;

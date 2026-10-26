@@ -96,7 +96,7 @@ node tools/build-seed.mjs                          # 重新生成 sql/002_seed.s
 
 ### 提示词在文件里，不在代码里
 
-子智能体的 `description` 写在该目录 `agent.json`，提示词写在该目录 `AGENTS.md`；`__init__.py` 只放工具函数和 `spec()`，通过 `agent/layout.py` 的 `subagent_prompt` 读取这两份文件。**不要把提示词写回 Python 字符串。** 加一步的完整步骤见 `agent/README.md` 的「加一步」。
+子智能体的说明和提示词写在 `agent/.deepagents/agents/<名字>/AGENTS.md`；`__init__.py` 只放工具函数和 `spec()`，通过 `agent/layout.py` 的 `subagent_prompt` 读取这份文件。**不要把提示词写回 Python 字符串。** 加一步的完整步骤见 `agent/README.md` 的「加一步」。
 
 ### 单一数据源
 

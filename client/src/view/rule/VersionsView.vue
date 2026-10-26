@@ -1,5 +1,7 @@
 <script setup>
 import { ref } from "vue";
+import { useRouter } from "vue-router";
+import { createExposureVersion } from "@/api/exposure";
 import { createRuleVersion, deleteRuleVersion, deleteRuleVersions, fetchRuleVersions, saveRuleVersion } from "@/api/rule";
 import { useContext } from "@/composables/useContext";
 import { runBatch, useBatchNote, usePick } from "@/composables/usePick";
@@ -8,6 +10,8 @@ import RuleForm from "@/components/RuleForm.vue";
 import { askConfirm } from "@/utils/confirm";
 
 const { session } = useContext();
+const router = useRouter();
+const creatingExposure = ref("");
 const status = ref("");
 const q = ref("");
 const form = ref(null);
@@ -31,18 +35,43 @@ function shown(rows) {
   });
 }
 
+function institutionOf(code) {
+  const current = session.orgs.find((item) => item.id === session.orgId && item.jurisdiction === code);
+  if (current) return current.name;
+  const first = session.orgs.find((item) => item.jurisdiction === code);
+  return first ? first.name : "";
+}
+
+function institutionOptions() {
+  if (!form.value) return [];
+  const names = session.orgs
+    .filter((item) => item.jurisdiction === form.value.jurisdiction)
+    .map((item) => item.name);
+  if (form.value.institution && names.indexOf(form.value.institution) < 0) names.unshift(form.value.institution);
+  return names;
+}
+
+function alignInstitution() {
+  if (!form.value) return;
+  const names = session.orgs
+    .filter((item) => item.jurisdiction === form.value.jurisdiction)
+    .map((item) => item.name);
+  if (names.length && names.indexOf(form.value.institution) < 0) form.value.institution = names[0];
+}
+
 function blank() {
+  const jurisdiction = session.jurisdiction || (session.jurisdictions[0] ? session.jurisdictions[0].code : "");
   return {
     creating: true,
     id: "",
-    jurisdiction: session.jurisdiction || (session.jurisdictions[0] ? session.jurisdictions[0].code : ""),
+    jurisdiction,
     version: "",
     name: "",
     ruleType: "",
     effectiveFrom: "",
     effectiveTo: "",
     status: "draft",
-    institution: "",
+    institution: institutionOf(jurisdiction),
     rulesetFile: "",
     publishedAt: "",
     author: "",
@@ -132,6 +161,27 @@ function openVersion(row) {
   session.versionId = row.id;
   session.jurisdiction = row.jurisdiction;
 }
+
+async function createExposure(row) {
+  if (!row || creatingExposure.value) return;
+  const yes = await askConfirm("为版本「" + row.version + "」创建风险暴露分类规则。会从已有分类复制一份，再在这一版上改。", {
+    title: "创建风险暴露分类规则",
+    confirmText: "创建"
+  });
+  if (!yes) return;
+  creatingExposure.value = row.id;
+  batch.clear();
+  try {
+    await createExposureVersion(row.version);
+    session.versionId = row.id;
+    session.jurisdiction = row.jurisdiction;
+    router.push("/tree");
+  } catch (err) {
+    batch.fail(err.message || "没有创建");
+  } finally {
+    creatingExposure.value = "";
+  }
+}
 </script>
 
 <template>
@@ -176,7 +226,10 @@ function openVersion(row) {
                 <td>{{ row.institution }}</td>
                 <td><span class="tag" :class="tones[row.status]">{{ labels[row.status] || row.status }}</span></td>
                 <td>{{ row.author }}</td>
-                <td><button type="button" class="btn sm" @click.stop="openVersion(row)">打开</button></td>
+                <td>
+                  <button type="button" class="btn sm" @click.stop="openVersion(row)">打开</button>
+                  <button v-if="!row.exposureCount" type="button" class="btn sm" :disabled="creatingExposure === row.id" @click.stop="createExposure(row)">创建分类</button>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -199,7 +252,7 @@ function openVersion(row) {
         <input v-model="form.id" type="text" :disabled="!form.creating" />
       </label>
       <label class="field">地区
-        <select v-model="form.jurisdiction">
+        <select v-model="form.jurisdiction" @change="alignInstitution">
           <option v-for="item in session.jurisdictions" :key="item.code" :value="item.code">{{ item.label }}</option>
         </select>
       </label>
@@ -224,7 +277,10 @@ function openVersion(row) {
         <input v-model="form.effectiveTo" type="date" />
       </label>
       <label class="field">适用机构
-        <input v-model="form.institution" type="text" />
+        <select v-model="form.institution">
+          <option v-for="name in institutionOptions()" :key="name" :value="name">{{ name }}</option>
+        </select>
+        <span class="hint">与左上角机构同一份名单。没有要选的，先到「机构」里添加。</span>
       </label>
       <label class="field">规则文件
         <input v-model="form.rulesetFile" type="text" />

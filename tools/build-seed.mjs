@@ -228,17 +228,18 @@ const TREE_DOCS = [
 const exposureRows = [[
   1, classDoc.name, classDoc.title, "", 0,
   "agent/subagents/weight/knowledge/权重法风险暴露分类.json",
+  "",
   JSON.stringify(classDoc)
 ]];
 TREE_DOCS.forEach((item) => {
   const text = readFileSync(join(root, item.file), "utf8");
   const document = item.file.endsWith(".json") ? JSON.parse(text) : locateJson(text);
   exposureRows.push([
-    item.id, document.name, document.title, item.label, item.seq, item.file, JSON.stringify(document)
+    item.id, document.name, document.title, item.label, item.seq, item.file, "MO-SA-2026.1", JSON.stringify(document)
   ]);
 });
 lines.push(insert("exposure_document",
-  ["id", "name", "title", "label", "seq", "source_file", "body"],
+  ["id", "name", "title", "label", "seq", "source_file", "rule_version", "body"],
   exposureRows));
 
 lines.push(insert("rule_param",

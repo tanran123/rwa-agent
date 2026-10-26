@@ -3,9 +3,11 @@ import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { sendAgentChat } from "@/api/agent";
 import { fetchExposureChat, fetchExposureClasses, proposeExposureTree, saveExposureChat, saveExposureTree } from "@/api/exposure";
+import { useContext } from "@/composables/useContext";
 
 const route = useRoute();
 const router = useRouter();
+const { scopeVersion } = useContext();
 const open = ref(false);
 const text = ref("");
 const sending = ref(false);
@@ -103,7 +105,7 @@ const treeLabel = ref("");
 const drafts = ref({});
 const hydrated = {};
 const saveTimers = {};
-const chatKey = computed(() => (isTree.value ? "tree:" + (route.params.name || "root") : route.path));
+const chatKey = computed(() => (isTree.value ? "tree:" + scopeVersion.value + ":" + (route.params.name || "root") : route.path));
 const role = computed(() => (isTree.value
   ? {
     name: "决策树助手",
@@ -116,9 +118,9 @@ const role = computed(() => (isTree.value
   }));
 const thread = computed(() => chats.value[chatKey.value] || [{ role: "bot", text: role.value.welcome, meta: role.value.name }]);
 
-watch(() => (isTree.value ? route.params.name || "root" : ""), async () => {
+watch(() => (isTree.value ? scopeVersion.value + "\n" + (route.params.name || "root") : ""), async () => {
   if (!isTree.value) return;
-  const rows = (await fetchExposureClasses()) || [];
+  const rows = (await fetchExposureClasses(scopeVersion.value)) || [];
   const name = route.params.name || "";
   const item = name ? rows.find((row) => row.name === name) : rows[0];
   treeLabel.value = item ? item.label : "";
@@ -129,8 +131,12 @@ function welcomeThread() {
 }
 
 function chatName(key) {
-  const name = String(key || "").slice("tree:".length);
-  return name === "root" ? "" : name;
+  const body = String(key || "");
+  if (!body.startsWith("tree:")) return "";
+  const rest = body.slice("tree:".length);
+  const cut = rest.indexOf(":");
+  const name = cut < 0 ? rest : rest.slice(cut + 1);
+  return !name || name === "root" ? "" : name;
 }
 
 watch(chatKey, async (key) => {
@@ -141,7 +147,7 @@ watch(chatKey, async (key) => {
   if (hydrated[key]) return;
   hydrated[key] = "loading";
   try {
-    const data = await fetchExposureChat(chatName(key));
+    const data = await fetchExposureChat(chatName(key), scopeVersion.value);
     const messages = (data.messages || []).filter((item) => item && item.text);
     if (messages.length) {
       chats.value = { ...chats.value, [key]: messages };
@@ -175,7 +181,7 @@ function scheduleSave() {
   const draft = drafts.value[key];
   const kept = draft && draft.document ? { stage: draft.stage, document: draft.document } : null;
   saveTimers[key] = setTimeout(() => {
-    saveExposureChat(chatName(key), snapshot, kept).catch(() => {});
+    saveExposureChat(chatName(key), snapshot, kept, scopeVersion.value).catch(() => {});
   }, 400);
 }
 
@@ -268,6 +274,7 @@ async function send(content) {
       const saved = await saveExposureTree({
         action: "update",
         name: route.params.name || "",
+        version: scopeVersion.value,
         label: treeLabel.value,
         document: draft.document,
         messages: next.filter((row) => row.role === "user").map((row) => row.text)
@@ -292,7 +299,7 @@ async function send(content) {
       content: item.text
     })).concat([{ role: "user", content: value }]);
     const data = isTree.value
-      ? await proposeExposureTree(route.params.name || "", payload)
+      ? await proposeExposureTree(route.params.name || "", payload, scopeVersion.value)
       : await sendAgentChat(route.path, payload);
     const pages = data.pages || [];
     let reply = data.reply || "没有返回";
