@@ -7,6 +7,7 @@ import { useContext } from "@/composables/useContext";
 import { runBatch, useBatchNote, usePick } from "@/composables/usePick";
 import AsyncView from "@/components/AsyncView.vue";
 import RuleForm from "@/components/RuleForm.vue";
+import { fillForm, finishSave, useAgentForm } from "@/composables/useAgentForm";
 import { askConfirm } from "@/utils/confirm";
 
 const { session } = useContext();
@@ -93,6 +94,33 @@ function edit(row) {
     creating: false
   };
 }
+
+useAgentForm(() => ({
+  forms: [{
+    id: "version",
+    title: "监管规则版本",
+    fields: [
+      { key: "id", label: "编号" },
+      { key: "jurisdiction", label: "地区", options: session.jurisdictions.map((item) => item.code) },
+      { key: "version", label: "版本编号" },
+      { key: "name", label: "规则名称" },
+      { key: "ruleType", label: "规则类型" },
+      { key: "status", label: "状态", options: Object.keys(labels) },
+      { key: "effectiveFrom", label: "生效日期" },
+      { key: "effectiveTo", label: "失效日期" },
+      { key: "institution", label: "适用机构", options: session.orgs.filter((item) => item.jurisdiction === session.jurisdiction).map((item) => item.name) },
+      { key: "rulesetFile", label: "规则文件" },
+      { key: "publishedAt", label: "发布时间" },
+      { key: "author", label: "维护人" },
+      { key: "changelog", label: "变更说明" }
+    ],
+    apply(values) {
+      error.value = "";
+      form.value = fillForm(blank(), values);
+    },
+    save: finishSave(() => save(), error)
+  }]
+}));
 
 function payload(row) {
   return {

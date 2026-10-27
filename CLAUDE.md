@@ -42,12 +42,12 @@ pm2 logs rwa-agent
 pm2 restart rwa-agent         # 改过任何 Python 后必须执行
 ```
 
-`pm2 restart rwa-agent` 是硬性的：`agent/harness.py` 的 deepagents 图在启动时构建，不重启就还是旧的。
+`pm2 restart rwa-agent` 是硬性的：`agent/platform/graph.py` 的图在首次调用时构建，不重启就还是旧的。
 
 其它：
 
 ```bash
-python -m agent.pipeline 工作簿.xlsx [结果.xlsx]   # 整表计算，在仓库根目录执行
+python -m agent.calculation.pipeline 工作簿.xlsx [结果.xlsx]   # 整表计算，在仓库根目录执行
 node tools/build-seed.mjs                          # 重新生成 sql/002_seed.sql（别手改大段 002_seed.sql）
 ```
 
@@ -64,7 +64,7 @@ node tools/build-seed.mjs                          # 重新生成 sql/002_seed.s
 浏览器的两条路径：
 
 - 页面按钮 → `POST /api/...` → Vite 代理 → Koa → MySQL 或读文件。
-- 右下角 AI → `POST /api/agent/chat` → Koa **原样转发**到 `http://127.0.0.1:8766` → Flask 调 `agent.harness.reply`。规则助手是另一条：`POST /api/rules/chat`，问的是微信知识库，不是计算子智能体。Koa 侧不实现智能体（见 `server/src/index.js` 的两个转发路由）。
+- 右下角 AI → `POST /api/agent/chat` → Koa **原样转发**到 `http://127.0.0.1:8766` → Flask 调 `agent.platform.graph.reply`。规则助手是另一条：`POST /api/rules/chat`，问的是微信知识库，不是计算子智能体。Koa 侧不实现智能体（见 `server/src/index.js` 的两个转发路由）。
 
 ## 四层结构
 
@@ -73,19 +73,20 @@ node tools/build-seed.mjs                          # 重新生成 sql/002_seed.s
 - `agent/` — deepagents 计算智能体。见下节。
 - `knowledge/` — 规则库。`local/` 是仓库里的规则包（Markdown + `library.py`），`weknora/` 是微信知识库对话。注意：**信用风险的分类 JSON 不在 `knowledge/`**，在 `agent/subagents/weight/knowledge/`。
 
-密钥只有两处，都在 `.env` 里，且都不提交：仓库根目录 `.env` 放 `DASHSCOPE_API_KEY`（通义/百炼）、`WEKNORA_*`；`server/.env` 放 MySQL 变量。
+密钥只有两处，都在 `.env` 里，且都不提交：仓库根目录 `.env` 放 `DASHSCOPE_API_KEY`、`WEKNORA_*`；`server/.env` 放 MySQL 变量。
 
 ## 智能体：总控 + 流水线
 
-三层不能混：
+这几块不能混：
 
-- **总控**（`agent/` 根的 Python）：只对话、派发、开页面，不自己算数。`harness.py` 组装 deepagents，`open_page` 能开的页面只有 `agent/pages.py` 里 `PAGES` 的三个键（`/engine`、`/results`、`/wizard`）。
-- **流水线**（`agent/subagents/<步>/`）：信用风险按监管顺序计算。
+- **平台**（`agent/platform/`）：接收页面的话，调用 `agent/model.py`，按模型点名执行 `agent/tools/`，不自己算数，也不负责打开页面。底稿计算、计量向导、结果明细在左侧菜单。`graph.py` 把调用模型和执行工具接成循环。
+- **计算**（`agent/calculation/` 和 `agent/subagents/<步>/`）：信用风险按监管顺序计算。`calculation/graph.py` 把每一步做成节点，只进入 `STEPS` 里的名字。
+- **决策树**（`agent/tree/`）：暴露分类页起草修改，不进对话图。
 - **底稿页 / 市场风险**（`weight/paper/`、`rwa/market/`）：给 Flask 的接口用，**不进流水线名单**。
 
 两个顺序概念必须分清：
 
-- `agent/pipeline.py` 的 `STEPS` 决定**哪些步骤真的会执行**。当前只有 `["weight"]`。
+- `agent/calculation/pipeline.py` 的 `STEPS` 决定**哪些步骤真的会执行**。当前只有 `["weight"]`。
 - `agent/subagents/__init__.py` 的 `ORDER`（`weight, ccf, crm, rwa`）是**监管计算顺序**，只用于展示和组装子智能体，不能调换。
 
 `ccf`、`crm`、`rwa` 已经建了目录和提示，但 `program.run` 直接设 `stopped`/`stop_reason` 停住。**只有当某步的 `program.run` 能用真实输入跑通后，才把它的名字追加进 `STEPS`。** 在它进名单之前，不要在对话、工具或前端里补一个系数或金额让流水线继续。
@@ -96,7 +97,7 @@ node tools/build-seed.mjs                          # 重新生成 sql/002_seed.s
 
 ### 提示词在文件里，不在代码里
 
-子智能体的说明和提示词写在 `agent/.deepagents/agents/<名字>/AGENTS.md`；`__init__.py` 只放工具函数和 `spec()`，通过 `agent/layout.py` 的 `subagent_prompt` 读取这份文件。**不要把提示词写回 Python 字符串。** 加一步的完整步骤见 `agent/README.md` 的「加一步」。
+子智能体的说明和提示词写在 `agent/.deepagents/agents/<名字>/AGENTS.md`；`__init__.py` 只放工具函数和 `spec()`，通过 `agent/platform/layout.py` 的 `subagent_prompt` 读取这份文件。**不要把提示词写回 Python 字符串。** 加一步的完整步骤见 `agent/README.md` 的「加一步」。
 
 ### 单一数据源
 

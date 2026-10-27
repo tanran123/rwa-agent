@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -14,30 +15,21 @@ def active_steps() -> list[str]:
     return list(STEPS)
 
 
-def run_pipeline(source: Path, dest: Path | None = None) -> dict[str, Any]:
-    from agent.subagents import ORDER
+def run_pipeline(source: Path, dest: Path | None = None, thread_id: str | None = None) -> dict[str, Any]:
+    from agent.calculation.graph import calculation
 
-    programs = {item.NAME: item.program for item in ORDER}
-    context: dict[str, Any] = {
+    state: dict[str, Any] = {
         "source": str(Path(source)),
         "dest": str(Path(dest)) if dest else None,
         "steps_ran": [],
     }
-    for name in active_steps():
-        program = programs.get(name)
-        run = getattr(program, "run", None) if program is not None else None
-        if not callable(run):
-            raise RuntimeError(f"流水线步骤 {name} 还没有实现")
-        context = run(context)
-        context["steps_ran"].append(name)
-        if context.get("stopped"):
-            break
-    return context
+    config = {"configurable": {"thread_id": thread_id or str(uuid.uuid4())}}
+    return calculation().invoke(state, config)
 
 
 @tool
 def pipeline_steps() -> str:
-    """List the calculation order. Only names on this list may run."""
+    """问做到哪一步、后面还算不算时调用。返回哪些步骤会执行、哪些停住。不要据此编造系数或金额。"""
     from agent.subagents import ORDER
 
     active = active_steps()
@@ -50,7 +42,7 @@ if __name__ == "__main__":
     import sys
 
     if len(sys.argv) < 2:
-        raise SystemExit("用法: python -m agent.pipeline 工作簿.xlsx [结果.xlsx]")
+        raise SystemExit("用法: python -m agent.calculation.pipeline 工作簿.xlsx [结果.xlsx]")
     done = run_pipeline(Path(sys.argv[1]), Path(sys.argv[2]) if len(sys.argv) > 2 else None)
     if done.get("stopped"):
         raise SystemExit(done.get("stop_reason") or "计算停住了")

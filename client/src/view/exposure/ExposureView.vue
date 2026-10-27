@@ -6,6 +6,7 @@ import { runBatch, useBatchNote, usePick } from "@/composables/usePick";
 import { fetchProducts } from "@/api/product";
 import AsyncView from "@/components/AsyncView.vue";
 import RuleForm from "@/components/RuleForm.vue";
+import { fillForm, finishSave, useAgentForm } from "@/composables/useAgentForm";
 import { askConfirm } from "@/utils/confirm";
 
 const { scopeVersion } = useContext();
@@ -18,8 +19,13 @@ const pick = usePick();
 const batch = useBatchNote();
 const labels = { draft: "草稿", reviewing: "审核中", published: "已发布", superseded: "已被取代", disabled: "已停用" };
 
+const listed = ref([]);
 function load() {
-  return fetchProducts().then((rows) => rows.filter((item) => item.ruleVersion === scopeVersion.value));
+  return fetchProducts().then((rows) => {
+    const scoped = rows.filter((item) => item.ruleVersion === scopeVersion.value);
+    listed.value = scoped;
+    return scoped;
+  });
 }
 
 function loadRules(products) {
@@ -51,6 +57,50 @@ function create(products) {
 function edit(row) {
   error.value = "";
   form.value = { ...row, creating: false };
+}
+
+useAgentForm(() => ({
+  forms: [{
+    id: "exposure-rule",
+    title: "产品线路",
+    fields: [
+      { key: "id", label: "编号" },
+      { key: "product", label: "产品", options: listed.value.map((item) => item.code) },
+      { key: "name", label: "规则编码" },
+      { key: "label", label: "规则" },
+      { key: "priority", label: "顺序" },
+      { key: "status", label: "状态", options: Object.keys(labels) },
+      { key: "version", label: "规则版本" },
+      { key: "clause", label: "条款" },
+      { key: "targetClass", label: "暴露大类" },
+      { key: "targetSub", label: "子类" },
+      { key: "weight", label: "权重" },
+      { key: "when", label: "条件" }
+    ],
+    apply(values) {
+      error.value = "";
+      form.value = fillForm(createShape(), values);
+    },
+    save: finishSave(() => save(), error)
+  }]
+}));
+
+function createShape() {
+  return {
+    creating: true,
+    id: "",
+    product: code.value || (listed.value[0] ? listed.value[0].code : ""),
+    name: "",
+    label: "",
+    priority: 0,
+    version: scopeVersion.value,
+    when: "",
+    targetClass: "",
+    targetSub: "",
+    weight: "",
+    clause: "",
+    status: "draft"
+  };
 }
 
 function payload(row) {

@@ -1,15 +1,15 @@
 ---
 name: credit-rwa-pipeline
 description: >-
-  按固定顺序做风险暴露权重决策，以及后续的表外转换系数、缓释和风险加权资产。在用户说按顺序计算、跑流水线、算一整张工作簿，或修改 agent/subagents、agent/pipeline.py 时使用。
+  按固定顺序做风险暴露权重决策，以及后续的表外转换系数、缓释和风险加权资产。在用户说按顺序计算、跑流水线、算一整张工作簿，或修改 agent/subagents、agent/calculation/pipeline.py 时使用。
 ---
 
 # 风险暴露权重决策流水线
 
-每一步的程序在 `agent/subagents/步骤名/`。名单在 `agent/pipeline.py` 的 `STEPS`。整表计算在仓库根目录执行：
+每一步的程序在 `agent/subagents/步骤名/`。名单在 `agent/calculation/pipeline.py` 的 `STEPS`。整表计算在仓库根目录执行：
 
 ```bash
-python -m agent.pipeline 你的工作簿.xlsx
+python -m agent.calculation.pipeline 你的工作簿.xlsx
 ```
 
 第二个参数是结果 Excel 的路径。不要在对话里自行决定先算哪一步，也不要跳过名单里的步骤。

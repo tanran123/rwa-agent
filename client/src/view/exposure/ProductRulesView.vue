@@ -6,6 +6,7 @@ import { runBatch, useBatchNote, usePick } from "@/composables/usePick";
 import { fetchProducts } from "@/api/product";
 import AsyncView from "@/components/AsyncView.vue";
 import RuleForm from "@/components/RuleForm.vue";
+import { fillForm, finishSave, useAgentForm } from "@/composables/useAgentForm";
 import { askConfirm } from "@/utils/confirm";
 
 const { scopeVersion } = useContext();
@@ -16,11 +17,14 @@ const saving = ref(false);
 const view = ref(null);
 const pick = usePick();
 const batch = useBatchNote();
+const listed = ref([]);
 const load = async () => {
   const [products, rules] = await Promise.all([fetchProducts(), fetchProductRules()]);
   const version = scopeVersion.value;
+  const scoped = products.filter((item) => item.ruleVersion === version);
+  listed.value = scoped;
   return [
-    products.filter((item) => item.ruleVersion === version),
+    scoped,
     rules.filter((item) => item.version === version)
   ];
 };
@@ -56,6 +60,46 @@ function edit(row) {
   error.value = "";
   form.value = { ...row, creating: false };
 }
+
+useAgentForm(() => ({
+  forms: [{
+    id: "product-rule",
+    title: "产品专属规则",
+    fields: [
+      { key: "id", label: "编号" },
+      { key: "product", label: "产品", options: listed.value.map((item) => item.code) },
+      { key: "name", label: "规则编码" },
+      { key: "label", label: "规则" },
+      { key: "priority", label: "顺序" },
+      { key: "status", label: "状态", options: Object.keys(labels) },
+      { key: "version", label: "规则版本" },
+      { key: "clause", label: "条款" },
+      { key: "targetClass", label: "暴露大类" },
+      { key: "targetSub", label: "子类" },
+      { key: "weight", label: "权重" },
+      { key: "when", label: "条件" }
+    ],
+    apply(values) {
+      error.value = "";
+      form.value = fillForm({
+        creating: true,
+        id: "",
+        product: code.value || (listed.value[0] ? listed.value[0].code : ""),
+        name: "",
+        label: "",
+        priority: 0,
+        version: scopeVersion.value,
+        when: "",
+        targetClass: "",
+        targetSub: "",
+        weight: "",
+        clause: "",
+        status: "draft"
+      }, values);
+    },
+    save: finishSave(() => save(), error)
+  }]
+}));
 
 function payload(row) {
   return {

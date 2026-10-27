@@ -12,7 +12,7 @@ description: >-
 
 对照提示词、计算顺序、决策树或留痕时，打开下面其中一个文件，再改 Python。提示词以 Python 函数里的字符串为准；改了字符串，同步改对应的 md。
 
-- [references/prompts.md](references/prompts.md)：三次通义调用的系统提示、用户 JSON，以及返回值怎么被采纳
+- [references/prompts.md](references/prompts.md)：三次模型调用的系统提示、用户 JSON，以及返回值怎么被采纳
 - [references/paper-calc.md](references/paper-calc.md)：从工作簿到逐笔结果的计算顺序
 - [references/exposure-class.md](references/exposure-class.md)：分类 JSON 怎么变成树，条件怎么比较，权重怎么取
 - [references/calc-trace.md](references/calc-trace.md)：留痕步骤，以及 JSON、Markdown、Excel 各写什么
@@ -51,7 +51,7 @@ python -m agent.subagents.weight.calc.paper_calc 工作簿.xlsx
 5. 成功时标准输出正好三行：结果 Excel 路径、留痕 JSON 路径、`敞口 … 亿  风险加权资产 … 亿`。回复只用这三行里的路径和数字。失败则说明错误原文，不要编一个敞口或权重。
 6. 用户要解释某一笔时，打开同名的 `output/traces/工作簿名-计算留痕.md`，按源表名和 Excel 行号找到那一节。只引用该节写出的取值、命中规则、公式和代入。用规则名回到 `agent/subagents/weight/knowledge/权重法风险暴露分类.json` 里 `name` 相同的那一条。留痕没写的分支不要补。
 
-用户要按流水线顺序算整本书时，不要在这里改命令。使用技能 `credit-rwa-pipeline`，执行 `python -m agent.pipeline 工作簿.xlsx`。这一步在 `STEPS` 里的名字是 `weight`，实现是 `agent/subagents/weight/program.py`，内部仍调用 `run_workbook`。
+用户要按流水线顺序算整本书时，不要在这里改命令。使用技能 `credit-rwa-pipeline`，执行 `python -m agent.calculation.pipeline 工作簿.xlsx`。这一步在 `STEPS` 里的名字是 `weight`，实现是 `agent/subagents/weight/program.py`，内部仍调用 `run_workbook`。
 
 ### 改规则
 
@@ -83,5 +83,5 @@ python -m agent.subagents.weight.calc.paper_calc 工作簿.xlsx
 
 - 不要编造权重、条款号，或底稿里没有的金额。
 - 金额沿用底稿口径。命令行的敞口和风险加权资产单位是亿元。留痕里的 `ead`、`rwa` 与源表金额列同一单位。
-- 通义千问只做选表、表头对应、规则停住后补条件。提示词和采纳规则在 [references/prompts.md](references/prompts.md)。不要在对话里另写一套提示词去算权重。
+- 模型只做选表、表头对应、规则停住后补条件。提示词和采纳规则在 [references/prompts.md](references/prompts.md)。不要在对话里另写一套提示词去算权重。
 - 命令行 `paper_calc` 不读 `agent/subagents/weight/paper/底稿模型计算.json`。不要手改这份缓存或 `output/traces/` 里的留痕来改结果。

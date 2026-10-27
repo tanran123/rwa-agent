@@ -6,6 +6,7 @@ import { useContext } from "@/composables/useContext";
 import SectionTabs from "@/components/SectionTabs.vue";
 import AgentDock from "@/components/AgentDock.vue";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
+import { provideAgentForms } from "@/composables/useAgentForm";
 
 const ICONS = {
   home: "M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1z",
@@ -16,6 +17,7 @@ const ICONS = {
   run: "M8 6.5v11l9-5.5z"
 };
 
+provideAgentForms();
 const route = useRoute();
 const router = useRouter();
 const open = ref("");

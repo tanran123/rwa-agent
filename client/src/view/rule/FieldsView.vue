@@ -8,6 +8,7 @@ import { useContext } from "@/composables/useContext";
 import { runBatch, useBatchNote, usePick } from "@/composables/usePick";
 import AsyncView from "@/components/AsyncView.vue";
 import RuleForm from "@/components/RuleForm.vue";
+import { fillForm, finishSave, useAgentForm } from "@/composables/useAgentForm";
 import { askConfirm } from "@/utils/confirm";
 
 const { session, scopeVersion } = useContext();
@@ -134,6 +135,57 @@ function fieldPayload(row) {
     referencedBy: lines(row.refsText)
   };
 }
+
+useAgentForm(() => ({
+  forms: [
+    {
+      id: "product",
+      title: "产品",
+      fields: [
+        { key: "code", label: "产品编码" },
+        { key: "label", label: "名称" },
+        { key: "icon", label: "图标" },
+        { key: "color", label: "颜色" },
+        { key: "ruleVersion", label: "规则版本", options: versionOptions.value },
+        { key: "onboarding", label: "接入方式", options: ["column", "manual"] },
+        { key: "sampleCount", label: "样例笔数" },
+        { key: "system", label: "来源系统" },
+        { key: "desc", label: "说明" }
+      ],
+      apply(values) {
+        error.value = "";
+        fieldForm.value = null;
+        productForm.value = fillForm(blankProduct(), values);
+      },
+      save: finishSave(() => saveProductRow(), error)
+    },
+    {
+      id: "field",
+      title: "标准字段",
+      fields: [
+        { key: "code", label: "字段编码" },
+        { key: "name", label: "标准字段名称" },
+        { key: "stdField", label: "对应规则字段" },
+        { key: "type", label: "数据类型", options: ["number", "enum"] },
+        { key: "unit", label: "单位" },
+        { key: "required", label: "必填", options: ["true", "false"] },
+        { key: "sourceSystem", label: "来源系统" },
+        { key: "sourceField", label: "来源字段" },
+        { key: "meaning", label: "含义" },
+        { key: "transform", label: "转换规则" },
+        { key: "validate", label: "校验规则" },
+        { key: "optionsText", label: "枚举取值" },
+        { key: "refsText", label: "被引用条款" }
+      ],
+      apply(values) {
+        error.value = "";
+        productForm.value = null;
+        fieldForm.value = fillForm(blankField(), values);
+      },
+      save: finishSave(() => saveFieldRow(), error)
+    }
+  ]
+}));
 
 function createProductRow() {
   error.value = "";

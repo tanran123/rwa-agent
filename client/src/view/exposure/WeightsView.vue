@@ -7,6 +7,7 @@ import {
 import { runBatch, useBatchNote, usePick } from "@/composables/usePick";
 import AsyncView from "@/components/AsyncView.vue";
 import RuleForm from "@/components/RuleForm.vue";
+import { fillForm, finishSave, useAgentForm } from "@/composables/useAgentForm";
 import { askConfirm } from "@/utils/confirm";
 
 const klass = ref("");
@@ -70,6 +71,62 @@ function editMo(row) {
     note: row.note || ""
   };
 }
+
+useAgentForm({
+  forms: [
+    {
+      id: "weight-rule",
+      title: "权重规则",
+      fields: [
+        { key: "id", label: "编号" },
+        { key: "pri", label: "优先级" },
+        { key: "cls", label: "大类" },
+        { key: "bank", label: "档" },
+        { key: "rw", label: "权重" },
+        { key: "cond", label: "条件" },
+        { key: "basis", label: "依据" }
+      ],
+      apply(values) {
+        error.value = "";
+        form.value = fillForm({ kind: "rule", creating: true, id: "", cls: "", cond: "", rw: "", pri: 0, bank: "", basis: "" }, values);
+      },
+      save: finishSave(() => save(), error)
+    },
+    {
+      id: "bank-grade",
+      title: "第一档银行评级",
+      fields: [
+        { key: "id", label: "编号" },
+        { key: "pri", label: "优先级" },
+        { key: "label", label: "情形" },
+        { key: "paramId", label: "参数" },
+        { key: "basis", label: "依据" },
+        { key: "weightsText", label: "权重" },
+        { key: "idsText", label: "规则编号" }
+      ],
+      apply(values) {
+        error.value = "";
+        form.value = fillForm({ kind: "grade", creating: true, id: "", label: "", pri: 0, basis: "", weightsText: "", idsText: "", paramId: "" }, values);
+      },
+      save: finishSave(() => save(), error)
+    },
+    {
+      id: "mo-weight",
+      title: "澳门评级档",
+      fields: [
+        { key: "id", label: "编号" },
+        { key: "bucket", label: "类别" },
+        { key: "weightsText", label: "权重" },
+        { key: "note", label: "说明" }
+      ],
+      apply(values) {
+        error.value = "";
+        form.value = fillForm({ kind: "mo", creating: true, id: "", bucket: "", weightsText: "", note: "" }, values);
+      },
+      save: finishSave(() => save(), error)
+    }
+  ]
+});
 
 async function refresh() {
   if (view.value) await view.value.reload();

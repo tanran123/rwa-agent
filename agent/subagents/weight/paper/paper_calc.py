@@ -11,6 +11,7 @@ from typing import Any
 
 from openpyxl.utils import get_column_letter
 
+from agent.platform.layout import skill_body
 from agent.subagents.weight.paper.calc_trace import condition_steps, number_steps, save_trace_file, step, write_trace_sheet
 from agent.subagents.weight.calc.exposure_class import class_fields, prototype_flow
 from agent.subagents.rwa.market.mapper import _complete, _extract_json, suggest_complete_map
@@ -419,19 +420,7 @@ def _sheet_outline(ws) -> list[dict]:
 
 
 def _plan_system() -> str:
-    return (
-        "用户上传了一本信用风险工作簿，用来计算 RWA。它不一定是某一家银行的固定底稿。"
-        "请根据每张表的名称和前几行内容，判断哪些是要逐笔计算的明细，哪些是汇总、目录、评级对照或资产负债表。"
-        "只输出一个 JSON 对象，不要解释。"
-        "格式是 {\"note\":\"一句：这本表里哪些是明细\","
-        "\"sheets\":[{\"sheet\":\"表名\",\"header_row\":表头行号,\"off\":false,\"notional\":false,\"skip\":false,\"reason\":\"一句\"}]}。"
-        "header_row 从 1 开始，必须是真正的列名行，不是标题、单位或空行。"
-        "只选带逐笔金额的明细：贷款、债券、存放、票据、透支、承诺额度和信用卡未用额度。"
-        "客户名单、中小企名单、抵押品清单、评级对照、限额、科目对照、监管汇总和资产负债表不要逐笔算，skip 为 true。"
-        "只有外汇名义本金、没有信用等值金额的表，notional 为 true 且 skip 为 true。"
-        "表外承诺、未使用额度 off 为 true。"
-        "不要编造工作簿里没有的表名。"
-    )
+    return skill_body("measure-sheets-paper")
 
 
 def plan_workbook_sheets(book) -> tuple[list[dict], str]:
@@ -1699,19 +1688,7 @@ def _ask_open_weights(groups: list[dict]) -> dict[str, dict]:
 
 
 def _open_weight_system() -> str:
-    return (
-        "有些信用风险敞口走到了权重法规则，但规则因为缺条件停住了，权重还是空的。"
-        "你要替这些敞口把缺的条件定下来。只输出一个 JSON 对象，不要解释。"
-        "格式是 {\"choices\":[{\"id\":\"原样照抄\",\"choice\":\"选项之一\",\"reason\":\"一句为什么这样定\"}]}。"
-        "每一个 case 的 id 都必须出现，choice 只能是该 case 的 options 里的值，不能写权重百分比。"
-        "bank_grade：底稿没有资本充足率。a_plus 表示核心一级资本充足率不低于 14% 且杠杆率不低于 5%，并满足最低资本和其他各级资本；"
-        "a 表示满足最低资本和其他各级资本，但达不到 A+；b 表示只满足最低资本、不满足其他各级资本；c 表示不满足最低资本。"
-        "外部评级只是参考，不能把 AA、A 直接当成资本档次。期限由规则自己处理，不要用档次去表示期限。"
-        "property_side：居住和商用同时抵押，规则要求先选定一边。residential 归居住用，commercial 归商用。按抵押品描述选更贴近的一边。"
-        "default_provision：已违约，但没有这笔的减值准备，规则分不出 100% 和 150%。"
-        "high 表示按损失准备不低于账面 20%，权重 100%；low 表示按损失准备低于账面 20%，权重 150%。"
-        "信用卡未使用额度通常没有单独计提，更接近准备不足。"
-    )
+    return skill_body("measure-open-weight")
 
 
 def _apply_open_choice(facts: dict, kind: str, choice: str) -> bool:

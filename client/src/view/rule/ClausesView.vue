@@ -5,6 +5,7 @@ import { useContext } from "@/composables/useContext";
 import { runBatch, useBatchNote, usePick } from "@/composables/usePick";
 import AsyncView from "@/components/AsyncView.vue";
 import RuleForm from "@/components/RuleForm.vue";
+import { fillForm, finishSave, useAgentForm } from "@/composables/useAgentForm";
 import { askConfirm } from "@/utils/confirm";
 
 const { session } = useContext();
@@ -52,6 +53,31 @@ function edit(row) {
     creating: false
   };
 }
+
+useAgentForm(() => ({
+  forms: [{
+    id: "clause",
+    title: "监管条款",
+    fields: [
+      { key: "id", label: "编号" },
+      { key: "jurisdiction", label: "地区", options: session.jurisdictions.map((item) => item.code) },
+      { key: "clause", label: "条款编号" },
+      { key: "title", label: "标题" },
+      { key: "doc", label: "制度" },
+      { key: "docVersion", label: "制度版本" },
+      { key: "effectiveFrom", label: "生效日期" },
+      { key: "source", label: "来源" },
+      { key: "scope", label: "适用范围" },
+      { key: "text", label: "原文" },
+      { key: "refsText", label: "引用规则" }
+    ],
+    apply(values) {
+      error.value = "";
+      form.value = fillForm(blank(), values);
+    },
+    save: finishSave(() => save(), error)
+  }]
+}));
 
 function payload(row) {
   return {

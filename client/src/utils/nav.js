@@ -18,6 +18,7 @@ export const NAV = [
     label: "计量执行",
     items: [
       { label: "计量向导", path: "/wizard" },
+      { label: "底稿计算", path: "/engine" },
       { label: "结果明细", path: "/results" }
     ]
   }
@@ -31,7 +32,6 @@ const PARENT = {
   "/weights": "/tree",
   "/ead-on": "/ead",
   "/ead-off": "/ead",
-  "/engine": "/wizard",
   "/batches": "/results",
   "/export": "/results"
 };

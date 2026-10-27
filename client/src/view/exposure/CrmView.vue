@@ -4,6 +4,7 @@ import { createCrmRule, deleteCrmRule, deleteCrmRules, fetchCrm, saveCrmRule } f
 import { runBatch, useBatchNote, usePick } from "@/composables/usePick";
 import AsyncView from "@/components/AsyncView.vue";
 import RuleForm from "@/components/RuleForm.vue";
+import { fillForm, finishSave, useAgentForm } from "@/composables/useAgentForm";
 import { askConfirm } from "@/utils/confirm";
 
 const substitute = {
@@ -50,6 +51,36 @@ function edit(row) {
     }
   };
 }
+
+useAgentForm({
+  forms: [{
+    id: "crm-rule",
+    title: "缓释规则",
+    fields: [
+      { key: "id", label: "编号" },
+      { key: "pri", label: "优先级" },
+      { key: "type", label: "类型" },
+      { key: "substitute", label: "覆盖部分", options: Object.keys(substitute) },
+      { key: "floorParam", label: "底线参数" },
+      { key: "tool", label: "合格工具" },
+      { key: "constraints", label: "不计入，对象里用 maturity、currency、correlation" }
+    ],
+    apply(values) {
+      error.value = "";
+      form.value = fillForm({
+        creating: true,
+        id: "",
+        type: "",
+        tool: "",
+        substitute: "collateral",
+        floorParam: "",
+        pri: 0,
+        constraints: { maturity: false, currency: false, correlation: false }
+      }, values);
+    },
+    save: finishSave(() => save(), error)
+  }]
+});
 
 function payload(row) {
   return {
