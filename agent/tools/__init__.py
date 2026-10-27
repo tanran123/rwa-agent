@@ -7,6 +7,7 @@ from agent.subagents.ccf import ccf_status
 from agent.subagents.crm import crm_status
 from agent.subagents.rwa import rwa_status
 from agent.subagents.weight import run_weight_decision
+from agent.tools.measure import identify_products, map_fields
 from langchain_core.tools import tool
 
 
@@ -41,4 +42,6 @@ tools = [
     crm_status,
     rwa_status,
     page_actions,
+    identify_products,
+    map_fields,
 ]

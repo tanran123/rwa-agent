@@ -98,7 +98,7 @@ cwd = "/Users/tanran/rwa"
 | `paths.py` | 仓库根目录。留痕目录从这里找。 |
 | `platform/system_prompt.md` | 信用风险总控说明。`llm_call` 把它放进 `SystemMessage`，并接上 `DIALOGUE` 里的技能全文。 |
 | `platform/state.py` | 这一轮的状态。`messages` 追加，`llm_calls` 计数。 |
-| `tools/` | 工具名单：`pipeline_steps`、`run_weight_decision`、`recent_calculation`、`ccf_status`、`crm_status`、`rwa_status`、`page_actions`。平台和 MCP 都用这一份。`page_actions` 记下当前页要填或要保存的步骤，页面再执行。 |
+| `tools/` | 工具名单：`pipeline_steps`、`run_weight_decision`、`recent_calculation`、`ccf_status`、`crm_status`、`rwa_status`、`page_actions`、`identify_products`、`map_fields`。平台和 MCP 都用这一份。`page_actions` 记下当前页要填或要保存的步骤，页面再执行。`identify_products` 和 `map_fields` 复用计量向导的识别和标准字段映射。 |
 | `platform/nodes.py` | `llm_call`、`tool_node`、`should_continue`。`llm_call` 把名单交给模型。`tool_node` 按模型点的名字执行。`llm_call` 失败会重试一次。计算工作簿前会中断，只接受 `confirm: true`。 |
 | `platform/graph.py` | 把「调用模型」和「执行工具」接成循环。检查点和存储在 `output/runtime/`。`checkpoints` 可读历史，`fork` 从某一步改写后再继续。`langgraph.json` 的 `graphs.rwa` 指向这里的 `agent`。页面调用 `reply`，并带回 `threadId`。 |
 | `runtime.py` | `FileSaver` 和 `SharedStore`。文件在 `output/runtime/`。平台、`run_pipeline` 和 MCP 共用这一份。 |
@@ -111,7 +111,7 @@ cwd = "/Users/tanran/rwa"
 | `.deepagents/agents/` | 各步说明。每个子目录一份 `AGENTS.md`。 |
 | `skills/calculation-order/SKILL.md` | 计算顺序。右下角每次调用都会附上全文。 |
 | `skills/page-actions/SKILL.md` | 当前页面的填写和保存。右下角每次调用都会附上全文。改表单步骤、字段取值和是否保存，改这一份。 |
-| `skills/measure-*/SKILL.md` | 计量里交给模型的一步一份。识别产品、标准字段映射、分类字段映射、抽取、选表、确认数据、补权重条件、分类流程、公式字段映射。调用时读取正文，不放进 `DIALOGUE`。底稿页选表是 `measure-sheets-paper`，流水线选表是 `measure-sheets`。 |
+| `skills/measure-*/SKILL.md` | 计量里交给模型的一步一份。识别产品、标准字段映射、分类字段映射、抽取、选表、确认数据、补权重条件、分类流程、公式字段映射。调用时读取正文，不放进 `DIALOGUE`。识别产品对应工具 `identify_products`，标准字段映射对应工具 `map_fields`。底稿页选表是 `measure-sheets-paper`，流水线选表是 `measure-sheets`。 |
 | `skills/decision-tree/SKILL.md` | 决策树助手。只在暴露分类页那一次模型调用里作为系统提示。 |
 
 ## 计算
