@@ -5,25 +5,13 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from agent.platform.layout import skill_body
 from agent.subagents.rwa.market.mapper import _complete, _extract_json
 from agent.subagents.weight.paper.paper_calc import _sheet_outline
 
 
 def _system() -> str:
-    return (
-        "你刚看完一本信用风险工作簿的研判结果，下一步才是字段映射和 RWA 计算。"
-        "只有「用哪一块数据」会改变算进去的行或金额时才问用户。"
-        "例如同一张明细有两列都能当敞口、一张表有两段表头、两张表像是同一批业务可能算重。"
-        "选项必须是工作簿里真实出现的表名或列名，不要编造。"
-        "一次最多问 3 个问题，每个问题最多 4 个选项。"
-        "没有这类选择时 ready 为 true，不要为了问而问。"
-        "不要问资本等级、风险权重、风险暴露类型，那些不是这一步要确认的。"
-        "用户已经回答过的不要再问。用户说按当前判断继续时，ready 为 true。"
-        "只输出一个 JSON 对象，不要解释。"
-        "还要问时：{\"ready\":false,\"reply\":\"说明哪里拿不准\",\"questions\":[{\"id\":\"q1\",\"ask\":\"问题\",\"options\":[\"选项\"]}] }。"
-        "可以算时：{\"ready\":true,\"reply\":\"一句确认\",\"decisions\":\"用哪张表、表头行、敞口列、跳过什么\",\"sheet\":\"要改用的明细表名，不改就写空字符串\",\"header_row\":0}。"
-        "header_row 从 1 开始，0 表示不改表头行。sheet 必须是工作簿里的表名。"
-    )
+    return skill_body("measure-clarify")
 
 
 def _context(book, planned: list[dict], note: str) -> dict[str, Any]:

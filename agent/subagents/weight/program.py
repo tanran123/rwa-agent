@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent.pipeline import active_steps
+from agent.calculation.pipeline import active_steps
 
 NAME = "weight"
 DETAIL = "风险暴露权重判断：按权重法风险暴露分类划分暴露、取权重并计算敞口。"
@@ -36,7 +36,7 @@ def run(context: dict) -> dict:
 if __name__ == "__main__":
     import sys
 
-    from agent.pipeline import run_pipeline
+    from agent.calculation.pipeline import run_pipeline
 
     if len(sys.argv) < 2:
         raise SystemExit("用法: python -m agent.subagents.weight.program 工作簿.xlsx [结果.xlsx]")

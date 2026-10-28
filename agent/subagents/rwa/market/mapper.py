@@ -12,11 +12,12 @@ from pathlib import Path
 import openpyxl
 from openpyxl.utils import get_column_letter
 
+from agent.platform.layout import skill_body
 from agent.subagents.rwa.market.agent import PACK_FORMULA
 from agent.subagents.rwa.market.fields import FIELD_HINT, FIELD_LABEL, OPTIONAL, PACK_TITLE, REQUIRED
 
-QWEN_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-QWEN_MODEL = "qwen-plus"
+DEFAULT_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+DEFAULT_MODEL = "qwen-plus"
 
 
 def suggest_field_map(headers: list[dict], fields: list[dict], table: dict | None = None) -> dict[str, dict]:
@@ -69,24 +70,7 @@ def suggest_field_map(headers: list[dict], fields: list[dict], table: dict | Non
 
 
 def _field_system() -> str:
-    return (
-        "用户上传了一份 Excel，用途是计算信用风险 RWA（风险加权资产）。"
-        "fields 里的 id 必须原样使用，不要改名，也不要漏掉任何一个字段。"
-        "你要阅读这份表格，把每一个字段对到表头，或在对不上时填常量。"
-        "只输出一个 JSON 对象，不要解释。"
-        "格式是 {\"extract\": \"一两句：从表里提取了哪些计算要用的内容\", "
-        "\"mapping\": {\"字段id\": {\"column\": \"列字母\", \"reason\": \"一句为什么这列能用于计算\"}}}。"
-        "对得上表头时写 column。一个表头只能分给一个字段，不要用合同号、序号、分区去凑。"
-        "金额（balance、single_exposure、账面余额、本金、敞口）对金额列，不要对到权重或 RWA。"
-        "对不上表头时不要留空，改写 {\"const\": \"常量\", \"reason\": \"表里为什么没有这一列\"}。"
-        "常量优先用这张表能看出来的取值，看不出来再用该字段的 sample。"
-        "常见对应：产品类型或业务品种对 product_type、instrument_type；"
-        "发行人类型或客户类型对 issuer_type、counterparty_type；"
-        "评级对 issuer_rating；清偿顺序对 seniority；是否上市对 listed；"
-        "期限对 maturity；余额对 balance；减值对 impairment；五级分类或违约对 default_status、is_defaulted。"
-        "options 里是「中文=code」。选列时不要改单元格；填常量时用表里的原文或 sample。"
-        "workbook.confirmed 是用户刚刚确认的数据选择。敞口、表和表头以这句话为准，不要改用另一列金额。"
-    )
+    return skill_body("measure-extract")
 
 
 def suggest_mappings(path: str | Path, sheet_name: str, header_row: int, products: list[str]) -> dict[str, dict[str, str]]:
@@ -236,17 +220,7 @@ def _user(products: list[str], headers: list[dict]) -> str:
 
 
 def _system() -> str:
-    return (
-        "你负责把资本公式的字段映射到上传表的表头。只输出一个 JSON 对象，不要解释。"
-        "格式是 {\"mappings\": {\"公式id\": {\"字段id\": \"列字母\"}}}。"
-        "一个表头只能分给一个字段。含义对不上就不要填这个字段，不要用序号、分区、item 去凑。"
-        "发行人要的是名称文本，客户号和合约号不要填到发行人。"
-        "S&P 评级只接受 AAA、AA+、BBB- 这种标普符号。示例若是 A1、Aa1、Aaa，那是穆迪，不要填到 rating_sp。"
-        "对手类型、发行人类型优先看主体类型，例如 BIS_ENTITY_TYPE。"
-        "币种看 CURRENCY。持仓或敞口金额看 EAD，不要看 RWA、风险权重。"
-        "剩余期限看 RESIDUAL_MATURITY。交易编号看合约号 CONTRACT_REFERENCE。"
-        "表里没有远端两腿金额时，far_ccy、far_amt 留空。"
-    )
+    return skill_body("measure-formula-map")
 
 
 def suggest_complete_map(headers: list[dict], fields: list[dict], table: dict | None = None) -> dict[str, dict]:
@@ -275,25 +249,7 @@ def suggest_complete_map(headers: list[dict], fields: list[dict], table: dict | 
 
 
 def _complete_system() -> str:
-    return (
-        "用户给出信用风险底稿的一张表，要计算 RWA（风险加权资产）。"
-        "字段 id 来自权重法风险暴露分类 JSON，必须原样使用。"
-        "每一个字段都要在 mapping 里出现一次，不能漏。"
-        "只输出一个 JSON 对象。"
-        "格式是 {\"extract\":\"一句\",\"mapping\":{\"字段id\":{...}}}。"
-        "对得上某一列时写 {\"column\":\"列字母\",\"reason\":\"为什么这列就是这个字段\"}。"
-        "整张表都是同一个取值时写 {\"const\":\"选项code\",\"reason\":\"为什么整表如此\"}，const 必须是该字段 options 里的 code。"
-        "底稿确实没有、也不能从这张表的产品性质判断时写 {\"missing\":true,\"reason\":\"底稿没有\"}。"
-        "同一列可以分给多个字段。不要编造不存在的列字母。"
-        "single_exposure 只能对账面余额：Value Balance(MOP)、O/S BAL_MOP、Equiv to MOP、信貸敞口_MOP、剩余可使用额度（澳门元）。"
-        "抵押品价值、Collateral Value、利息、RWA、风险权重、CCF、合同号、客户号都不是 single_exposure。"
-        "Cust Type、INDUSTRY、客户类型对 counterparty_type。存放同业整表是商业银行，不要写成主权。"
-        "信用卡整表是自然人，并且 is_credit_card 为 yes。贷款、按揭、透支、额度、信用卡的 fi_bank_applicable 为 not_applicable。"
-        "原始期限对 Rest Period、Original Period、BY PERIOD (DAYS)，这些数是天数。不要对到期日。"
-        "五级分类、DPD、逾期天数对 is_defaulted。底稿没有的财务和资本条件写 missing，不要整表填 yes。"
-        "抵押品描述对 property_uses 和 has_property_collateral。"
-        "不要把风险权重、RWA、合同号、客户号当成分类字段。"
-    )
+    return skill_body("measure-mapping")
 
 
 def _normalize_slot(slot: object, allowed: set[str]) -> dict:
@@ -316,12 +272,12 @@ def _normalize_slot(slot: object, allowed: set[str]) -> dict:
 def _complete(system: str, user: str, timeout: int = 90) -> str:
     key = (
         os.environ.get("DASHSCOPE_API_KEY", "").strip()
-        or os.environ.get("QWEN_API_KEY", "").strip()
+        or os.environ.get("MODEL_API_KEY", "").strip()
     )
     if not key:
-        raise RuntimeError("未配置通义千问 API Key")
-    base = (os.environ.get("QWEN_BASE_URL") or QWEN_BASE).strip()
-    model = (os.environ.get("QWEN_MODEL") or QWEN_MODEL).strip()
+        raise RuntimeError("未配置模型 API Key")
+    base = (os.environ.get("MODEL_BASE_URL") or DEFAULT_BASE).strip()
+    model = (os.environ.get("MODEL_NAME") or DEFAULT_MODEL).strip()
     body = json.dumps(
         {
             "model": model,

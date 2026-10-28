@@ -2,18 +2,25 @@
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { sendAgentChat } from "@/api/agent";
+import { AGENT_FORMS, AGENT_PAGES, apisFor } from "@/utils/agentCatalog";
+import { agentHtml } from "@/utils/agentText";
+import { readAgentForms, useAgentFormSlot } from "@/composables/useAgentForm";
 import { fetchExposureChat, fetchExposureClasses, proposeExposureTree, saveExposureChat, saveExposureTree } from "@/api/exposure";
 import { useContext } from "@/composables/useContext";
 
+const agentForms = useAgentFormSlot();
 const route = useRoute();
 const router = useRouter();
-const { scopeVersion } = useContext();
+const { session, scopeVersion } = useContext();
+const formSet = {};
+AGENT_FORMS.forEach((item) => { formSet[item.id] = item.path; });
 const open = ref(false);
 const text = ref("");
 const sending = ref(false);
 const box = ref(null);
 const dock = ref(null);
 const chats = ref({});
+const threads = ref({});
 const dragging = ref(false);
 let moved = false;
 
@@ -117,6 +124,11 @@ const role = computed(() => (isTree.value
     welcome: "先给出信用风险底稿 .xlsx。权重判断按分类规则取权重和敞口。转换系数、缓释和汇总还没进名单时会停住，不会另编一套数。"
   }));
 const thread = computed(() => chats.value[chatKey.value] || [{ role: "bot", text: role.value.welcome, meta: role.value.name }]);
+const awaitingRun = computed(() => {
+  const rows = thread.value;
+  const last = rows[rows.length - 1];
+  return !!(last && last.offerRun);
+});
 
 watch(() => (isTree.value ? scopeVersion.value + "\n" + (route.params.name || "root") : ""), async () => {
   if (!isTree.value) return;
@@ -218,12 +230,98 @@ function saidSave(value) {
 }
 
 function quiet(rows) {
-  return rows.map((row) => ({ ...row, offerConfirm: false, offerSave: false, pending: false }));
+  return rows.map((row) => ({ ...row, offerConfirm: false, offerSave: false, offerRun: false, pending: false }));
 }
 
-async function send(content) {
+function catalogBody() {
+  const live = {};
+  readAgentForms(agentForms).forEach((item) => { live[item.id] = item.fields; });
+  const codes = (session.jurisdictions || []).map((item) => item.code);
+  const orgs = (session.orgs || []).filter((item) => item.jurisdiction === session.jurisdiction).map((item) => item.name);
+  const versions = (session.versions || []).filter((item) => item.jurisdiction === session.jurisdiction).map((item) => item.version);
+  const page = AGENT_PAGES.find((item) => item.path === route.path);
+  return {
+    scope: { jurisdiction: session.jurisdiction || "", version: scopeVersion.value || "" },
+    pages: [page || { path: route.path, title: "" }],
+    apis: apisFor(route.path),
+    forms: AGENT_FORMS.filter((item) => item.path === route.path).map((item) => ({
+      path: item.path,
+      id: item.id,
+      title: item.title,
+      fields: (live[item.id] || item.fields || []).map((field) => {
+        const next = { key: field.key, label: field.label, options: field.options };
+        if (field.key === "jurisdiction" && codes.length) next.options = codes;
+        if (field.key === "institution" && orgs.length) next.options = orgs;
+        if (field.key === "ruleVersion" && versions.length && !(next.options && next.options.length)) next.options = versions;
+        return next;
+      })
+    }))
+  };
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForm(id) {
+  for (let i = 0; i < 60; i += 1) {
+    const found = readAgentForms(agentForms).find((row) => row.id === id);
+    if (found) return found;
+    await delay(50);
+  }
+  return null;
+}
+
+function cleanSteps(raw) {
+  if (!Array.isArray(raw)) return [];
+  const steps = [];
+  raw.slice(0, 8).forEach((item) => {
+    if (!item || typeof item !== "object") return;
+    const form = typeof item.form === "string" && formSet[item.form] === route.path ? item.form : "";
+    if (!form) return;
+    steps.push({
+      path: route.path,
+      form,
+      fields: item.fields && typeof item.fields === "object" ? item.fields : {},
+      save: item.save === true
+    });
+  });
+  return steps;
+}
+
+async function runActions(steps) {
+  const notes = [];
+  for (const step of steps) {
+    if (!step.form || formSet[step.form] !== route.path) continue;
+    const found = await waitForm(step.form);
+    if (!found) {
+      notes.push("页面上没有「" + step.form + "」");
+      continue;
+    }
+    const applied = found.apply(step.fields || {});
+    if (applied === false) {
+      notes.push((found.title || step.form) + "：这一页现在填不进去");
+      continue;
+    }
+    if (!step.save) continue;
+    if (!found.save) {
+      notes.push((found.title || step.form) + "：这一页不能从对话保存");
+      continue;
+    }
+    try {
+      await found.save();
+    } catch (err) {
+      notes.push((found.title || step.form) + "：" + (err.message || "没有保存"));
+    }
+  }
+  return notes;
+}
+
+async function send(content, extra) {
+  const decision = extra && (extra.confirm === true || extra.confirm === false) ? extra.confirm : null;
   const value = String(content || "").trim();
   if (!value || sending.value) return;
+  if (awaitingRun.value && decision === null) return;
   const key = chatKey.value;
   const history = quiet(thread.value.filter((item) => item.role === "user" || item.meta !== "…"));
   const next = history.concat([
@@ -300,7 +398,10 @@ async function send(content) {
     })).concat([{ role: "user", content: value }]);
     const data = isTree.value
       ? await proposeExposureTree(route.params.name || "", payload, scopeVersion.value)
-      : await sendAgentChat(route.path, payload);
+      : await sendAgentChat(route.path, payload, undefined, threads.value[key], decision, catalogBody());
+    if (!isTree.value && data.threadId) {
+      threads.value = { ...threads.value, [key]: data.threadId };
+    }
     const pages = data.pages || [];
     let reply = data.reply || "没有返回";
     const action = data.action === "update" ? "draft" : data.action;
@@ -313,7 +414,18 @@ async function send(content) {
         delete rest[key];
         drafts.value = rest;
       }
-      next[next.length - 1] = { role: "bot", text: reply, meta: role.value.name, pages };
+      const steps = !isTree.value ? cleanSteps(data.actions) : [];
+      if (steps.length) {
+        const notes = await runActions(steps);
+        if (notes.length) reply = reply + "\n" + notes.join("\n");
+      }
+      next[next.length - 1] = {
+        role: "bot",
+        text: reply,
+        meta: role.value.name,
+        pages,
+        offerRun: !isTree.value && data.confirm === true
+      };
     }
     chats.value = { ...chats.value, [key]: next.slice() };
     if (pages[0]) router.push(pages[0].path);
@@ -358,17 +470,21 @@ async function send(content) {
       <div ref="box" class="agent-msgs">
         <div v-for="(item, index) in thread" :key="index" class="bubble" :class="item.role === 'user' ? 'user' : 'bot'">
           <span class="meta">{{ item.meta }}</span>
-          <span v-if="item.pending" class="spin"></span>{{ item.text }}
-          <div v-if="item.offerConfirm || item.offerSave || (item.pages && item.pages.length)" class="acts">
+          <span v-if="item.pending" class="spin"></span>
+          <span v-if="item.pending || item.role === 'user'">{{ item.text }}</span>
+          <div v-else class="body" v-html="agentHtml(item.text)"></div>
+          <div v-if="item.offerConfirm || item.offerSave || item.offerRun || (item.pages && item.pages.length)" class="acts">
             <button v-if="item.offerConfirm" type="button" class="primary" @click="send('确认')">确认</button>
+            <button v-if="item.offerRun" type="button" class="primary" @click="send('确认计算', { confirm: true })">确认</button>
+            <button v-if="item.offerRun" type="button" @click="send('取消计算', { confirm: false })">取消</button>
             <button v-if="item.offerSave" type="button" class="primary" @click="send('保存')">保存</button>
             <button v-for="page in item.pages || []" :key="page.path" type="button" class="primary" @click="router.push(page.path)">{{ page.label }}</button>
           </div>
         </div>
       </div>
       <form class="agent-input" @submit.prevent="send(text)">
-        <input v-model="text" :placeholder="isTree ? '可以说要改哪一条，或要新增哪一类' : '给出底稿路径，或问后续计算'" :disabled="sending" />
-        <button type="submit" :disabled="sending">发送</button>
+        <input v-model="text" :placeholder="awaitingRun ? '请先确认或取消这次计算' : (isTree ? '可以说要改哪一条，或要新增哪一类' : '给出底稿路径，或说要在这一页新建、修改')" :disabled="sending || awaitingRun" />
+        <button type="submit" :disabled="sending || awaitingRun">发送</button>
       </form>
     </aside>
   </div>

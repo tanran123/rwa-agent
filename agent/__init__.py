@@ -1,1 +1,1 @@
-"""Credit-risk coordinator. Each subagent directory holds that step's program."""
+"""Credit-risk agent. Platform, model, tools, calculation, and the decision-tree assistant live in their own directories."""

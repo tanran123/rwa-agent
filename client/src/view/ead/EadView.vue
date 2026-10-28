@@ -5,6 +5,7 @@ import { useContext } from "@/composables/useContext";
 import { OP_LABELS } from "@/utils/ruleText";
 import AsyncView from "@/components/AsyncView.vue";
 import Drawer from "@/components/Drawer.vue";
+import { finishSave, useAgentForm } from "@/composables/useAgentForm";
 import { askConfirm } from "@/utils/confirm";
 
 const OPS = ["+", "−", "×", "÷", "(", ")"];
@@ -177,6 +178,49 @@ async function setSide(item, side) {
   item.rules = [blankRule(item)];
   ping(`「${item.label}」已切换为${label} EAD，请编写公式`);
 }
+
+useAgentForm(() => {
+  const item = product.value;
+  if (!item || !item.side) return { forms: [] };
+  return {
+  forms: [{
+    id: "ead-rule",
+    title: "EAD 规则",
+    fields: [
+      { key: "name", label: "规则名称" },
+      { key: "condition", label: "规则说明" },
+      { key: "formula", label: "公式" },
+      { key: "ccf", label: "系数" },
+      { key: "precision", label: "计算精度（小数位）" },
+      { key: "rounding", label: "舍入规则", options: ["四舍五入", "向上取整", "向下取整"] },
+      { key: "clause", label: "关联监管条款" },
+      { key: "resultField", label: "结果字段" },
+      { key: "status", label: "状态", options: ["draft", "published"] }
+    ],
+    apply(values) {
+      if (!item || !item.side) return false;
+      addRule(item);
+      const rule = item.rules[item.rules.length - 1];
+      ["name", "condition", "formula", "rounding", "clause", "resultField", "status"].forEach((key) => {
+        if (values[key] == null || values[key] === "") return;
+        rule[key] = String(values[key]);
+      });
+      ["precision", "ccf"].forEach((key) => {
+        if (values[key] == null || values[key] === "") return;
+        const number = Number(values[key]);
+        if (Number.isFinite(number)) rule[key] = number;
+      });
+      if (values.formula) scheduleCheck(item, rule);
+    },
+    save: finishSave(async () => {
+      const current = product.value;
+      const rule = current && current.rules && current.rules[current.rules.length - 1];
+      if (current && rule && rule.formula) await runCheck(current, rule);
+      await save();
+    }, pageError)
+  }]
+  };
+});
 
 function addRule(item) {
   item.rules.push(blankRule(item));

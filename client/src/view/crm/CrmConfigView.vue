@@ -3,6 +3,7 @@ import { computed, reactive, ref } from "vue";
 import { fetchCrmConfig, saveCrmConfig } from "@/api/crm";
 import { useContext } from "@/composables/useContext";
 import AsyncView from "@/components/AsyncView.vue";
+import { finishSave, useAgentForm } from "@/composables/useAgentForm";
 import { askConfirm } from "@/utils/confirm";
 
 /** 缓释配置只绑定这三个属性，与接口的 CRM_ATTRS 一致。三个都是必选。 */
@@ -214,6 +215,77 @@ async function discardDraft() {
 }
 
 /* ---------------- 第 3 步：草稿的读写 ---------------- */
+useAgentForm(() => {
+  if (!product.value) return { forms: [] };
+  const columns = product.value && product.value.sourceColumns ? product.value.sourceColumns.flat : [];
+  const limit = Number(data.value && data.value.maxSlotsLimit) || 0;
+  const slotOptions = [];
+  for (let n = 1; n <= limit; n += 1) slotOptions.push(String(n));
+  return {
+    forms: [
+      {
+        id: "crm-reason",
+        title: "缓释说明",
+        fields: [{ key: "reason", label: "无需配置的说明" }],
+        apply(values) {
+          const item = product.value;
+          if (!item || values.reason == null) return false;
+          item.reason = String(values.reason);
+        },
+        save: finishSave(() => save(), pageError)
+      },
+      {
+        id: "crm-slot",
+        title: "缓释字段绑定",
+        fields: [
+          { key: "maxSlots", label: "最多支持笔数", options: slotOptions },
+          { key: "crm_type", label: "第 1 笔缓释物类型", options: columns },
+          { key: "crm_value", label: "第 1 笔考虑错配折扣后的价值", options: columns },
+          { key: "crm_weight", label: "第 1 笔缓释物对应的风险权重", options: columns }
+        ],
+        apply(values) {
+          const item = product.value;
+          if (!item) return false;
+          const allowed = {};
+          columns.forEach((name) => { allowed[name] = true; });
+          if (values.maxSlots != null && values.maxSlots !== "") {
+            const number = Number(values.maxSlots);
+            if (Number.isFinite(number) && number >= 1 && (!limit || number <= limit)) draft.maxSlots = number;
+          }
+          ATTRS.forEach((attr) => {
+            const raw = values[attr.key];
+            if (raw == null || raw === "") return;
+            const column = String(raw);
+            if (!allowed[column]) return;
+            if (!draft.slots[attr.key]) return;
+            draft.slots[attr.key][0] = column;
+          });
+        },
+        save: finishSave(() => save(), pageError)
+      },
+      {
+        id: "crm-type",
+        title: "合格缓释物",
+        fields: [
+          { key: "code", label: "编码" },
+          { key: "name", label: "名称" },
+          { key: "note", label: "监管依据" }
+        ],
+        apply(values) {
+          if (!product.value) return false;
+          addType();
+          const row = draftTypes.value[draftTypes.value.length - 1];
+          if (!row) return false;
+          if (values.code != null) row.code = String(values.code);
+          if (values.name != null) row.name = String(values.name);
+          if (values.note != null) row.note = String(values.note);
+        },
+        save: finishSave(() => save(), pageError)
+      }
+    ]
+  };
+});
+
 function addType() {
   draftTypes.value = draftTypes.value.concat([{ code: "", name: "", note: "" }]);
 }

@@ -1,25 +1,19 @@
-"""Weight subagent. Its program and the Python that program calls live in this directory."""
+"""Weight step. The pipeline calls program.run. The page dialogue only sees run_weight_decision."""
 
 from __future__ import annotations
 
-import os
-import subprocess
-import sys
 from pathlib import Path
 
 from langchain_core.tools import tool
 
-from agent.layout import SKILLS, subagent_prompt
-from agent.pipeline import active_steps, pipeline_steps
+from agent.calculation.pipeline import active_steps, pipeline_steps, run_pipeline
+from agent.platform.layout import SKILLS, subagent_prompt
 from agent.subagents.weight.program import NAME
-
-HERE = Path(__file__).resolve().parent
-REPO = HERE.parents[3]
 
 
 @tool
 def run_weight_decision(workbook: str) -> str:
-    """Run the weight step on one credit-risk workbook. workbook is an existing .xlsx path."""
+    """用户给出工作簿并要求计算时调用。workbook 是已有的 .xlsx 或 .xlsm 路径。没有路径不要猜文件。调用后需用户确认才会开始计算。"""
     path = Path(workbook).expanduser().resolve()
     if not path.is_file():
         return "找不到工作簿：" + str(path) + "。请给出信用风险底稿的 .xlsx 路径，不要换一本表。"
@@ -27,24 +21,31 @@ def run_weight_decision(workbook: str) -> str:
         return "只接受 .xlsx 或 .xlsm。"
     if NAME not in active_steps():
         return "权重判断不在当前计算名单里，停住。"
-    env = os.environ.copy()
-    env["PYTHONPATH"] = str(REPO) + os.pathsep + env.get("PYTHONPATH", "")
+    thread_id = None
     try:
-        done = subprocess.run(
-            [sys.executable, "-m", "agent.subagents.weight.program", str(path)],
-            cwd=REPO,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=900,
-            check=False,
-        )
-    except subprocess.TimeoutExpired:
-        return "权重判断超时，没有形成结果。"
-    if done.returncode != 0:
-        detail = (done.stderr or done.stdout or "计算失败").strip()
-        return detail[-2000:]
-    return (done.stdout or "").strip() or "命令没有输出。"
+        from langgraph.config import get_config
+
+        parent = (get_config().get("configurable") or {}).get("thread_id")
+        if isinstance(parent, str) and parent:
+            thread_id = parent + "::calculation"
+    except Exception:
+        thread_id = None
+    try:
+        done = run_pipeline(path, thread_id=thread_id)
+    except Exception as exc:
+        return str(exc)[-2000:]
+    if done.get("stopped"):
+        return str(done.get("stop_reason") or "计算停住了")
+    lines = [
+        str(done.get("annotated") or ""),
+        str(done.get("trace_file") or ""),
+        "敞口 " + str(done.get("ead_yi")) + " 亿  风险加权资产 " + str(done.get("rwa_yi")) + " 亿",
+    ]
+    text = "\n".join(line for line in lines if line.strip()) or "命令没有输出。"
+    from agent.runtime import CALCULATION, LATEST, store
+
+    store.put(CALCULATION, LATEST, {"text": text})
+    return text
 
 
 def spec(model) -> dict:

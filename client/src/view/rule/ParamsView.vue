@@ -4,6 +4,7 @@ import { createParam, deleteParam, deleteParams, fetchParams, saveParam } from "
 import { runBatch, useBatchNote, usePick } from "@/composables/usePick";
 import AsyncView from "@/components/AsyncView.vue";
 import RuleForm from "@/components/RuleForm.vue";
+import { fillForm, finishSave, useAgentForm } from "@/composables/useAgentForm";
 import { askConfirm } from "@/utils/confirm";
 
 const form = ref(null);
@@ -30,6 +31,26 @@ function edit(row) {
 function payload(row) {
   return { id: row.id, grp: row.grp, name: row.name, value: row.value, unit: row.unit, usedFor: row.usedFor };
 }
+
+useAgentForm({
+  forms: [{
+    id: "param",
+    title: "共用参数",
+    fields: [
+      { key: "id", label: "编号" },
+      { key: "grp", label: "分组" },
+      { key: "name", label: "名称" },
+      { key: "value", label: "值" },
+      { key: "unit", label: "单位" },
+      { key: "usedFor", label: "用途" }
+    ],
+    apply(values) {
+      error.value = "";
+      form.value = fillForm(blank(), values);
+    },
+    save: finishSave(() => save(), error)
+  }]
+});
 
 async function refresh() {
   if (view.value) await view.value.reload();

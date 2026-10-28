@@ -8,7 +8,7 @@ description: >-
 
 # 微信知识库规则对话
 
-规则对话只问微信知识库，代码在 `knowledge/weknora/`。本地规则包在 `knowledge/local/`，对话不拿这些 Markdown 当回答。通义千问仍只用于表头映射（`agent/subagents/rwa/market/mapper.py`）和 Excel 学规则（`knowledge/local/rule_learn.py`）。
+规则对话只问微信知识库，代码在 `knowledge/weknora/`。本地规则包在 `knowledge/local/`，对话不拿这些 Markdown 当回答。模型仍只用于表头映射（`agent/subagents/rwa/market/mapper.py`）和 Excel 学规则（`knowledge/local/rule_learn.py`）。
 
 ## 调用
 
@@ -33,7 +33,7 @@ description: >-
 
 `_library_only` 按空行分段，遇到「并非来自知识库」「没有检索到」「一般金融知识」「基于一般」就停。前面没有正文时，视为知识库没有内容。有引用且留住了正文时，末尾加「依据：」和最多 4 个标题。
 
-知识库没有内容时（没有可用库、没有返回回答、或正文被滤成空）改调通义千问，复用 `mapper._complete`。回答以「知识库里没有找到相关内容，以下由模型回答。」开头。模型不得编造公告号、通告编号、条款号或填报表行号。连不上、密钥不对、HTTP 错误仍原样报出，不改走模型。规则对话的 `updates` 保持 `None`。
+知识库没有内容时（没有可用库、没有返回回答、或正文被滤成空）改调模型，复用 `mapper._complete`。回答以「知识库里没有找到相关内容，以下由模型回答。」开头。模型不得编造公告号、通告编号、条款号或填报表行号。连不上、密钥不对、HTTP 错误仍原样报出，不改走模型。规则对话的 `updates` 保持 `None`。
 
 `lookup_basis` 有原文时只留知识库第一段，最长 500 字。没有内容时同样改调模型，并带上上面那句开头。依据写在自建规则的 `basis` 上，计算模块不读它。
 

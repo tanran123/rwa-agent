@@ -5,6 +5,7 @@ import { useContext } from "@/composables/useContext";
 import { runBatch, useBatchNote, usePick } from "@/composables/usePick";
 import AsyncView from "@/components/AsyncView.vue";
 import RuleForm from "@/components/RuleForm.vue";
+import { fillForm, finishSave, useAgentForm } from "@/composables/useAgentForm";
 import { askConfirm } from "@/utils/confirm";
 
 const { session, setOrg, loadBootstrap } = useContext();
@@ -40,6 +41,23 @@ function edit(row) {
 function payload(row) {
   return { id: row.id, name: row.name, jurisdiction: row.jurisdiction };
 }
+
+useAgentForm(() => ({
+  forms: [{
+    id: "org",
+    title: "机构",
+    fields: [
+      { key: "id", label: "编号" },
+      { key: "name", label: "名称" },
+      { key: "jurisdiction", label: "地区", options: session.jurisdictions.map((item) => item.code) }
+    ],
+    apply(values) {
+      error.value = "";
+      form.value = fillForm(blank(), values);
+    },
+    save: finishSave(() => save(), error)
+  }]
+}));
 
 async function refresh() {
   await loadBootstrap();

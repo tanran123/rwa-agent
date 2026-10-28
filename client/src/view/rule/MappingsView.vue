@@ -7,6 +7,7 @@ import { useContext } from "@/composables/useContext";
 import { runBatch, useBatchNote, usePick } from "@/composables/usePick";
 import AsyncView from "@/components/AsyncView.vue";
 import RuleForm from "@/components/RuleForm.vue";
+import { fillForm, finishSave, useAgentForm } from "@/composables/useAgentForm";
 import { askConfirm } from "@/utils/confirm";
 
 const { scopeVersion } = useContext();
@@ -16,9 +17,11 @@ const saving = ref(false);
 const view = ref(null);
 const pick = usePick();
 const batch = useBatchNote();
+const listed = ref([]);
 const load = async () => {
   const [products, mappings] = await Promise.all([fetchProducts(), fetchFieldMappings()]);
   const scoped = products.filter((item) => item.ruleVersion === scopeVersion.value);
+  listed.value = scoped;
   const codes = {};
   scoped.forEach((item) => { codes[item.code] = true; });
   return [scoped, mappings.filter((row) => codes[row.product])];
@@ -50,6 +53,29 @@ function edit(row) {
   error.value = "";
   form.value = { ...row, creating: false };
 }
+
+useAgentForm(() => ({
+  forms: [{
+    id: "mapping",
+    title: "字段映射",
+    fields: [
+      { key: "product", label: "产品", options: listed.value.map((item) => item.code) },
+      { key: "status", label: "状态", options: ["ok", "warn", "missing"] },
+      { key: "stdField", label: "标准字段" },
+      { key: "stdCode", label: "标准编码" },
+      { key: "srcSystem", label: "源系统" },
+      { key: "srcField", label: "源字段" },
+      { key: "hitRate", label: "命中率" },
+      { key: "via", label: "转换" },
+      { key: "sample", label: "样例" }
+    ],
+    apply(values) {
+      error.value = "";
+      form.value = fillForm(blank(listed.value), values);
+    },
+    save: finishSave(() => save(), error)
+  }]
+}));
 
 function payload(row) {
   return {

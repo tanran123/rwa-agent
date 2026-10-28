@@ -1,15 +1,15 @@
-"""CRM subagent. The step's own program is program.py."""
+"""CRM step. The pipeline calls program.run. The page dialogue only sees crm_status."""
 
 from langchain_core.tools import tool
 
-from agent.layout import SKILLS, subagent_prompt
-from agent.pipeline import pipeline_steps
+from agent.calculation.pipeline import pipeline_steps
+from agent.platform.layout import SKILLS, subagent_prompt
 from agent.subagents.crm.program import NAME, explain
 
 
 @tool
 def crm_status() -> str:
-    """Report whether the mitigation step can run. It does not split covered and uncovered amounts."""
+    """问缓释时调用。只说明这一步现在能否执行，不拆覆盖和未覆盖金额。"""
     return explain()
 
 

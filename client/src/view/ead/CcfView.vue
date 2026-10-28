@@ -4,6 +4,7 @@ import { createCcf, deleteCcf, deleteCcfs, fetchCcf, saveCcf } from "@/api/ead";
 import { runBatch, useBatchNote, usePick } from "@/composables/usePick";
 import AsyncView from "@/components/AsyncView.vue";
 import RuleForm from "@/components/RuleForm.vue";
+import { fillForm, finishSave, useAgentForm } from "@/composables/useAgentForm";
 import { askConfirm } from "@/utils/confirm";
 
 const form = ref(null);
@@ -30,6 +31,26 @@ function edit(row) {
     condsText: row.conds ? JSON.stringify(row.conds, null, 2) : ""
   };
 }
+
+useAgentForm({
+  forms: [{
+    id: "ccf",
+    title: "转换系数",
+    fields: [
+      { key: "id", label: "编号" },
+      { key: "pri", label: "优先级" },
+      { key: "type", label: "类型" },
+      { key: "ccf", label: "系数" },
+      { key: "cond", label: "条件" },
+      { key: "condsText", label: "附加条件" }
+    ],
+    apply(values) {
+      error.value = "";
+      form.value = fillForm({ creating: true, id: "", type: "", cond: "", ccf: "", pri: 0, condsText: "" }, values);
+    },
+    save: finishSave(() => save(), error)
+  }]
+});
 
 function payload(row) {
   const raw = String(row.condsText || "").trim();

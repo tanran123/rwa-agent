@@ -45,8 +45,8 @@ from agent.subagents.rwa.market.rule_calc import run_authored
 from knowledge.local.rule_graph import load_graph, save_graph
 from agent.subagents.weight.paper.exp_flow_gen import analyze_flow_gaps_local, generate_product_flow
 from agent.subagents.rwa.market.mapper import suggest_field_map, suggest_mappings
-from agent.harness import reply as agent_reply
-from agent.tree_edit import propose as propose_tree
+from agent.platform.graph import reply as agent_reply
+from agent.tree.edit import propose as propose_tree
 from knowledge.weknora.rule_chat import discuss_rules, lookup_basis
 from knowledge.local.rule_learn import learn_from_excel
 from knowledge.weknora.weknora import ask as weknora_ask
@@ -444,7 +444,15 @@ def exposure_tree_propose():
 def agent_chat():
     data = request.get_json(silent=True) or {}
     try:
-        result = agent_reply(data.get("messages") or [], data.get("page") or "/", data.get("config"))
+        flag = data.get("confirm")
+        result = agent_reply(
+            data.get("messages") or [],
+            data.get("page") or "/",
+            data.get("config") if isinstance(data.get("config"), dict) else None,
+            data.get("threadId") if isinstance(data.get("threadId"), str) else None,
+            flag if isinstance(flag, bool) else None,
+            data.get("catalog") if isinstance(data.get("catalog"), dict) else None,
+        )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     except Exception as exc:
@@ -729,7 +737,7 @@ def sheet_preview():
 
 @app.post("/api/sheet-map")
 def sheet_map():
-    """上传表头对应标准字段。交给通义千问，不在本地用关键词凑。"""
+    """上传表头对应标准字段。交给模型，不在本地用关键词凑。"""
     data = request.get_json(silent=True) or {}
     headers = data.get("headers") or data.get("columns") or []
     fields = data.get("fields") or []

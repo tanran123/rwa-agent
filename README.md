@@ -14,6 +14,7 @@
 | `agent/` | 计算智能体。总控、流水线、底稿页和市场风险公式见 `agent/README.md`。 |
 | `knowledge/` | 规则库。本地规则在 `local/`，微信知识库对话在 `weknora/`。说明见 `knowledge/README.md`。 |
 | `app.py` | Flask。把 `/api/agent/chat`、`/api/rules/chat` 交给 Python，并提供底稿和规则库接口。 |
+| `langgraph.json` | LangGraph 应用配置。图是 `agent/platform/graph.py` 的 `agent`。 |
 | `output/` | 每次计算写出的留痕和结果工作簿。不提交。 |
 | `tools/build-seed.mjs` | 从 `server/data/master_data.cjs` 和分类 JSON 重新生成 `sql/002_seed.sql`。 |
 | `ecosystem.config.cjs`、`start.sh` | 用 PM2 启动智能体和接口。 |
@@ -30,13 +31,13 @@
 | `output/traces/` | 计算留痕，JSON 和 Markdown。 |
 | `output/workbooks/` | 试算底稿算完后的结果工作簿。 |
 
-底稿不在 `agent/subagents/weight/` 里面时，结果工作簿写在那个文件旁边，文件名是 `工作簿名_风险暴露分类.xlsx`。留痕仍写到 `output/traces/`。整表计算在仓库根目录执行 `python -m agent.pipeline 工作簿.xlsx`，走 `agent/subagents/weight/calc/`。底稿页走 `agent/subagents/weight/paper/`，读同目录 `底稿模型计算.json`。
+底稿不在 `agent/subagents/weight/` 里面时，结果工作簿写在那个文件旁边，文件名是 `工作簿名_风险暴露分类.xlsx`。留痕仍写到 `output/traces/`。整表计算在仓库根目录执行 `python -m agent.calculation.pipeline 工作簿.xlsx`，走 `agent/subagents/weight/calc/`。底稿页走 `agent/subagents/weight/paper/`，读同目录 `底稿模型计算.json`。
 
 ## 请求怎么走
 
 页面按钮走接口：浏览器 `POST /api/...`，Vite 转到 `http://127.0.0.1:8780`，Koa 查 MySQL 或读文件。
 
-右下角 AI 走智能体：页面 `POST /api/agent/chat`，Koa 转到 `http://127.0.0.1:8766/api/agent/chat`，Flask 调用 `agent.harness.reply`。暴露分类规则页改走 `POST /api/exposure-tree/propose`：先说明规则，给出修改后由用户确认，再询问是否保存。保存走 `POST /api/exposure-tree/save`。规则助手是另一条：`POST /api/rules/chat`，问的是微信知识库，不是计算子智能体。
+右下角 AI 走智能体：页面 `POST /api/agent/chat`，Koa 转到 `http://127.0.0.1:8766/api/agent/chat`，Flask 调用 `agent.platform.graph.reply`。暴露分类规则页改走 `POST /api/exposure-tree/propose`：先说明规则，给出修改后由用户确认，再询问是否保存。保存走 `POST /api/exposure-tree/save`。规则助手是另一条：`POST /api/rules/chat`，问的是微信知识库，不是计算子智能体。
 
 ## 加功能时怎么说
 
