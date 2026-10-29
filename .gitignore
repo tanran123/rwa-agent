@@ -1,8 +1,8 @@
 .env
-node_modules/
-client/dist/
-.venv/
-path/
+node_modules
+client/dist
+.venv
+path
 __pycache__/
 *.pyc
 .DS_Store

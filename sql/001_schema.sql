@@ -37,6 +37,11 @@ DROP TABLE IF EXISTS rule_version;
 DROP TABLE IF EXISTS org_unit;
 DROP TABLE IF EXISTS customer;
 DROP TABLE IF EXISTS jurisdiction;
+DROP TABLE IF EXISTS hqla_task_input;
+DROP TABLE IF EXISTS hqla_task_list;
+DROP TABLE IF EXISTS hqla_task_reported;
+DROP TABLE IF EXISTS hqla_task;
+DROP TABLE IF EXISTS hqla_reference;
 
 SET FOREIGN_KEY_CHECKS = 1;
 
@@ -329,4 +334,94 @@ CREATE TABLE assistant_turn (
   seq INT NOT NULL,
   role VARCHAR(16) NOT NULL,
   body JSON NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 流动性 HQLA：一个计算任务 = 一次独立判定作业
+CREATE TABLE hqla_task (
+  id VARCHAR(32) NOT NULL PRIMARY KEY,
+  name VARCHAR(200) NOT NULL,
+  institution VARCHAR(64) NOT NULL DEFAULT '',
+  base_date DATE NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'draft',
+  step TINYINT NOT NULL DEFAULT 1,
+  config JSON NULL,
+  sample JSON NULL,
+  fetch_log JSON NULL,
+  summary JSON NULL,
+  reported JSON NULL,
+  input_meta JSON NULL,
+  ref_meta JSON NULL,
+  fetch_sig VARCHAR(255) NULL,
+  frozen_at VARCHAR(32) NULL,
+  frozen_sig VARCHAR(255) NULL,
+  run_at VARCHAR(32) NULL,
+  created_at VARCHAR(32) NOT NULL,
+  updated_at VARCHAR(32) NOT NULL,
+  KEY idx_hqla_task_updated (updated_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE hqla_task_input (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  task_id VARCHAR(32) NOT NULL,
+  line_no INT NOT NULL DEFAULT 0,
+  item_raw VARCHAR(64) NOT NULL DEFAULT '',
+  item VARCHAR(8) NOT NULL DEFAULT '',
+  sec_id VARCHAR(128) NOT NULL DEFAULT '',
+  sec_key VARCHAR(128) NOT NULL DEFAULT '',
+  ccy_group_raw VARCHAR(32) NOT NULL DEFAULT '',
+  amount DECIMAL(24, 2) NULL,
+  KEY idx_hqla_input_task (task_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE hqla_task_list (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  task_id VARCHAR(32) NOT NULL,
+  list_code VARCHAR(32) NOT NULL,
+  sec_id VARCHAR(128) NOT NULL DEFAULT '',
+  isin VARCHAR(32) NOT NULL DEFAULT '',
+  issuer VARCHAR(200) NOT NULL DEFAULT '',
+  name VARCHAR(200) NOT NULL DEFAULT '',
+  amount DECIMAL(24, 2) NULL,
+  ltv DECIMAL(10, 2) NULL,
+  decline DECIMAL(10, 2) NULL,
+  approved VARCHAR(8) NOT NULL DEFAULT '',
+  note VARCHAR(255) NOT NULL DEFAULT '',
+  KEY idx_hqla_list_task (task_id, list_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE hqla_task_reported (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  task_id VARCHAR(32) NOT NULL,
+  level VARCHAR(16) NOT NULL DEFAULT '',
+  clause VARCHAR(16) NOT NULL DEFAULT '',
+  principal_thousand DECIMAL(24, 2) NOT NULL DEFAULT 0,
+  weighted_thousand DECIMAL(24, 2) NOT NULL DEFAULT 0,
+  by_ccy JSON NULL,
+  KEY idx_hqla_reported_task (task_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 外部债券参考库（跨任务共享）
+CREATE TABLE hqla_reference (
+  id VARCHAR(128) NOT NULL PRIMARY KEY,
+  isin VARCHAR(32) NOT NULL DEFAULT '',
+  name VARCHAR(200) NOT NULL DEFAULT '',
+  issuer VARCHAR(200) NOT NULL DEFAULT '',
+  ind VARCHAR(8) NOT NULL DEFAULT '',
+  itype TINYINT NULL,
+  ccy VARCHAR(8) NOT NULL DEFAULT '',
+  mat VARCHAR(16) NULL,
+  cp DECIMAL(12, 6) NULL,
+  listed VARCHAR(8) NOT NULL DEFAULT '',
+  acct VARCHAR(64) NOT NULL DEFAULT '',
+  rating VARCHAR(32) NOT NULL DEFAULT '',
+  book DECIMAL(24, 2) NULL,
+  mv DECIMAL(24, 2) NULL,
+  acc DECIMAL(24, 2) NULL,
+  ecl DECIMAL(24, 2) NULL,
+  rw DECIMAL(10, 2) NULL,
+  p30 DECIMAL(10, 2) NULL,
+  kind VARCHAR(16) NOT NULL DEFAULT '',
+  sub VARCHAR(8) NOT NULL DEFAULT '',
+  region VARCHAR(16) NOT NULL DEFAULT '',
+  KEY idx_hqla_ref_isin (isin)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -8,6 +8,11 @@ import { paperView, uploadSamples } from "./paper.js";
 import { trialEad } from "./ead.js";
 import { checkEadFormula, readEadConfig, saveEadConfig } from "./eadConfig.js";
 import { readCrmConfig, saveCrmConfig } from "./crmConfig.js";
+import {
+  archiveTask, computeTask, createTask, deleteList, deleteTask, demoData, duplicateTask, exportTask, exportWorkbook,
+  getTask, importTask, inspectUpload, listHitsFor, listMeta, listTasks, parseUpload, planSample, referenceRows,
+  saveInput, saveList, saveReported, saveSimple, updateTask, upsertReference
+} from "./hqla.js";
 import { copyExposureDoc, deleteExposureDoc, exposureChat, exposureDoc, exposureDocs, provisionExposureDocs, saveExposureChat, saveExposureDoc } from "./exposureDocs.js";
 import {
   createCcf, createClause, createCrmRule, createExposureRule, createField, createGrade, createMapping, createMoWeight,
@@ -789,6 +794,58 @@ router.post("/rules/chat", async (ctx) => {
     ctx.body = { error: "服务异常" };
   }
 });
+
+// ---------------------------------------------------------------- 流动性 HQLA
+// 判定/抽样/加总/对账/导出在 Flask；这里存任务并转发。
+
+router.get("/hqla/list-meta", async (ctx) => { ctx.body = await listMeta(); });
+router.get("/hqla/reference", async (ctx) => { ctx.body = await referenceRows(); });
+router.post("/hqla/reference", async (ctx) => { ctx.body = await upsertReference((ctx.request.body || {}).rows || []); });
+router.get("/hqla/demo/:kind", async (ctx) => { ctx.body = await demoData(ctx.params.kind); });
+
+router.get("/hqla/tasks", async (ctx) => { ctx.body = await listTasks(); });
+router.post("/hqla/tasks", async (ctx) => { ctx.status = 201; ctx.body = await createTask(ctx.request.body || {}); });
+router.get("/hqla/tasks/:id", async (ctx) => { ctx.body = await getTask(ctx.params.id); });
+router.put("/hqla/tasks/:id", async (ctx) => { ctx.body = await updateTask(ctx.params.id, ctx.request.body || {}); });
+router.delete("/hqla/tasks/:id", async (ctx) => { ctx.body = await deleteTask(ctx.params.id); });
+
+router.post("/hqla/tasks/:id/duplicate", async (ctx) => { ctx.status = 201; ctx.body = await duplicateTask(ctx.params.id); });
+router.post("/hqla/tasks/:id/archive", async (ctx) => {
+  const body = ctx.request.body || {};
+  ctx.body = await archiveTask(ctx.params.id, !!body.archived);
+});
+router.get("/hqla/tasks/:id/archive.json", async (ctx) => {
+  const doc = await exportTask(ctx.params.id);
+  ctx.set("content-disposition", `attachment; filename*=UTF-8''${encodeURIComponent(`hqla-${doc.task.id}.json`)}`);
+  ctx.body = doc;
+});
+router.post("/hqla/import", async (ctx) => { ctx.status = 201; ctx.body = await importTask(ctx.request.body || {}); });
+
+router.put("/hqla/tasks/:id/input", async (ctx) => { ctx.body = await saveInput(ctx.params.id, ctx.request.body || {}); });
+router.put("/hqla/tasks/:id/lists/:code", async (ctx) => { ctx.body = await saveList(ctx.params.id, ctx.params.code, ctx.request.body || {}); });
+router.delete("/hqla/tasks/:id/lists/:code", async (ctx) => { ctx.body = await deleteList(ctx.params.id, ctx.params.code); });
+router.put("/hqla/tasks/:id/config", async (ctx) => { ctx.body = await saveSimple(ctx.params.id, ctx.request.body || {}, { config: "config" }); });
+router.put("/hqla/tasks/:id/sample", async (ctx) => { ctx.body = await saveSimple(ctx.params.id, ctx.request.body || {}, { sample: "sample" }); });
+router.put("/hqla/tasks/:id/fetch", async (ctx) => {
+  ctx.body = await saveSimple(ctx.params.id, ctx.request.body || {}, { fetchLog: "fetch_log", fetchSig: "fetch_sig" });
+});
+router.put("/hqla/tasks/:id/reported", async (ctx) => { ctx.body = await saveReported(ctx.params.id, ctx.request.body || {}); });
+
+router.post("/hqla/tasks/:id/compute", async (ctx) => { ctx.body = await computeTask(ctx.params.id); });
+router.post("/hqla/tasks/:id/sample", async (ctx) => { ctx.body = await planSample(ctx.params.id); });
+router.post("/hqla/tasks/:id/list-hits", async (ctx) => {
+  const body = ctx.request.body || {};
+  ctx.body = await listHitsFor(ctx.params.id, String(body.code || ""));
+});
+router.post("/hqla/tasks/:id/export", async (ctx) => {
+  const { buffer, filename } = await exportWorkbook(ctx.params.id);
+  ctx.set("content-type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  ctx.set("content-disposition", `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
+  ctx.body = buffer;
+});
+
+router.post("/hqla/inspect", async (ctx) => { ctx.body = await inspectUpload(ctx.request.body || {}); });
+router.post("/hqla/parse", async (ctx) => { ctx.body = await parseUpload(ctx.request.body || {}); });
 
 app.use(cors());
 app.use(bodyParser({ jsonLimit: "32mb" }));

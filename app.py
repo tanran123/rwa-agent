@@ -996,6 +996,98 @@ def result_file(upload_id: str):
     return send_file(path, as_attachment=True, download_name=name)
 
 
+# ---------------------------------------------------------------- 流动性 HQLA
+# 判定引擎在 agent/subagents/hqla/，不进计算流水线的 STEPS。
+# 任务数据的持久化在 Koa（MySQL），这里只做解析、计算和导出。
+
+
+def _hqla_payload():
+    return request.get_json(silent=True) or {}
+
+
+@app.get("/api/hqla/list-meta")
+def hqla_list_meta():
+    from agent.subagents.hqla import list_meta
+
+    return jsonify(list_meta())
+
+
+@app.post("/api/hqla/inspect")
+def hqla_inspect():
+    from agent.subagents.hqla import inspect
+
+    try:
+        return jsonify(inspect(_hqla_payload()))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": f"解析失败：{exc}"}), 500
+
+
+@app.post("/api/hqla/parse")
+def hqla_parse():
+    from agent.subagents.hqla import parse
+
+    try:
+        return jsonify(parse(_hqla_payload()))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": f"解析失败：{exc}"}), 500
+
+
+@app.post("/api/hqla/compute")
+def hqla_compute():
+    from agent.subagents.hqla import compute
+
+    try:
+        return jsonify(compute(_hqla_payload()))
+    except Exception as exc:
+        return jsonify({"error": f"计算失败：{exc}"}), 500
+
+
+@app.post("/api/hqla/sample")
+def hqla_sample():
+    from agent.subagents.hqla import sample_plan
+
+    try:
+        return jsonify(sample_plan(_hqla_payload()))
+    except Exception as exc:
+        return jsonify({"error": f"抽样失败：{exc}"}), 500
+
+
+@app.post("/api/hqla/list-hits")
+def hqla_list_hits():
+    from agent.subagents.hqla import list_hits
+
+    try:
+        return jsonify(list_hits(_hqla_payload()))
+    except Exception as exc:
+        return jsonify({"error": f"匹配失败：{exc}"}), 500
+
+
+@app.post("/api/hqla/export")
+def hqla_export():
+    from agent.subagents.hqla import export as export_hqla
+
+    payload = _hqla_payload()
+    try:
+        data = export_hqla(payload)
+    except Exception as exc:
+        return jsonify({"error": f"导出失败：{exc}"}), 500
+    task = payload.get("task") or {}
+    base_date = (task.get("cfg") or {}).get("baseDate") or task.get("baseDate") or ""
+    name = f"HQLA底稿_{task.get('name') or 'HQLA'}_{base_date}.xlsx".replace("/", "_")
+    buf = io.BytesIO(data)
+    buf.seek(0)
+    return send_file(
+        buf,
+        as_attachment=True,
+        download_name=name,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
 if __name__ == "__main__":
     loaded = ensure_library()
     port = int(os.environ.get("RWA_PORT", "8766"))

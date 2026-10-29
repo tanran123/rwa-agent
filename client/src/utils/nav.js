@@ -21,6 +21,13 @@ export const NAV = [
       { label: "底稿计算", path: "/engine" },
       { label: "结果明细", path: "/results" }
     ]
+  },
+  {
+    id: "hqla",
+    label: "流动性 HQLA 测试",
+    items: [
+      { label: "HQLA 计算任务", path: "/hqla" }
+    ]
   }
 ];
 
@@ -38,5 +45,6 @@ const PARENT = {
 
 export function menuPath(path) {
   if (String(path || "").indexOf("/tree") === 0) return "/tree";
+  if (String(path || "").indexOf("/hqla/") === 0) return "/hqla";
   return PARENT[path] || path;
 }

@@ -21,6 +21,8 @@ import EngineView from '../view/measure/EngineView.vue'
 import ResultsView from '../view/measure/ResultsView.vue'
 import BatchesView from '../view/measure/BatchesView.vue'
 import ExportView from '../view/measure/ExportView.vue'
+import HqlaTasksView from '../view/hqla/HqlaTasksView.vue'
+import HqlaWizardView from '../view/hqla/HqlaWizardView.vue'
 
 const versionTabs = [
   { label: '版本', path: '/versions' },
@@ -61,6 +63,8 @@ const routes = [
   { path: '/results', name: 'results', component: ResultsView, meta: { group: '计量执行', title: '计量结果明细', blurb: '逐笔债项计量结果与审计证据；点击任意债项进入该笔的完整计量详情页' } },
   { path: '/batches', name: 'batches', component: BatchesView, meta: { group: '计量执行', title: '计量批次管理', blurb: '每个批次固定当时的规则版本。规则更新后，历史批次不改。' } },
   { path: '/export', name: 'export', component: ExportView, meta: { group: '计量执行', title: 'Excel 审计底稿导出', blurb: '导出真实的 xlsx。底稿里的业务数据是模拟数据。' } },
+  { path: '/hqla', name: 'hqla', component: HqlaTasksView, meta: { group: '流动性 HQLA 测试', title: 'HQLA 计算任务', blurb: '按任务组织：新建、复制、归档、导入归档。每个任务独立保存自己的明细、清单、判定标准与结论。' } },
+  { path: '/hqla/:id', name: 'hqla-wizard', component: HqlaWizardView, meta: { group: '流动性 HQLA 测试', title: '当前任务向导', blurb: '七步：明细 → 清单 → 标准 → 抽样 → 取数 → 核对 → 对账。' } },
 ]
 
 const router = createRouter({
