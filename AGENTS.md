@@ -41,7 +41,7 @@
 | 试算底稿 | `agent/subagents/weight/samples/`。 |
 | 计算留痕 | 仓库根目录 `output/traces/`。 |
 | 结果工作簿 | 仓库根目录 `output/workbooks/`。底稿不在权重步骤目录里时，写在底稿旁边。 |
-| 各步说明 | `agent/.deepagents/agents/<名字>/AGENTS.md`。说明在开头的 `description`，正文是这一步的提示。页面对话不派发这份提示，流水线调用的是 `program.run`。不要把提示词写回 Python 字符串。 |
+| 各步说明 | `agent/prompts/agents/<名字>/AGENTS.md`。说明在开头的 `description`，正文是这一步的提示。页面对话不派发这份提示，流水线调用的是 `program.run`。不要把提示词写回 Python 字符串。 |
 | 智能体返回 | `agent/platform/graph.py` 的 `reply`。`reply`、`pages`、`threadId`、`confirm`、`actions`。`pages` 固定是空数组。`confirm` 为真表示还在等计算确认。`actions` 来自工具 `page_actions`，是要在当前页面执行的步骤，每步有 `path`、`form`、`fields`、`save`。`path` 是当前页面。页面写入这一页已登记的表单，`save` 为真时调用该页已有的保存。字段来自这次对话。底稿计算、计量向导、结果明细在 `client/src/utils/nav.js`。 |
 
 ## 页面上下文里实际有的字段

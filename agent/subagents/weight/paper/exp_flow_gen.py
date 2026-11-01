@@ -6,7 +6,7 @@ import copy
 import json
 from typing import Any
 
-from agent.platform.layout import skill_body
+from agent.prompts.layout import skill_body
 from agent.subagents.rwa.market.mapper import _complete, _extract_json
 
 

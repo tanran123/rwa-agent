@@ -11,7 +11,7 @@ from typing import Any
 
 from openpyxl.utils import get_column_letter
 
-from agent.platform.layout import skill_body
+from agent.prompts.layout import skill_body
 from agent.subagents.weight.paper.calc_trace import condition_steps, number_steps, save_trace_file, step, write_trace_sheet
 from agent.subagents.weight.calc.exposure_class import class_fields, prototype_flow
 from agent.subagents.rwa.market.mapper import _complete, _extract_json, suggest_complete_map

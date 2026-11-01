@@ -1,1 +1,1 @@
-"""Platform loop. It calls the model, runs the named tool, and returns the answer."""
+"""Process entry: choose DeepAgents or the legacy loop, and expose the graph."""

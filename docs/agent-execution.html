@@ -1,0 +1,757 @@
+<title>Agent 执行链路</title>
+<style>
+  /* 设计计划：审计底稿的纸面感 + 工程图的克制；墨绿为强调，琥珀只标“暂停确认”。 */
+  :root {
+    --bg: #f7f8f5;
+    --surface: #ffffff;
+    --surface-2: #eef2ee;
+    --ink: #17211d;
+    --muted: #5b6b63;
+    --line: #d8e0da;
+    --accent: #0f6b5c;
+    --accent-soft: #dcefe9;
+    --warn: #8a5414;
+    --warn-soft: #f7ebdc;
+    --diagram-bg: #ffffff;
+    --diagram-ink: #1f2937;
+    --shadow: 0 1px 2px rgba(23, 33, 29, .05), 0 8px 24px rgba(23, 33, 29, .04);
+    --display: "Songti SC", "Noto Serif SC", "Source Han Serif SC", serif;
+    --body: "PingFang SC", "Noto Sans SC", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --mono: "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0e1512;
+      --surface: #141d19;
+      --surface-2: #1b2621;
+      --ink: #e7efea;
+      --muted: #9fb0a7;
+      --line: #2a3831;
+      --accent: #5fd3be;
+      --accent-soft: #173b33;
+      --warn: #f0b25e;
+      --warn-soft: #3a2a16;
+      --diagram-bg: #f8faf9;
+      --diagram-ink: #1f2937;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 30px rgba(0, 0, 0, .25);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0e1512;
+    --surface: #141d19;
+    --surface-2: #1b2621;
+    --ink: #e7efea;
+    --muted: #9fb0a7;
+    --line: #2a3831;
+    --accent: #5fd3be;
+    --accent-soft: #173b33;
+    --warn: #f0b25e;
+    --warn-soft: #3a2a16;
+    --diagram-bg: #f8faf9;
+    --diagram-ink: #1f2937;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 30px rgba(0, 0, 0, .25);
+    color-scheme: dark;
+  }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 16px;
+    line-height: 1.75;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 0 20px 96px;
+  }
+  .top {
+    position: sticky;
+    top: env(safe-area-inset-top, 0px);
+    z-index: 10;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line);
+  }
+  .top-inner {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .brand {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    white-space: nowrap;
+  }
+  .top-title {
+    font-size: 13px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .spacer { flex: 1; }
+  .top-tag {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 3px 10px;
+    white-space: nowrap;
+  }
+  header.hero {
+    padding: 56px 0 28px;
+    border-bottom: 1px solid var(--line);
+  }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 14px;
+  }
+  h1 {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: clamp(30px, 5vw, 46px);
+    line-height: 1.2;
+    letter-spacing: -.01em;
+    margin: 0 0 18px;
+    text-wrap: balance;
+  }
+  .lead {
+    max-width: 64ch;
+    color: var(--muted);
+    font-size: 17px;
+    margin: 0;
+  }
+  .mantra {
+    margin-top: 24px;
+    padding: 14px 18px;
+    border-left: 3px solid var(--accent);
+    background: var(--accent-soft);
+    border-radius: 0 10px 10px 0;
+    font-size: 15px;
+    color: var(--ink);
+  }
+  .mantra b { color: var(--accent); }
+  section { padding: 44px 0; border-bottom: 1px solid var(--line); }
+  section:last-of-type { border-bottom: 0; }
+  .sec-head {
+    display: grid;
+    grid-template-columns: 64px 1fr;
+    gap: 16px;
+    align-items: start;
+    margin-bottom: 20px;
+  }
+  .sec-no {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--accent);
+    padding-top: 6px;
+    letter-spacing: .08em;
+  }
+  h2 {
+    font-family: var(--display);
+    font-size: clamp(22px, 3.2vw, 30px);
+    line-height: 1.3;
+    margin: 0 0 8px;
+    text-wrap: balance;
+  }
+  .sec-sub {
+    color: var(--muted);
+    font-size: 15px;
+    margin: 0;
+    max-width: 68ch;
+  }
+  .one-line {
+    margin: 18px 0 22px;
+    font-size: 17px;
+    color: var(--ink);
+  }
+  .one-line b {
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  figure.diagram { margin: 0 0 22px; }
+  .diagram-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--line);
+    background: var(--surface-2);
+  }
+  .tag {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .08em;
+    color: var(--accent);
+    background: var(--accent-soft);
+    border-radius: 999px;
+    padding: 2px 9px;
+    white-space: nowrap;
+  }
+  .diagram-title { font-size: 14px; font-weight: 600; }
+  .diagram-scroll {
+    overflow-x: auto;
+    background: var(--diagram-bg);
+    padding: 18px 16px;
+    color: var(--diagram-ink);
+  }
+  .diagram-scroll pre.mermaid {
+    margin: 0 auto;
+    min-width: 680px;
+    background: transparent;
+    color: var(--diagram-ink);
+    font-family: var(--body);
+  }
+  .diagram figcaption {
+    padding: 10px 16px 12px;
+    font-size: 12.5px;
+    color: var(--muted);
+    border-top: 1px solid var(--line);
+    background: var(--surface);
+  }
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 18px;
+    margin: 0 0 20px;
+    padding: 12px 16px;
+    border: 1px dashed var(--line);
+    border-radius: 12px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .glyph {
+    font-family: var(--mono);
+    color: var(--accent);
+    font-size: 13px;
+  }
+  .steps {
+    list-style: none;
+    counter-reset: step;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 14px;
+  }
+  .steps li {
+    counter-increment: step;
+    display: grid;
+    grid-template-columns: 30px 1fr;
+    gap: 12px;
+    align-items: start;
+  }
+  .steps li::before {
+    content: counter(step);
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--accent);
+    background: var(--accent-soft);
+    border-radius: 8px;
+    width: 30px;
+    height: 30px;
+    display: grid;
+    place-items: center;
+    margin-top: 2px;
+  }
+  .steps b { font-weight: 600; }
+  .steps .detail { color: var(--muted); font-size: 14.5px; }
+  code {
+    font-family: var(--mono);
+    font-size: .88em;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    padding: 1px 5px;
+    white-space: nowrap;
+  }
+  .table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--surface);
+  }
+  table { border-collapse: collapse; width: 100%; min-width: 720px; font-size: 14px; }
+  th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); background: var(--surface-2); }
+  tr:last-child td { border-bottom: 0; }
+  td:first-child { font-weight: 600; white-space: nowrap; }
+  .note {
+    margin: 20px 0 0;
+    padding: 12px 16px;
+    border-radius: 10px;
+    background: var(--warn-soft);
+    color: var(--warn);
+    font-size: 14px;
+  }
+  .grid-3 {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+  }
+  .mini {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 16px;
+  }
+  .mini h3 { margin: 0 0 6px; font-size: 15px; }
+  .mini p { margin: 0; color: var(--muted); font-size: 13.5px; line-height: 1.65; }
+  .mini .k { font-family: var(--mono); font-size: 11px; color: var(--accent); letter-spacing: .08em; }
+  footer {
+    padding: 28px 0 0;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  @media (max-width: 820px) {
+    .grid-3 { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 640px) {
+    .page { padding: 0 16px 72px; }
+    .top-inner { padding: 10px 16px; }
+    header.hero { padding: 36px 0 22px; }
+    .sec-head { grid-template-columns: 1fr; gap: 6px; }
+    .sec-no { padding-top: 0; }
+    .diagram-scroll pre.mermaid { min-width: 620px; }
+    .lead { font-size: 16px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { scroll-behavior: auto !important; }
+  }
+</style>
+
+<div class="top">
+  <div class="top-inner">
+    <span class="brand">RWA Agent</span>
+    <span class="top-title">从页面到计算引擎的五条执行链路</span>
+    <span class="spacer"></span>
+    <span class="top-tag">时序图 + 白话解释</span>
+  </div>
+</div>
+
+<div class="page">
+  <header class="hero">
+    <div class="eyebrow">Execution Map</div>
+    <h1>Agent 执行链路</h1>
+    <p class="lead">页面说一句话，Koa 原样转给 Flask，DeepAgents 决定调哪个工具，计算流水线按固定顺序干活。下面五张时序图，把每条链路拆开讲清楚。</p>
+    <div class="mantra">
+      <b>先记一句口诀：</b>前端点菜，Koa 传菜，Flask 是后厨总管，DeepAgents 是厨师长，tools 是专用工具，calculation 是固定流水线，output 是出餐口。
+    </div>
+  </header>
+
+  <section>
+    <div class="sec-head">
+      <div class="sec-no">00</div>
+      <div>
+        <h2>先看整体路由</h2>
+        <p class="sec-sub">同一个页面可能走五条不同的门。先认清“谁把请求交给谁”，后面的图就不会混。</p>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>链路</th><th>前端</th><th>中间层</th><th>agent 执行点</th></tr></thead>
+        <tbody>
+          <tr><td>右下角 AI</td><td>AgentDock.vue</td><td>Koa 原样转发</td><td>Flask → platform/graph → DeepAgents</td></tr>
+          <tr><td>计算确认</td><td>同上</td><td>同上</td><td>interrupt_on → run_pipeline</td></tr>
+          <tr><td>信用风险计量向导</td><td>/measure/*</td><td>Koa measure.js</td><td>Koa 直接 spawn Python，不经过 Flask</td></tr>
+          <tr><td>HQLA 七步</td><td>HqlaWizardView</td><td>Koa hqla.js + MySQL</td><td>Flask → subagents/hqla</td></tr>
+          <tr><td>底稿页</td><td>fetchPaper</td><td>Koa paper.js</td><td>只读 JSON 缓存，不调用 agent</td></tr>
+          <tr><td>决策树</td><td>暴露分类页</td><td>Koa 补文档</td><td>Flask → tree/edit → 模型</td></tr>
+          <tr><td>MCP</td><td>外部客户端</td><td>stdio</td><td>agent.mcp → 工具</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="legend">
+      <span><span class="glyph">|</span> 竖线：这个角色还在等或还在干活</span>
+      <span><span class="glyph">──▶</span> 实线：请求或数据往前走</span>
+      <span><span class="glyph">┄┄▶</span> 虚线：结果往回送</span>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <div class="sec-no">A</div>
+      <div>
+        <h2>右下角 AI：一次对话</h2>
+        <p class="sec-sub">顾客点菜，前台传话，后厨总管叫记录员，厨师长决定用哪个工具。</p>
+      </div>
+    </div>
+    <p class="one-line"><b>一句话：</b>Koa 不做智能体，只做传菜；真正的对话在 Flask 里由 <code>client.reply</code> 和 DeepAgents 完成。</p>
+
+    <figure class="diagram card">
+      <div class="diagram-head"><span class="tag">图 A</span><span class="diagram-title">一次对话的完整往返</span></div>
+      <div class="diagram-scroll">
+        <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    participant U as 页面 AgentDock
+    participant K as Koa 8780
+    participant F as Flask 8766
+    participant C as client.reply
+    participant D as DeepAgents
+    participant T as 工具 / 模型
+    U->>K: POST /api/agent/chat
+    K->>F: 原样转发，不加逻辑
+    F->>C: reply()
+    C->>C: 留最近 8 句，取 threadId
+    alt 上次停在确认
+        C->>D: Command(resume=确认或取消)
+    else 普通一轮
+        C->>D: 追加一句用户消息
+    end
+    D->>D: 技能只给目录，按需读正文
+    D->>T: 调工具 / 问模型
+    T-->>D: 工具结果
+    D-->>C: 最终回答
+    C-->>F: reply / actions / confirm
+    F-->>K: JSON
+    K-->>U: 渲染
+        </pre>
+      </div>
+      <figcaption>页面只发一次请求，拿回一个 JSON；不是边算边吐字。</figcaption>
+    </figure>
+
+    <ol class="steps">
+      <li><div><b>顾客递单子。</b><div class="detail">页面把当前页面、最近几句话、上一轮的 <code>threadId</code>、是否确认、页面有哪些表单打包发出。</div></div></li>
+      <li><div><b>前台原样转。</b><div class="detail">Koa 的 <code>/api/agent/chat</code> 只做转发，所以 Koa 里没有智能体逻辑。</div></div></li>
+      <li><div><b>总管叫记录员。</b><div class="detail">Flask 调 <code>composition/client.py</code> 的 <code>reply()</code>，由它负责裁剪、续接和成形。</div></div></li>
+      <li><div><b>记录员先整理。</b><div class="detail">只留最近 8 句、每句最多 800 字；找到这桌的档案；看看上次是不是停在“确认算吗”。</div></div></li>
+      <li><div><b>交给厨师长。</b><div class="detail">DeepAgents 先看技能目录，只给名字和一句话；需要时再让帮厨去档案柜取正文。</div></div></li>
+      <li><div><b>工具循环。</b><div class="detail">查进度用 <code>pipeline_steps</code>，要算用 <code>run_weight_decision</code>，填页面用 <code>page_actions</code>。</div></div></li>
+      <li><div><b>端一整盘出来。</b><div class="detail">记录员整理成 <code>reply / pages / draft / actions / threadId / confirm</code> 六个字段，页面再渲染。</div></div></li>
+    </ol>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <div class="sec-no">A2</div>
+      <div>
+        <h2>确认分支：先拦住，再开算</h2>
+        <p class="sec-sub">算一本底稿可能几十秒，不能模型一冲动就开算。</p>
+      </div>
+    </div>
+    <p class="one-line"><b>一句话：</b><code>interrupt_on</code> 像门口保安，工具一被调用先暂停，只有页面点确认才放行。</p>
+
+    <figure class="diagram card">
+      <div class="diagram-head"><span class="tag">图 A2</span><span class="diagram-title">暂停、取消与确认</span></div>
+      <div class="diagram-scroll">
+        <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    participant D as DeepAgents
+    participant H as interrupt_on
+    participant U as 页面
+    D->>H: 调用 run_weight_decision
+    H-->>U: confirm=true 和确认提示
+    alt 取消
+        U->>H: confirm=false
+        H-->>D: reject，不执行
+    else 确认
+        U->>H: confirm=true
+        H-->>D: approve
+        D->>D: 真正开始计算
+    end
+        </pre>
+      </div>
+      <figcaption>确认前没有跑任何计算；取消也不会留下半截结果。</figcaption>
+    </figure>
+
+    <div class="note">页面看到的固定文案是“将计算工作簿：xxx。确认后才会开始计算。”这句话由中断请求里的 <code>action_requests</code> 拼出来。</div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <div class="sec-no">B</div>
+      <div>
+        <h2>计算流水线：只开一个工位</h2>
+        <p class="sec-sub">确认后，工作簿被放上一条固定工序的传送带。</p>
+      </div>
+    </div>
+    <p class="one-line"><b>一句话：</b>模型只负责按下“开始算”；走哪一步、按什么顺序，全由 <code>registry</code> 和 <code>calculation/graph.py</code> 决定。</p>
+
+    <figure class="diagram card">
+      <div class="diagram-head"><span class="tag">图 B</span><span class="diagram-title">weight 工位内部</span></div>
+      <div class="diagram-scroll">
+        <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    participant T as 工具层
+    participant P as run_pipeline
+    participant G as 计算图
+    participant R as registry
+    participant W as weight 工位
+    participant C as paper_calc
+    participant O as output
+    T->>P: run_pipeline(工作簿)
+    P->>G: invoke(thread::calculation)
+    G->>R: steps()
+    R-->>G: 只有 weight 启用
+    G->>W: node(weight)
+    W->>C: run_workbook()
+    C->>C: 选表 → 读表 → 对列 → 分类 → 算钱
+    C->>O: 写留痕 + 结果工作簿
+    C-->>W: ead_yi / rwa_yi
+    W-->>G: context
+    G-->>P: 最终 state
+    P-->>T: 结果文本
+    Note over R: ccf / crm / rwa 不执行
+        </pre>
+      </div>
+      <figcaption>工位牌上只有 <code>ENABLED = ("weight",)</code>，后三个工位不会收到活。</figcaption>
+    </figure>
+
+    <ol class="steps">
+      <li><div><b>按下按钮。</b><div class="detail">模型调用 <code>run_weight_decision</code>，确认通过后进入 <code>run_pipeline</code>。</div></div></li>
+      <li><div><b>检查文件。</b><div class="detail">路径在不在、是不是 <code>.xlsx/.xlsm</code>、weight 在不在名单里。任何一条不对，直接返回一句话。</div></div></li>
+      <li><div><b>开传送带。</b><div class="detail">把工作簿路径、结果路径、已跑步骤记进状态，线程号是父对话加 <code>::calculation</code>。</div></div></li>
+      <li><div><b>看工位牌。</b><div class="detail"><code>registry</code> 回答只有 weight 开着，所以传送带不会把活送到 ccf、crm、rwa。</div></div></li>
+      <li><div><b>老师傅开工。</b><div class="detail">选表、读表、对列、拆笔、合并债务人、定评级、补空白、查规则算钱。</div></div></li>
+      <li><div><b>写档案。</b><div class="detail">逐笔留痕写 <code>output/traces/</code>，结果工作簿写 <code>output/workbooks/</code> 或上传文件旁边。</div></div></li>
+      <li><div><b>交回结果。</b><div class="detail">敞口和 RWA 只从 <code>run_workbook</code> 的返回值抄，不在工位里重算。</div></div></li>
+    </ol>
+
+    <div class="note">后三个工位挂着“暂未启用”的牌子。就算有人硬把活送过去，它们的 <code>run</code> 也只会写“还没实现，停住”，不会编一个系数或金额。</div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <div class="sec-no">C</div>
+      <div>
+        <h2>计量向导：另一扇门</h2>
+        <p class="sec-sub">这条链路不经过 Flask，Koa 直接对讲机喊 Python 师傅。</p>
+      </div>
+    </div>
+    <p class="one-line"><b>一句话：</b>同一个引擎，走的是另一扇门；所以别在 Flask 里找它。</p>
+
+    <figure class="diagram card">
+      <div class="diagram-head"><span class="tag">图 C</span><span class="diagram-title">Koa 直接 spawn Python</span></div>
+      <div class="diagram-scroll">
+        <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    participant U as 前端 /measure/*
+    participant K as Koa measure.js
+    participant P as Python 进程
+    participant E as agent 引擎
+    U->>K: POST /api/measure/map
+    K->>P: spawn(python -c ...)
+    P->>E: suggest_standard_fields()
+    E-->>P: 字段映射
+    P-->>K: JSON
+    K-->>U: 映射结果
+    Note over K,P: 这条链路不经过 Flask
+        </pre>
+      </div>
+      <figcaption><code>/measure/products</code> 对应 <code>suggest_product_types</code>，<code>/measure/classify</code> 对应 <code>weight.program.run</code>。</figcaption>
+    </figure>
+
+    <ol class="steps">
+      <li><div><b>页面点“映射”。</b><div class="detail">请求发给 Koa 的 <code>/api/measure/map</code>。</div></div></li>
+      <li><div><b>Koa 自己喊人。</b><div class="detail"><code>measure.js</code> 用 <code>spawn</code> 起一个 <code>.venv/bin/python -c ...</code>。</div></div></li>
+      <li><div><b>Python 调引擎。</b><div class="detail">import 的是 <code>agent/subagents/weight/calc/model.py</code>，调用 <code>suggest_standard_fields</code>。</div></div></li>
+      <li><div><b>原路返回。</b><div class="detail">结果回到 Koa，再回页面；Flask 完全不参与。</div></div></li>
+    </ol>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <div class="sec-no">D</div>
+      <div>
+        <h2>HQLA 七步：前台管档案，后厨判卷</h2>
+        <p class="sec-sub">任务、明细、参考库都在 MySQL；Flask 只负责按规则判卷。</p>
+      </div>
+    </div>
+    <p class="one-line"><b>一句话：</b>这条链路全程不调用模型，匹配靠归一化后的 <code>组合|代码</code>。</p>
+
+    <figure class="diagram card">
+      <div class="diagram-head"><span class="tag">图 D</span><span class="diagram-title">HQLA 计算往返</span></div>
+      <div class="diagram-scroll">
+        <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    participant U as HqlaWizard
+    participant K as Koa hqla.js
+    participant M as MySQL
+    participant F as Flask 8766
+    participant S as hqla/service
+    participant J as judge/aggregate
+    U->>K: POST /hqla/tasks/:id/compute
+    K->>M: 取任务 + 参考库
+    M-->>K: 明细 / 清单 / 参考
+    K->>F: POST /api/hqla/compute
+    F->>S: compute(payload)
+    S->>J: judge.run()
+    J-->>S: 逐笔 + 统计
+    S-->>F: 汇总 / 上限 / 对账
+    F-->>K: JSON
+    K-->>U: 展示
+    Note over J: 全程不调用模型
+        </pre>
+      </div>
+      <figcaption>外部参考库是 MySQL 里的 <code>hqla_reference</code>，不是实时外部接口。</figcaption>
+    </figure>
+
+    <ol class="steps">
+      <li><div><b>页面点计算。</b><div class="detail">请求发给 Koa 的 <code>/hqla/tasks/:id/compute</code>。</div></div></li>
+      <li><div><b>Koa 翻档案柜。</b><div class="detail">从 MySQL 取出任务、逐笔明细、内部清单和外部参考库。</div></div></li>
+      <li><div><b>交给后厨判卷。</b><div class="detail">Koa 把这一包发给 Flask 的 <code>/api/hqla/compute</code>。</div></div></li>
+      <li><div><b>逐笔走规则。</b><div class="detail"><code>service.compute</code> 调 <code>judge.run</code>，再汇总、算上限、和申报数对账。</div></div></li>
+      <li><div><b>结果原路回。</b><div class="detail">逐笔、统计、汇总、上限、对账一起回到页面。</div></div></li>
+      <li><div><b>取数日志和导出。</b><div class="detail">第 5 步日志由 Koa 写回 MySQL；导出 Excel 再由 Koa 请 Flask 生成。</div></div></li>
+    </ol>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <div class="sec-no">E</div>
+      <div>
+        <h2>三条旁路：底稿、决策树、MCP</h2>
+        <p class="sec-sub">这三条不参与右下角对话，但都在用同一套引擎或同一份数据。</p>
+      </div>
+    </div>
+    <p class="one-line"><b>一句话：</b>底稿页直接翻账本，决策树只改草稿，MCP 给外部工具一个标准插座。</p>
+
+    <figure class="diagram card">
+      <div class="diagram-head"><span class="tag">图 E</span><span class="diagram-title">底稿页与决策树</span></div>
+      <div class="diagram-scroll">
+        <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    participant U as 页面
+    participant K as Koa
+    participant F as Flask
+    participant E as agent
+    U->>K: GET /api/working-paper
+    K->>K: 读 底稿模型计算.json
+    K-->>U: 分页结果
+    U->>K: POST /api/exposure-tree/propose
+    K->>F: 补文档后转发
+    F->>E: tree/edit.propose
+    E-->>F: JSON 草稿
+    F-->>K: 草稿
+    K-->>U: 展示
+        </pre>
+      </div>
+      <figcaption>底稿页不重算；决策树只起草，不写文件，保存仍由 Koa 做。</figcaption>
+    </figure>
+
+    <figure class="diagram card">
+      <div class="diagram-head"><span class="tag">图 E2</span><span class="diagram-title">MCP 标准插座</span></div>
+      <div class="diagram-scroll">
+        <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    participant C as 外部客户端
+    participant M as python -m agent.mcp
+    participant T as tools
+    C->>M: tools/list
+    M-->>C: 14 个工具
+    C->>M: tools/call
+    M->>T: 执行
+    T-->>M: 结果
+    M-->>C: JSON-RPC
+        </pre>
+      </div>
+      <figcaption>没有对话循环，也没有页面；工具名单和右下角 AI 是同一份。</figcaption>
+    </figure>
+
+    <div class="grid-3">
+      <div class="mini">
+        <div class="k">底稿页</div>
+        <h3>直接翻账本</h3>
+        <p>Koa 只读 <code>底稿模型计算.json</code>，分页、改字段名。页面看到的数和文件里一致，不重新算。</p>
+      </div>
+      <div class="mini">
+        <div class="k">决策树</div>
+        <h3>顾问只改草稿</h3>
+        <p>模型返回“改哪几个节点”的 JSON，不落笔。保存、版本、复制仍然由 Koa 做。</p>
+      </div>
+      <div class="mini">
+        <div class="k">MCP</div>
+        <h3>同一套工具</h3>
+        <p>外部客户端先问有哪些工具，再按名字调用；<code>recent_calculation</code> 读的也是同一个存储。</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <div class="sec-no">!</div>
+      <div>
+        <h2>三个容易混淆的点</h2>
+        <p class="sec-sub">记住这三条，基本不会把链路的责任搞错。</p>
+      </div>
+    </div>
+    <div class="grid-3">
+      <div class="mini">
+        <div class="k">01</div>
+        <h3>入口不是实现</h3>
+        <p><code>platform/graph.py</code> 只是总开关；默认转 <code>composition/chat.py</code>，只有 <code>RWA_CHAT_ENGINE=legacy</code> 才用旧循环。</p>
+      </div>
+      <div class="mini">
+        <div class="k">02</div>
+        <h3>计算顺序不由模型决定</h3>
+        <p>模型只按“开始算”的按钮；走哪一步、什么顺序，由 <code>registry</code> 和 <code>calculation/graph.py</code> 固定。</p>
+      </div>
+      <div class="mini">
+        <div class="k">03</div>
+        <h3>工具名单只有一份</h3>
+        <p>右下角 AI、MCP、旧引擎都读 <code>agent/tools/__init__.py</code>；新增工具只改这一处。</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    对应代码：<code>agent/platform/</code>、<code>agent/composition/</code>、<code>agent/calculation/</code>、<code>agent/subagents/</code>、<code>agent/tools/</code>。
+    图中的端口 8780 是 Koa，8766 是 Flask。
+  </footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script>
+  if (window.mermaid) {
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: "base",
+      themeVariables: {
+        fontFamily: "PingFang SC, Noto Sans SC, sans-serif",
+        primaryColor: "#e8f2ee",
+        primaryTextColor: "#17211d",
+        primaryBorderColor: "#0f6b5c",
+        lineColor: "#5b6b63",
+        secondaryColor: "#f7ebdc",
+        tertiaryColor: "#ffffff",
+        actorBkg: "#e8f2ee",
+        actorBorder: "#0f6b5c",
+        actorTextColor: "#17211d",
+        signalColor: "#5b6b63",
+        signalTextColor: "#17211d",
+        noteBkgColor: "#f7ebdc",
+        noteTextColor: "#5a3a12",
+        noteBorderColor: "#d9b98a"
+      },
+      sequence: { useMaxWidth: true, showSequenceNumbers: false }
+    });
+  }
+</script>

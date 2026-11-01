@@ -1,15 +1,17 @@
-"""Build the coordinator graph and answer a chat turn."""
+"""Build the coordinator graph and answer a chat turn.
+
+``RWA_CHAT_ENGINE`` selects the implementation:
+
+- ``deepagents`` (default): ``agent.composition.chat``
+- ``legacy``: the hand-rolled ``llm_call`` / ``tool_node`` loop, kept as a
+  rollback path for one release.
+"""
 
 from __future__ import annotations
 
-from langgraph.graph import END, START, StateGraph
+import os
 
-from langgraph.types import RetryPolicy
-
-from agent.model import model
-from agent.platform.client import reply
-from agent.platform.nodes import make_nodes, model_failed
-from agent.platform.state import MessagesState
+from agent.composition.client import reply
 from agent.runtime import checkpointer, store
 
 __all__ = ["agent", "graph", "reply"]
@@ -17,39 +19,37 @@ __all__ = ["agent", "graph", "reply"]
 _GRAPH = None
 
 
-def agent(config=None):
-    """Return the compiled coordinator graph.
+def _legacy_agent():
+    from langgraph.graph import END, START, StateGraph
+    from langgraph.types import RetryPolicy
 
-    LangGraph loads this function from langgraph.json. config is unused.
-    """
+    from agent.runtime.model import chat_model
+    from agent.platform.legacy.nodes import make_nodes, model_failed
+    from agent.platform.legacy.state import MessagesState
 
-    llm_call, tool_node, should_continue = make_nodes(model())
-
-    # Step 6: Build agent
-
-    # Build workflow
-    agent_builder = StateGraph(MessagesState)
-
-    # Add nodes
-    agent_builder.add_node(
+    llm_call, tool_node, should_continue = make_nodes(chat_model("chat"))
+    builder = StateGraph(MessagesState)
+    builder.add_node(
         "llm_call",
         llm_call,
         retry_policy=RetryPolicy(max_attempts=2),
         error_handler=model_failed,
     )
-    agent_builder.add_node("tool_node", tool_node)
+    builder.add_node("tool_node", tool_node)
+    builder.add_edge(START, "llm_call")
+    builder.add_conditional_edges("llm_call", should_continue, ["tool_node", END])
+    builder.add_edge("tool_node", "llm_call")
+    return builder.compile(checkpointer=checkpointer, store=store)
 
-    # Add edges to connect nodes
-    agent_builder.add_edge(START, "llm_call")
-    agent_builder.add_conditional_edges(
-        "llm_call",
-        should_continue,
-        ["tool_node", END]
-    )
-    agent_builder.add_edge("tool_node", "llm_call")
 
-    # Compile the agent
-    return agent_builder.compile(checkpointer=checkpointer, store=store)
+def agent():
+    """Return the compiled coordinator graph."""
+    engine = (os.environ.get("RWA_CHAT_ENGINE") or "deepagents").strip().lower()
+    if engine == "legacy":
+        return _legacy_agent()
+    from agent.composition.chat import build_chat_agent
+
+    return build_chat_agent()
 
 
 def graph():

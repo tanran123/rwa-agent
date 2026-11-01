@@ -8,11 +8,15 @@ from typing import Any
 
 from langchain_core.tools import tool
 
-STEPS = ["weight"]
+from agent.calculation.registry import ENABLED, active_names, status_lines
+
+# Kept for callers and docs that still read ``pipeline.STEPS``. The registry is
+# the source of truth; this list is derived from it.
+STEPS = list(ENABLED)
 
 
 def active_steps() -> list[str]:
-    return list(STEPS)
+    return active_names()
 
 
 def run_pipeline(source: Path, dest: Path | None = None, thread_id: str | None = None) -> dict[str, Any]:
@@ -30,10 +34,8 @@ def run_pipeline(source: Path, dest: Path | None = None, thread_id: str | None =
 @tool
 def pipeline_steps() -> str:
     """问做到哪一步、后面还算不算时调用。返回哪些步骤会执行、哪些停住。不要据此编造系数或金额。"""
-    from agent.subagents import ORDER
-
     active = active_steps()
-    lines = [item.program.status() for item in ORDER]
+    lines = status_lines()
     lines.append("当前顺序：" + " → ".join(active))
     return "\n".join(lines)
 

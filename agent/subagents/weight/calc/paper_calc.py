@@ -12,7 +12,7 @@ from typing import Any
 
 from openpyxl.utils import get_column_letter
 
-from agent.platform.layout import skill_body
+from agent.prompts.layout import skill_body
 from agent.subagents.weight.calc.calc_trace import condition_steps, number_steps, save_trace_file, step, write_trace_sheet
 from agent.subagents.weight.calc.exposure_class import class_fields, load_class_doc, prototype_flow
 from agent.subagents.weight.calc.model import _complete, _extract_json, suggest_complete_map

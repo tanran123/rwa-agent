@@ -4,23 +4,13 @@ from __future__ import annotations
 
 from agent.calculation.state import PipelineState
 
-FIELDS = (
-    "source",
-    "dest",
-    "steps_ran",
-    "stopped",
-    "stop_reason",
-    "result",
-    "annotated",
-    "trace_file",
-    "ead_yi",
-    "rwa_yi",
-)
+# The state schema is the only whitelist; do not keep a second copy.
+FIELDS = tuple(PipelineState.__annotations__)
 
 
 def make_node(step):
-    name = step.NAME
-    run = step.program.run
+    name = step.name
+    run = step.run
 
     def node(state: PipelineState) -> dict:
         context = {key: state[key] for key in FIELDS if key in state}

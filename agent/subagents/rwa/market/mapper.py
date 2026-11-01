@@ -3,21 +3,16 @@
 from __future__ import annotations
 
 import json
-import os
 import re
-import urllib.error
-import urllib.request
 from pathlib import Path
 
 import openpyxl
 from openpyxl.utils import get_column_letter
 
-from agent.platform.layout import skill_body
+from agent.prompts.layout import skill_body
+from agent.runtime import model as runtime_model
 from agent.subagents.rwa.market.agent import PACK_FORMULA
 from agent.subagents.rwa.market.fields import FIELD_HINT, FIELD_LABEL, OPTIONAL, PACK_TITLE, REQUIRED
-
-DEFAULT_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-DEFAULT_MODEL = "qwen-plus"
 
 
 def suggest_field_map(headers: list[dict], fields: list[dict], table: dict | None = None) -> dict[str, dict]:
@@ -270,37 +265,7 @@ def _normalize_slot(slot: object, allowed: set[str]) -> dict:
 
 
 def _complete(system: str, user: str, timeout: int = 90) -> str:
-    key = (
-        os.environ.get("DASHSCOPE_API_KEY", "").strip()
-        or os.environ.get("MODEL_API_KEY", "").strip()
-    )
-    if not key:
-        raise RuntimeError("未配置模型 API Key")
-    base = (os.environ.get("MODEL_BASE_URL") or DEFAULT_BASE).strip()
-    model = (os.environ.get("MODEL_NAME") or DEFAULT_MODEL).strip()
-    body = json.dumps(
-        {
-            "model": model,
-            "temperature": 0,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-        }
-    ).encode("utf-8")
-    req = urllib.request.Request(
-        base.rstrip("/") + "/chat/completions",
-        data=body,
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            payload = json.loads(resp.read().decode())
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode(errors="replace")[:300]
-        raise RuntimeError(f"模型请求失败：{exc.code} {detail}") from exc
-    return payload["choices"][0]["message"]["content"]
+    return runtime_model.complete(system, user, timeout=timeout, role=runtime_model.MAPPING)
 
 
 def _extract_json(text: str) -> dict:

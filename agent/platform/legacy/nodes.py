@@ -8,9 +8,9 @@ from langchain.messages import AIMessage, SystemMessage, ToolMessage
 from langgraph.graph import END
 from langgraph.types import interrupt
 
-from agent.platform.layout import system_prompt
-from agent.platform.state import MessagesState
-from agent.platform.turn import catalog_text
+from agent.prompts.layout import system_prompt
+from agent.platform.legacy.state import MessagesState
+from agent.composition.turn import catalog_text
 from agent.tools import tools
 
 

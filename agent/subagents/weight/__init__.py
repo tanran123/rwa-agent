@@ -6,8 +6,7 @@ from pathlib import Path
 
 from langchain_core.tools import tool
 
-from agent.calculation.pipeline import active_steps, pipeline_steps, run_pipeline
-from agent.platform.layout import SKILLS, subagent_prompt
+from agent.calculation.pipeline import active_steps, run_pipeline
 from agent.subagents.weight.program import NAME
 
 
@@ -46,15 +45,3 @@ def run_weight_decision(workbook: str) -> str:
 
     store.put(CALCULATION, LATEST, {"text": text})
     return text
-
-
-def spec(model) -> dict:
-    description, prompt = subagent_prompt(NAME)
-    return {
-        "name": NAME,
-        "description": description,
-        "system_prompt": prompt,
-        "tools": [pipeline_steps, run_weight_decision],
-        "skills": SKILLS,
-        "model": model,
-    }

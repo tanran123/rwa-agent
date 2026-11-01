@@ -3,23 +3,17 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from agent.model import model
+from agent.runtime.model import chat_model
+from agent.runtime.skills import skill_body
 
-_SKILL = Path(__file__).resolve().parents[1] / "skills" / "decision-tree" / "SKILL.md"
 _OPS = {"eq": True, "in": True, "gt": True, "gte": True, "lt": True, "lte": True}
 
 
 def _instructions() -> str:
-    text = _SKILL.read_text(encoding="utf-8")
-    if text.startswith("---"):
-        end = text.find("\n---", 3)
-        if end >= 0:
-            text = text[end + 4 :]
-    return text.strip()
+    return skill_body("decision-tree")
 
 
 def _plain(reply: str) -> str:
@@ -422,7 +416,7 @@ def propose(messages: list, document: dict, label: str, generic: dict | None = N
         parts.append("监管条款：\n" + json.dumps(clauses, ensure_ascii=False))
     parts.append("\n".join(cleaned))
     prompt = "\n\n".join(parts)
-    result = model().invoke([SystemMessage(content=_instructions()), HumanMessage(content=prompt)])
+    result = chat_model("chat").invoke([SystemMessage(content=_instructions()), HumanMessage(content=prompt)])
     text = getattr(result, "content", "")
     if not isinstance(text, str):
         text = str(text or "")

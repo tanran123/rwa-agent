@@ -1,0 +1,106 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Flask agent 8766",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/app.py",
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "RWA_PORT": "8766",
+        "PYTHONUNBUFFERED": "1"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "subProcess": true,
+      "python": "${workspaceFolder}/.venv/bin/python"
+    },
+    {
+      "name": "Koa api 8780",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/server/src/index.js",
+      "cwd": "${workspaceFolder}/server",
+      "env": {
+        "PORT": "8780"
+      },
+      "console": "integratedTerminal",
+      "skipFiles": [
+        "<node_internals>/**"
+      ]
+    },
+    {
+      "name": "Attach Koa 9229",
+      "type": "node",
+      "request": "attach",
+      "port": 9229,
+      "restart": true,
+      "localRoot": "${workspaceFolder}/server",
+      "remoteRoot": "${workspaceFolder}/server"
+    },
+    {
+      "name": "Chrome 前端 5173",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://127.0.0.1:5173",
+      "webRoot": "${workspaceFolder}/client",
+      "sourceMaps": true
+    },
+    {
+      "name": "MCP stdio",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "agent.mcp",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "python": "${workspaceFolder}/.venv/bin/python"
+    },
+    {
+      "name": "Python: current file",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${file}",
+      "cwd": "${workspaceFolder}",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "Calculation CLI",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "agent.calculation.pipeline",
+      "args": [
+        "output/uploads/UP-mvoyi799.xlsx"
+      ],
+      "cwd": "${workspaceFolder}",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "Agent: debug_agent",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/tools/debug_agent.py",
+      "args": [
+        "帮我算 output/uploads/UP-mvoyi799.xlsx"
+      ],
+      "cwd": "${workspaceFolder}",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Flask + Koa",
+      "configurations": [
+        "Flask agent 8766",
+        "Koa api 8780"
+      ]
+    }
+  ]
+}

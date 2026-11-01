@@ -79,17 +79,17 @@ node tools/build-seed.mjs                          # 重新生成 sql/002_seed.s
 
 这几块不能混：
 
-- **平台**（`agent/platform/`）：接收页面的话，调用 `agent/model.py`，按模型点名执行 `agent/tools/`，不自己算数，也不负责打开页面。底稿计算、计量向导、结果明细在左侧菜单。`graph.py` 把调用模型和执行工具接成循环。
-- **计算**（`agent/calculation/` 和 `agent/subagents/<步>/`）：信用风险按监管顺序计算。`calculation/graph.py` 把每一步做成节点，只进入 `STEPS` 里的名字。
+- **平台**（`agent/platform/`、`agent/composition/`）：接收页面的话，默认用 DeepAgents 的 `create_deep_agent` 调用模型、执行 `agent/tools/`，不自己算数，也不负责打开页面。技能正文按需读取，不再拼进系统提示。`RWA_CHAT_ENGINE=legacy` 回到旧的 `platform/graph.py` 循环。底稿计算、计量向导、结果明细在左侧菜单。
+- **计算**（`agent/calculation/` 和 `agent/subagents/<步>/`）：信用风险按监管顺序计算。`calculation/registry.py` 是唯一的步骤注册表，`calculation/graph.py` 只进入 `ENABLED` 里的名字。
 - **决策树**（`agent/tree/`）：暴露分类页起草修改，不进对话图。
 - **底稿页 / 市场风险**（`weight/paper/`、`rwa/market/`）：给 Flask 的接口用，**不进流水线名单**。
 
 两个顺序概念必须分清：
 
-- `agent/calculation/pipeline.py` 的 `STEPS` 决定**哪些步骤真的会执行**。当前只有 `["weight"]`。
+- `agent/calculation/registry.py` 的 `ENABLED` 决定**哪些步骤真的会执行**。当前只有 `("weight",)`；`pipeline.STEPS` 是兼容别名。
 - `agent/subagents/__init__.py` 的 `ORDER`（`weight, ccf, crm, rwa`）是**监管计算顺序**，只用于展示和组装子智能体，不能调换。
 
-`ccf`、`crm`、`rwa` 已经建了目录和提示，但 `program.run` 直接设 `stopped`/`stop_reason` 停住。**只有当某步的 `program.run` 能用真实输入跑通后，才把它的名字追加进 `STEPS`。** 在它进名单之前，不要在对话、工具或前端里补一个系数或金额让流水线继续。
+`ccf`、`crm`、`rwa` 已经建了目录和提示，但 `program.run` 直接设 `stopped`/`stop_reason` 停住。**只有当某步的 `program.run` 能用真实输入跑通后，才把它的名字追加进 `registry.ENABLED`。** 在它进名单之前，不要在对话、工具或前端里补一个系数或金额让流水线继续。
 
 `weight` 是唯一实现了的步骤：`program.run(context)` 把工作簿交给 `calc/paper_calc.py:run_workbook`，把 `annotated`、`trace_file`、`ead_yi`、`rwa_yi` 放回 context（后两个单位是亿元，只从 `run_workbook` 的返回值抄）。留痕写仓库根目录 `output/traces/`，结果工作簿写 `output/workbooks/`（底稿不在权重目录里时写在底稿旁边）。
 
@@ -97,7 +97,7 @@ node tools/build-seed.mjs                          # 重新生成 sql/002_seed.s
 
 ### 提示词在文件里，不在代码里
 
-子智能体的说明和提示词写在 `agent/.deepagents/agents/<名字>/AGENTS.md`；`__init__.py` 只放工具函数和 `spec()`，通过 `agent/platform/layout.py` 的 `subagent_prompt` 读取这份文件。**不要把提示词写回 Python 字符串。** 加一步的完整步骤见 `agent/README.md` 的「加一步」。
+子智能体的说明和提示词写在 `agent/prompts/agents/<名字>/AGENTS.md`；`__init__.py` 只放工具函数，DeepAgents 的 `SubAgent` 规格在 `agent/composition/subagents.py`，通过 `agent/prompts/layout.py` 的 `subagent_prompt` 读取这份文件。**不要把提示词写回 Python 字符串。** 加一步的完整步骤见 `agent/README.md` 的「加一步」。
 
 ### 单一数据源
 

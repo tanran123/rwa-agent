@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import uuid
 
 from langchain.messages import RemoveMessage
 from langgraph.types import Command
 
-from agent.platform.turn import catalog_text, noted_page_actions, page_actions
+from agent.composition.turn import catalog_text, noted_page_actions, page_actions
 
 _FENCE = re.compile(r"```json\s*(.*?)```", re.S | re.I)
 _KEEP = 16
+_LOG = logging.getLogger(__name__)
+_FAILED = "模型调用失败，没有形成回答。"
 
 
 def draft_of(text: str) -> dict | None:
@@ -48,6 +51,30 @@ def _result(text: str, thread: str, confirm: bool, draft: dict | None = None, ac
         "threadId": thread,
         "confirm": confirm,
     }
+
+
+def _interrupt_text(value) -> str:
+    """Render a HITL action request or the legacy string as the page prompt."""
+    if isinstance(value, dict):
+        books = []
+        for request in value.get("action_requests") or []:
+            args = request.get("args") if isinstance(request, dict) else None
+            book = (args or {}).get("workbook") if isinstance(args, dict) else None
+            if book:
+                books.append(str(book))
+        if books:
+            return "将计算工作簿：" + "、".join(books) + "。确认后才会开始计算。"
+        return "这一步需要确认，确认后才会继续。"
+    return str(value)
+
+
+def _resume(value, confirm: bool) -> Command:
+    """Build the resume command for either the HITL middleware or the legacy node."""
+    if isinstance(value, dict) and "action_requests" in value:
+        count = max(1, len(value.get("action_requests") or []))
+        decision = {"type": "approve"} if confirm else {"type": "reject", "message": "用户取消计算"}
+        return Command(resume={"decisions": [dict(decision) for _ in range(count)]})
+    return Command(resume={"confirm": confirm})
 
 
 def form_brief(forms) -> str:
@@ -319,9 +346,9 @@ def reply(messages: list[dict], page: str, config: dict | None = None, thread_id
         snapshot = compiled.get_state(run)
         if getattr(snapshot, "interrupts", None):
             if confirm is True or confirm is False:
-                snapshot = _drive(compiled, Command(resume={"confirm": confirm}), run)
+                snapshot = _drive(compiled, _resume(snapshot.interrupts[0].value, confirm), run)
             else:
-                return _result(str(snapshot.interrupts[0].value), thread, True)
+                return _result(_interrupt_text(snapshot.interrupts[0].value), thread, True)
         else:
             remembered = (snapshot.values or {}).get("messages") or []
             if remembered:
@@ -331,7 +358,7 @@ def reply(messages: list[dict], page: str, config: dict | None = None, thread_id
                 snapshot = _drive(compiled, {"messages": cleaned}, run)
         interrupts = getattr(snapshot, "interrupts", None) or ()
         if interrupts:
-            text = str(interrupts[0].value)
+            text = _interrupt_text(interrupts[0].value)
         else:
             text = ""
             for message in (snapshot.values or {}).get("messages") or []:
@@ -357,6 +384,9 @@ def reply(messages: list[dict], page: str, config: dict | None = None, thread_id
         if draft is not None:
             text = _FENCE.sub("（修订草稿见下方，确认后才写入文件）", text, count=1).strip()
         return _result(text, thread, pending, None if pending else draft, None if pending else actions)
+    except Exception:  # noqa: BLE001 - one bad turn must not break the page
+        _LOG.exception("agent turn failed")
+        return _result(_FAILED, thread, False)
     finally:
         catalog_text.reset(token)
         page_actions.reset(action_token)

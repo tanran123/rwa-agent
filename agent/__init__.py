@@ -1,1 +1,1 @@
-"""Credit-risk agent. Platform, model, tools, calculation, and the decision-tree assistant live in their own directories."""
+"""Credit-risk agent: composition, runtime, calculation, tools and domain engines."""

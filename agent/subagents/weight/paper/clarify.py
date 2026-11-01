@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from agent.platform.layout import skill_body
+from agent.prompts.layout import skill_body
 from agent.subagents.rwa.market.mapper import _complete, _extract_json
 from agent.subagents.weight.paper.paper_calc import _sheet_outline
 

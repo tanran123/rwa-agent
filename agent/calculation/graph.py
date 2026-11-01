@@ -15,19 +15,19 @@ def calculation():
         return _GRAPH
 
     from agent.calculation.nodes import make_node
-    from agent.calculation.pipeline import active_steps
+    from agent.calculation.registry import active_names, steps
     from agent.runtime import checkpointer
-    from agent.subagents import ORDER
 
-    names = [item.NAME for item in ORDER]
+    items = steps()
+    names = [item.name for item in items]
     builder = StateGraph(PipelineState)
-    for item in ORDER:
-        builder.add_node(item.NAME, make_node(item))
+    for item in items:
+        builder.add_node(item.name, make_node(item))
 
     def enter(state: PipelineState):
         if state.get("stopped"):
             return END
-        active = active_steps()
+        active = active_names()
         for name in names:
             if name in active:
                 return name
@@ -37,7 +37,7 @@ def calculation():
         def route(state: PipelineState):
             if state.get("stopped"):
                 return END
-            active = active_steps()
+            active = active_names()
             index = names.index(name)
             for nxt in names[index + 1 :]:
                 if nxt in active:

@@ -4,14 +4,9 @@ from __future__ import annotations
 
 import json
 import re
-import urllib.error
-import urllib.request
 
-from agent.platform.layout import skill_body
-from agent.subagents.weight.calc.paths import ENV_PATH
-
-DEFAULT_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-DEFAULT_MODEL = "qwen-plus"
+from agent.prompts.layout import skill_body
+from agent.runtime import model as runtime_model
 
 
 def suggest_standard_fields(headers: list[str], fields: list[dict], samples: list[dict] | None = None, column_values: dict | None = None) -> dict:
@@ -135,48 +130,8 @@ def _normalize_slot(slot: object, allowed: set[str]) -> dict:
     return {"status": "missing", "reason": reason or "底稿没有"}
 
 
-def _file_value(name: str) -> str:
-    if not ENV_PATH.is_file():
-        return ""
-    for line in ENV_PATH.read_text(encoding="utf-8").splitlines():
-        text = line.strip()
-        if not text or text.startswith("#") or "=" not in text:
-            continue
-        key, val = text.split("=", 1)
-        if key.strip() == name:
-            return val.strip().strip('"').strip("'")
-    return ""
-
-
 def _complete(system: str, user: str, timeout: int = 90) -> str:
-    key = _file_value("DASHSCOPE_API_KEY") or _file_value("MODEL_API_KEY")
-    if not key:
-        raise RuntimeError("未配置模型 API Key。请写在 " + str(ENV_PATH))
-    base = _file_value("MODEL_BASE_URL") or DEFAULT_BASE
-    model = _file_value("MODEL_NAME") or DEFAULT_MODEL
-    body = json.dumps(
-        {
-            "model": model,
-            "temperature": 0,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-        }
-    ).encode("utf-8")
-    req = urllib.request.Request(
-        base.rstrip("/") + "/chat/completions",
-        data=body,
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            payload = json.loads(resp.read().decode())
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode(errors="replace")[:300]
-        raise RuntimeError(f"模型请求失败：{exc.code} {detail}") from exc
-    return payload["choices"][0]["message"]["content"]
+    return runtime_model.complete(system, user, timeout=timeout, role=runtime_model.MAPPING)
 
 
 def _extract_json(text: str) -> dict:

@@ -1,1 +1,1 @@
-"""Workbook pipeline. STEPS lists the steps that may run."""
+"""Workbook pipeline. ``registry.ENABLED`` lists the steps that may run."""
