@@ -215,8 +215,8 @@ def _roll_up_debtors(ready: list[dict]) -> None:
     for item in ready:
         for facts, amount in item["draft"]:
             key = str(facts.get("_debtor") or "")
-            if key:
-                totals[key] = totals.get(key, 0.0) + amount
+            if key and amount is not None:
+                totals[key] = totals.get(key, 0.0) + float(amount)
     for item in ready:
         for facts, _amount in item["draft"]:
             key = str(facts.get("_debtor") or "")
@@ -725,7 +725,9 @@ def _when(match: object, facts: dict[str, Any]) -> bool:
     if not isinstance(match, dict):
         return False
     if isinstance(match.get("all"), list):
-        return bool(match["all"]) and all(_item(item, facts) for item in match["all"])
+        # An empty ``all`` is the database documents' way of saying
+        # "unconditional"; the local JSON does not use it.
+        return all(_item(item, facts) for item in match["all"])
     if isinstance(match.get("any"), list):
         return bool(match["any"]) and any(_item(item, facts) for item in match["any"])
     if match.get("field"):

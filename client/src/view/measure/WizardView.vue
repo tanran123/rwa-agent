@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref, watch, watchEffect } from "vue";
 import { useRouter } from "vue-router";
 import { applyMeasureChoices, classifyMeasure, detectMeasureProducts, fetchMeasure, mapMeasureFields, saveMeasureRun, uploadWorkbook } from "@/api/batch";
 import { fetchProducts } from "@/api/product";
@@ -61,6 +61,20 @@ const maxStep = computed(() => {
   return Math.min(next, 9);
 });
 
+// 开发环境专用：浏览器 Console 里用 __rwaWizard 查看每一步的中间结果。
+// 生产构建不会执行这段。
+if (import.meta.env.DEV) {
+  watchEffect(() => {
+    window.__rwaWizard = {
+      step: step.value,
+      uploadId: uploadId.value,
+      classified: classified.value,
+      mapOk: mapOk.value,
+      pack: pack.value
+    };
+  });
+}
+
 function money(value) {
   if (value == null || value === "" || Number.isNaN(Number(value))) return "—";
   return Number(value).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -104,6 +118,7 @@ const eadRules = computed(() => {
   return rules.filter((rule) => rule.product === eadProduct.value);
 });
 const crmConfigRows = computed(() => (pack.value && pack.value.rules && pack.value.rules.crm) || []);
+const classificationDocs = computed(() => Object.values((pack.value && pack.value.classification && pack.value.classification.documents) || {}));
 function orgName() {
   if (!orgsHere.value.length && institutionText.value) return institutionText.value;
   return (session.orgs.find((item) => item.id === session.orgId) || {}).name || "";
@@ -314,7 +329,8 @@ async function runClassification() {
   applying.value = true;
   stepError.value = "";
   try {
-    const data = await classifyMeasure(uploadId.value);
+    const version = (currentVersion.value && currentVersion.value.version) || "";
+    const data = await classifyMeasure(uploadId.value, version);
     pack.value = { ...pack.value, ...data };
     classified.value = true;
   } catch (err) {
@@ -748,9 +764,10 @@ onMounted(async () => {
     </div>
 
     <div v-else-if="step === 5" class="panel">
-      <div class="panel-head"><h3>第五步：执行信用风险暴露分类</h3><span class="sub">把上传的工作簿交给权重计算，按风险暴露分类逐笔取权重</span></div>
+      <div class="panel-head"><h3>第五步：执行信用风险暴露分类</h3><span class="sub">按产品从数据库取风险暴露划分规则，逐笔解析大类、子类和权重</span></div>
       <div class="panel-body">
-        <div class="notice info"><span class="ni">i</span><div>这一步把上传的工作簿交给权重计算，按风险暴露分类逐笔划分暴露并取权重。</div></div>
+        <div class="notice info"><span class="ni">i</span><div>对第二步上传的每一笔债项，用第三步确定的产品类型找到数据库里的风险暴露划分规则，再按第四步确认的字段映射取值，逐条解析后给出建议的暴露大类、暴露子类和风险权重。每笔都会在 output/traces/step5/ 下生成一份 Markdown 留痕。</div></div>
+        <div v-if="classificationDocs.length" class="notice info"><span class="ni">i</span><div><span v-for="doc in classificationDocs" :key="doc.id" style="margin-right: 14px">{{ doc.productLabel }} → {{ doc.title }}（{{ doc.label || "通用" }}，{{ doc.ruleVersion || "—" }}）</span></div></div>
         <div v-if="applying" class="loading"><span class="spin"></span>正在读取</div>
         <div v-if="stepError" class="notice danger"><span class="ni">!</span><div>{{ stepError }}</div></div>
         <button v-if="!classified" type="button" class="btn primary" :disabled="applying" @click="runClassification">开始逐笔执行分类</button>
@@ -763,7 +780,7 @@ onMounted(async () => {
           </div>
           <div class="table-wrap">
             <table class="tbl compact">
-              <thead><tr><th>债项编号</th><th>客户名称</th><th>产品类型</th><th>暴露分类</th><th>暴露大类</th><th>暴露子类</th><th>命中规则</th><th>风险权重</th><th>状态</th></tr></thead>
+              <thead><tr><th>债项编号</th><th>客户名称</th><th>产品类型</th><th>暴露分类</th><th>暴露大类</th><th>暴露子类</th><th>命中规则</th><th>风险权重</th><th>状态</th><th>分类过程</th></tr></thead>
               <tbody>
                 <tr v-for="row in results" :key="row.loanId">
                   <td class="mono">{{ row.loanId }}</td>
@@ -775,10 +792,12 @@ onMounted(async () => {
                   <td class="mono">{{ row.matchedRule || "—" }}</td>
                   <td class="num">{{ pct(row.riskWeight) }}</td>
                   <td><span class="tag" :class="row.status === 'ok' ? 'ok' : row.status === 'warning' ? 'warn' : 'danger'">{{ row.status === "ok" ? "正常" : row.status === "warning" ? "待复核" : "异常" }}</span></td>
+                  <td><a v-if="row.traceUrl" :href="row.traceUrl" target="_blank" rel="noopener">查看 MD</a><span v-else class="dim">—</span></td>
                 </tr>
               </tbody>
             </table>
           </div>
+          <div v-if="pack.traceDir" class="notice info"><span class="ni">i</span><div>逐笔 Markdown 留痕在 output/traces/{{ pack.traceDir }}/，每笔一份，记录字段映射、原值、逐条判定和结论。</div></div>
           <div class="btn-group" style="margin-top: 12px">
             <button type="button" class="btn primary" @click="finish(5)">下一步：执行 EAD 计算 →</button>
           </div>

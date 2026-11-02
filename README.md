@@ -17,6 +17,9 @@
 | `langgraph.json` | LangGraph 应用配置。图是 `agent/llm/graph.py` 的 `agent`。 |
 | `output/` | 每次计算写出的留痕和结果工作簿。不提交。 |
 | `tools/build-seed.mjs` | 从 `server/data/master_data.cjs` 和分类 JSON 重新生成 `sql/002_seed.sql`。 |
+| `tools/debug_step5.py` | 离线逐笔调试第五步暴露分类：打印规则文档、字段映射、facts、规则步骤和状态。用法见文件开头。 |
+| `tools/simulate_step5.py` | 模拟 8 个产品类型、28 笔债项，调用第五步分类并核对期望结果；留痕写在 `output/traces/step5/SIM-STEP5/`。 |
+| `tools/test_wizard.mjs` | 按向导顺序串行调用 Koa：上传、应用产品与映射、执行第五步分类、可选写入批次并读取结果明细。 |
 | `ecosystem.config.cjs`、`start.sh` | 用 PM2 启动智能体和接口。 |
 | `使用说明.md` | 同事克隆、导入数据库并启动的步骤。 |
 

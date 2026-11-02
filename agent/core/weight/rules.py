@@ -67,9 +67,9 @@ def class_fields(doc: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     return found
 
 
-def prototype_flow() -> dict[str, Any]:
+def prototype_flow(doc: dict[str, Any] | None = None) -> dict[str, Any]:
     """原型画布用的流程。分类顺序、条件和权重都来自 JSON，不沿用原型里手写的瀑布。"""
-    doc = load_class_doc()
+    doc = doc if isinstance(doc, dict) else load_class_doc()
     categories = [_node(rule, str(rule.get("name") or "")) for rule in doc["rules"]]
     otherwise = doc.get("otherwise")
     if isinstance(otherwise, dict):
@@ -218,3 +218,25 @@ def _percent(number: float) -> str:
         return str(int(round(points))) + "%"
     text = f"{points:.2f}".rstrip("0").rstrip(".")
     return text + "%"
+
+
+def _walk_rule_nodes(nodes: object):
+    for rule in nodes or []:
+        if not isinstance(rule, dict):
+            continue
+        yield rule
+        yield from _walk_rule_nodes(rule.get("children"))
+        other = rule.get("otherwise")
+        if isinstance(other, dict):
+            yield from _walk_rule_nodes([other])
+
+
+def rule_index(doc: dict[str, Any] | None = None) -> dict[str, dict]:
+    """Index the extra rules (for example ``multiple_assessments``) by name."""
+    found: dict[str, dict] = {}
+    source = doc if isinstance(doc, dict) else load_class_doc()
+    for rule in _walk_rule_nodes(source.get("rules")):
+        name = str(rule.get("name") or "")
+        if name and name not in found:
+            found[name] = rule
+    return found

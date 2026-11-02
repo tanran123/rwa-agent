@@ -1,6 +1,6 @@
 import { spawn } from "child_process";
 import { createRequire } from "module";
-import { existsSync, mkdirSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { pool, query } from "./db.js";
@@ -71,9 +71,10 @@ async function loadRuleset(name) {
 
 async function tabsForVersion(version) {
   const ver = String(version || "");
+  const columns = "id, name, title, label, seq, body, rule_version, source_file";
   if (ver) {
     const owned = await query(
-      "SELECT id, name, title, label, seq, body FROM exposure_document WHERE seq > 0 AND rule_version = ? ORDER BY seq, id",
+      "SELECT " + columns + " FROM exposure_document WHERE seq > 0 AND rule_version = ? ORDER BY seq, id",
       [ver]
     );
     if (owned.length) return owned;
@@ -84,7 +85,7 @@ async function tabsForVersion(version) {
   );
   const ruleVersion = anchor[0] ? anchor[0].rule_version : "";
   return query(
-    "SELECT id, name, title, label, seq, body FROM exposure_document WHERE seq > 0 AND rule_version = ? ORDER BY seq, id",
+    "SELECT " + columns + " FROM exposure_document WHERE seq > 0 AND rule_version = ? ORDER BY seq, id",
     [ruleVersion]
   );
 }
@@ -100,6 +101,8 @@ async function loadCatalog(version) {
     title: row.title,
     label: row.label || "",
     seq: Number(row.seq),
+    ruleVersion: row.rule_version || "",
+    sourceFile: row.source_file || "",
     doc: documentOf(row.body)
   }));
   const tabs = parsed.filter((item) => item.seq > 0);
@@ -109,11 +112,22 @@ async function loadCatalog(version) {
   return { tabs, general, labels };
 }
 
-function documentForProduct(label, tabs, general) {
+function documentMatchForProduct(label, tabs, general) {
   const text = String(label || "");
   const hits = tabs.filter((item) => item.label && item.label !== "通用" && text.includes(item.label));
   hits.sort((a, b) => b.label.length - a.label.length);
-  return hits[0] || general;
+  if (hits[0]) {
+    return { item: hits[0], matchedBy: "产品「" + text + "」的标签含规则文档标签「" + hits[0].label + "」" };
+  }
+  const fallback = general || {};
+  return {
+    item: general,
+    matchedBy: "没有专属规则文档，使用通用规则「" + (fallback.label || fallback.title || fallback.name || "通用") + "」"
+  };
+}
+
+function documentForProduct(label, tabs, general) {
+  return documentMatchForProduct(label, tabs, general).item;
 }
 
 async function crmSnapshot() {
@@ -1135,6 +1149,7 @@ async function measureLoans(loans, intakeMeta, choices) {
       id: loan.id,
       customer: loan.customer,
       name: loan.name,
+      excelRow: loan.excelRow || 0,
       raw: loan.raw || {},
       std: loan.std || {},
       anomaly: loan.anomaly || "",
@@ -1454,6 +1469,137 @@ print(json.dumps({
 }, ensure_ascii=False))
 `;
 
+const CLASSIFY_LOANS = `
+import json, sys
+from agent.steps.weight.classify import classify_loans
+payload = json.load(sys.stdin)
+print(json.dumps(classify_loans(payload), ensure_ascii=False))
+`;
+
+function runClassifyLoans(payload) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(pythonBin(), ["-c", CLASSIFY_LOANS], {
+      cwd: root,
+      env: { ...process.env, PYTHONPATH: root + path.delimiter + (process.env.PYTHONPATH || "") }
+    });
+    let out = "";
+    let err = "";
+    const timer = setTimeout(() => child.kill(), 300000);
+    child.stdout.on("data", (chunk) => { out += chunk; });
+    child.stderr.on("data", (chunk) => { err += chunk; });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      if (code !== 0) {
+        const text = (err || out || "").trim();
+        const line = text.split("\n").map((item) => item.trim()).filter((item) => item.startsWith("ValueError:") || item.startsWith("RuntimeError:")).pop();
+        const message = line ? line.replace(/^(ValueError|RuntimeError):\s*/, "") : (text.slice(-300) || "逐笔分类没有完成");
+        const error = new Error(message);
+        error.status = 400;
+        reject(error);
+        return;
+      }
+      const line = out.trim().split("\n").filter((item) => item.startsWith("{")).pop() || out;
+      try { resolve(JSON.parse(line)); }
+      catch (parseError) { reject(new Error("逐笔分类没有返回结果")); }
+    });
+    child.stdin.write(JSON.stringify(payload));
+    child.stdin.end();
+  });
+}
+
+function mappingSnapshot(pack) {
+  const out = {};
+  Object.entries((pack && pack.intake && pack.intake.mappings) || {}).forEach(([code, suggestions]) => {
+    const rows = [];
+    (suggestions || []).forEach((item) => {
+      if (!item) return;
+      rows.push({
+        stdField: item.stdField || "",
+        stdCode: item.stdCode || "",
+        ruleField: item.ruleField || "",
+        required: !!item.required,
+        column: item.column || "",
+        source: item.source || ""
+      });
+    });
+    if (rows.length) out[code] = rows;
+  });
+  return out;
+}
+
+function applyLoanClassification(pack, rows, uploadId) {
+  const byId = new Map();
+  (rows || []).forEach((row) => { if (row && row.loanId) byId.set(String(row.loanId), row); });
+  let matched = 0;
+  (pack.results || []).forEach((row) => {
+    const hit = byId.get(String(row.loanId));
+    if (!hit) {
+      row.rulesetLabel = "风险暴露划分";
+      row.exposureClass = "未分类";
+      row.exposureSubClass = "";
+      row.matchedRule = "";
+      row.matchedRuleId = "";
+      row.riskWeight = null;
+      row.riskWeightText = "";
+      row.rwa = null;
+      row.status = "exception";
+      row.exceptions = [{ level: "error", text: "分类结果没有这一笔" }];
+      row.classificationTrace = "";
+      row.classificationDocument = null;
+      row.traceUrl = "";
+      return;
+    }
+    matched += 1;
+    row.rulesetLabel = (hit.document && hit.document.title) || "风险暴露划分";
+    row.exposureClass = hit.exposureClass || "未分类";
+    row.exposureSubClass = hit.exposureSubClass || "";
+    row.matchedRule = hit.path || "";
+    row.matchedRuleId = hit.ruleId || "";
+    row.riskWeight = hit.weight == null ? null : Number(hit.weight);
+    row.riskWeightText = hit.weightText || "";
+    row.status = hit.status || "exception";
+    row.classificationTrace = hit.traceFile || "";
+    row.classificationDocument = hit.document || null;
+    row.traceUrl = hit.traceFile
+      ? "/api/measure/classify/trace/" + encodeURIComponent(String(uploadId || "")) + "/" + encodeURIComponent(String(hit.traceFile).split("/").pop())
+      : "";
+    const ead = row.ead == null ? hit.ead : Number(row.ead);
+    row.rwa = ead == null || row.riskWeight == null ? null : round2(Number(ead) * row.riskWeight);
+    const kept = (row.exceptions || []).filter((item) => !/风险暴露|未分类|未归类/.test(item.text || ""));
+    if (hit.status === "exception") kept.push({ level: "error", text: "风险暴露划分没有命中，需要补齐字段或核对取值" });
+    if (hit.status === "warning" && row.riskWeight == null) kept.push({ level: "warn", text: "风险暴露划分已命中，但权重需要人工确认" });
+    row.exceptions = kept;
+  });
+  pack.ruleset = "exposure_document";
+  pack.rulesetTitle = "风险暴露划分";
+  refreshPackTotals(pack);
+  return matched;
+}
+
+export function readClassifyTrace(uploadId, file) {
+  const safeUpload = String(uploadId || "").replace(/[^\w.-]+/g, "_").slice(0, 100);
+  const safeFile = path.basename(String(file || ""));
+  if (!safeUpload || !safeFile.endsWith(".md")) {
+    const error = new Error("留痕文件无效");
+    error.status = 400;
+    throw error;
+  }
+  const base = path.join(root, "output", "traces", "step5");
+  const target = path.join(base, safeUpload, safeFile);
+  if (!target.startsWith(base + path.sep)) {
+    const error = new Error("留痕文件无效");
+    error.status = 400;
+    throw error;
+  }
+  if (!existsSync(target)) {
+    const error = new Error("留痕文件不存在");
+    error.status = 404;
+    throw error;
+  }
+  return readFileSync(target, "utf8");
+}
+
 function runWeight(source, dest) {
   return new Promise((resolve, reject) => {
     const child = spawn(pythonBin(), ["-c", CLASSIFY_WEIGHT, source, dest], {
@@ -1564,33 +1710,88 @@ function applyWeightRows(pack, rows) {
   return matched;
 }
 
-export async function classifyUpload(uploadId) {
+export async function classifyUpload(uploadId, version = "") {
   const stored = uploads.get(String(uploadId || ""));
   if (!stored || !stored.buffer || !stored.pack) {
     const error = new Error("上传的工作簿已经不在，请重新导入后再执行分类");
     error.status = 400;
     throw error;
   }
-  const dir = path.join(root, "output", "uploads");
-  const bookDir = path.join(root, "output", "workbooks");
-  mkdirSync(dir, { recursive: true });
-  mkdirSync(bookDir, { recursive: true });
-  const source = path.join(dir, String(uploadId).replace(/[^\w-]/g, "") + ".xlsx");
-  const stem = String(stored.filename || "上传.xlsx").replace(/\.(xlsx|xlsm)$/i, "");
-  const dest = path.join(bookDir, stem + "_风险暴露分类.xlsx");
-  writeFileSync(source, stored.buffer);
-  const done = await runWeight(source, dest);
-  if (done.stopped) {
-    const error = new Error(done.stopReason || "权重计算停住了");
+  const catalog = await loadCatalog(version);
+  const resultById = new Map(
+    ((stored.pack.results || [])).map((row) => [String(row.loanId), row])
+  );
+  const loans = ((stored.pack.intake && stored.pack.intake.loans) || []).map((loan) => {
+    const shown = resultById.get(String(loan.id)) || {};
+    const raw = loan.raw || {};
+    const std = loan.std || {};
+    return {
+      id: loan.id,
+      sheet: raw.sheet || shown.sheet || "",
+      excelRow: loan.excelRow || shown.excelRow || 0,
+      customer: loan.customer || shown.customer || "",
+      name: loan.name || shown.name || "",
+      product: loan.product || "",
+      productLabel: catalog.labels[loan.product] || loan.product || "",
+      balance: std.balance == null || !Number.isFinite(Number(std.balance)) ? null : Number(std.balance),
+      raw,
+      std
+    };
+  });
+  if (!loans.length) {
+    const error = new Error("没有可以分类的债项");
     error.status = 400;
     throw error;
   }
-  const matched = applyWeightRows(stored.pack, done.rows || []);
+
+  const productCodes = [...new Set(loans.map((loan) => loan.product).filter(Boolean))];
+  const documents = {};
+  productCodes.forEach((code) => {
+    const match = documentMatchForProduct(catalog.labels[code] || "", catalog.tabs, catalog.general);
+    const chosen = match.item;
+    if (!chosen) return;
+    documents[code] = {
+      id: chosen.id,
+      name: chosen.name,
+      title: chosen.title,
+      label: chosen.label || "",
+      ruleVersion: chosen.ruleVersion || "",
+      sourceFile: chosen.sourceFile || "",
+      matchedBy: match.matchedBy,
+      productLabel: catalog.labels[code] || code,
+      body: chosen.doc
+    };
+  });
+  let general = null;
+  if (catalog.general) {
+    general = {
+      id: catalog.general.id,
+      name: catalog.general.name,
+      title: catalog.general.title,
+      label: catalog.general.label || "通用",
+      ruleVersion: catalog.general.ruleVersion || "",
+      sourceFile: catalog.general.sourceFile || "",
+      matchedBy: "通用规则，产品没有专属分类文档时使用",
+      productLabel: "通用",
+      body: catalog.general.doc
+    };
+  }
+
+  const done = await runClassifyLoans({
+    uploadId,
+    version,
+    loans,
+    mappings: mappingSnapshot(stored.pack),
+    documents,
+    general
+  });
+  const matched = applyLoanClassification(stored.pack, done.rows || [], uploadId);
   if (!matched) {
-    const error = new Error("权重计算没有对上上传的行");
+    const error = new Error("逐笔分类没有对上上传的债项");
     error.status = 400;
     throw error;
   }
+
   let workbookError = "";
   try {
     stored.annotated = await annotateWorkbook(stored.buffer, stored.pack);
@@ -1599,14 +1800,28 @@ export async function classifyUpload(uploadId) {
     stored.annotated = null;
   }
   stored.workbookError = workbookError;
-  stored.weightAnnotated = done.annotated || "";
-  stored.traceFile = done.traceFile || "";
+  stored.traceDir = done.traceDir || "";
+  stored.classificationRows = done.rows || [];
   return {
     ...stored.pack,
     workbookReady: !!stored.annotated,
     workbookError,
-    weightNote: done.note || "",
-    traceFile: stored.traceFile
+    traceDir: stored.traceDir,
+    classificationRows: stored.classificationRows,
+    classification: {
+      summary: done.summary || {},
+      traceDir: done.traceDir || "",
+      version: done.version || version,
+      documents: Object.fromEntries(Object.entries(documents).map(([code, item]) => [code, {
+        id: item.id,
+        name: item.name,
+        title: item.title,
+        label: item.label,
+        ruleVersion: item.ruleVersion,
+        matchedBy: item.matchedBy,
+        productLabel: item.productLabel
+      }]))
+    }
   };
 }
 

@@ -3,7 +3,7 @@ import Router from "@koa/router";
 import cors from "@koa/cors";
 import bodyParser from "koa-bodyparser";
 import { query } from "./db.js";
-import { annotatedUpload, applyMeasureChoices, auditWorkbook, classifyUpload, detectMeasureProducts, mapMeasureFields, measureDemo, readMeasureRun, readUploadedWorkbook, saveMeasureRun } from "./measure.js";
+import { annotatedUpload, applyMeasureChoices, auditWorkbook, classifyUpload, detectMeasureProducts, mapMeasureFields, measureDemo, readClassifyTrace, readMeasureRun, readUploadedWorkbook, saveMeasureRun } from "./measure.js";
 import { paperView, uploadSamples } from "./paper.js";
 import { trialEad } from "./ead.js";
 import { checkEadFormula, readEadConfig, saveEadConfig } from "./eadConfig.js";
@@ -654,7 +654,13 @@ router.post("/measure/products", async (ctx) => {
 });
 
 router.post("/measure/classify", async (ctx) => {
-  ctx.body = await classifyUpload((ctx.request.body || {}).uploadId);
+  const body = ctx.request.body || {};
+  ctx.body = await classifyUpload(body.uploadId, body.version || "");
+});
+
+router.get("/measure/classify/trace/:uploadId/:file", async (ctx) => {
+  ctx.type = "text/markdown; charset=utf-8";
+  ctx.body = readClassifyTrace(ctx.params.uploadId, ctx.params.file);
 });
 
 router.get("/working-paper", async (ctx) => {

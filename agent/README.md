@@ -9,9 +9,9 @@
 | --- | --- | --- |
 | 纯计算 | `agent/core/` | **禁止 import `agent.llm`**。规则树、逐笔计算、留痕、HQLA、市场风险公式、流水线都在这里。 |
 | 模型能力 | `agent/llm/` | 唯一能发模型请求的地方。`client.py` 是唯一模型工厂；`capabilities/` 每个能力一个模块；`agents/` 放 DeepAgents 图。 |
-| 适配器 | `agent/steps/` | 只保留流水线步骤 `program.py` 和两个 weight 适配器（`calc/engine.py`、`paper/engine.py`）。 |
+| 适配器 | `agent/steps/` | 只保留流水线步骤 `program.py` 和三个 weight 适配器（`calc/engine.py` 工作簿、`paper/engine.py` 底稿、`classify.py` 向导第五步）。 |
 
-`core/weight/engine.py` 是两套底稿引擎里逐字相同的 50 个函数，只此一份。两个适配器各自保留真正不同的部分（输出列数、选表口径、评级、开放权重）。`core/weight/rules.py` 是分类 JSON 的决策树，纯 Python，**不调模型**。
+`core/weight/engine.py` 是两套底稿引擎里逐字相同的 50 个函数，只此一份。两个适配器各自保留真正不同的部分（输出列数、选表口径、评级、开放权重）。`core/weight/rules.py` 是分类 JSON 的决策树，`core/weight/exposure.py` 是分类执行器（走规则树、取值归一化、多重评级、同一银行权重回写），两者都是纯 Python，**不调模型**。
 
 `core/` 里禁止出现 `runtime_model`、`chat_model`、`complete`、`skill_body`。需要模型时，在 `agent/llm/capabilities/` 加一个模块，capability 用 `create_deep_agent` 建图，输入输出都是 JSON。
 
@@ -157,6 +157,8 @@
 | `weight/program.py` | `run(context)`。把工作簿交给 `calc/engine.run_workbook`，把结果路径、留痕、敞口和风险加权资产放回 context。 |
 | `weight/calc/engine.py` | 逐笔分类、权重和敞口。 |
 | `core/weight/rules.py` | 把分类 JSON 收成决策树。 |
+| `core/weight/exposure.py` | 分类执行器：按顺序走规则树、归一化取值。工作簿计算还会用到多重评级和同一银行权重回写；向导第五步只用规则树和取值归一化。 |
+| `weight/classify.py` | 向导第五步：按第二步的债项、第三步的产品、第四步确认的映射，从数据库取产品规则逐笔分类，并在 `output/traces/step5/` 每笔写一份 Markdown。不做债务人汇总、多重评级和同一银行权重回写。 |
 | `weight/calc/calc_trace.py` | 写计算留痕。文件在仓库根目录 `output/traces/`。 |
 | `llm/capabilities/field_mapping.py` | 用模型把表头对到分类字段。 |
 | `weight/calc/paths.py` | `ROOT` 指向 `weight/`，用来找分类 JSON。密钥在仓库根目录 `.env`。`OUTPUT` 指向仓库根目录 `output/`。 |
