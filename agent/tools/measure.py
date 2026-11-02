@@ -28,7 +28,7 @@ def _as_dict(value) -> dict:
 @tool
 def identify_products(groups: list, products: list) -> str:
     """用户要识别产品类型时调用。groups 是按产品代码分组的抽样，products 是已配置产品。没有这些材料不要调用，也不要编造产品 code。"""
-    from agent.subagents.weight.calc.model import suggest_product_types
+    from agent.llm.capabilities.product_type import suggest as suggest_product_types
 
     grouped = _as_list(groups)
     catalog = _as_list(products)
@@ -44,7 +44,7 @@ def identify_products(groups: list, products: list) -> str:
 @tool
 def map_fields(headers: list, fields: list, samples: list | None = None, column_values: dict | None = None) -> str:
     """用户要做字段映射时调用。headers 是表头，fields 是还没对上的标准字段。没有表头或字段不要调用，也不要编造表头。"""
-    from agent.subagents.weight.calc.model import suggest_standard_fields
+    from agent.llm.capabilities.field_mapping import standard_fields as suggest_standard_fields
 
     names = _as_list(headers)
     pending = _as_list(fields)

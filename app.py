@@ -35,23 +35,22 @@ _load_local_env()
 
 from flask import Flask, jsonify, request, send_file
 
-from agent.subagents.rwa.market.agent import field_catalog, inspect_workbook, list_type_columns, run_with_mappings, write_rwa_workbook
-from agent.subagents.rwa.market.compare import compare_module, module_catalog, write_comparison
-from agent.subagents.weight.calc.exposure_class import prototype_flow
-from agent.subagents.weight.paper.paper_calc import load_or_compute, price_open_facts, write_annotated_source
-from agent.subagents.weight.paper.working_paper import load_working_paper
+from agent.core.market.calculator import field_catalog, inspect_workbook, list_type_columns, run_with_mappings, write_rwa_workbook
+from agent.core.market.compare import compare_module, module_catalog, write_comparison
+from agent.core.weight.rules import prototype_flow
+from agent.steps.weight.paper.engine import load_or_compute, price_open_facts, write_annotated_source
 from knowledge.local.library import calculation_rules, ensure_library, load_library, reset_rule, save_rule
-from agent.subagents.rwa.market.rule_calc import run_authored
+from agent.core.market.rule_calc import run_authored
 from knowledge.local.rule_graph import load_graph, save_graph
-from agent.subagents.weight.paper.exp_flow_gen import analyze_flow_gaps_local, generate_product_flow
-from agent.subagents.rwa.market.mapper import suggest_field_map, suggest_mappings
-from agent.platform.graph import reply as agent_reply
+from agent.llm.capabilities.product_flow import analyze_flow_gaps_local, generate_product_flow
+from agent.llm.capabilities.market_mapping import suggest_field_map, suggest_mappings
+from agent.llm.graph import reply as agent_reply
 from agent.tree.edit import propose as propose_tree
 from knowledge.weknora.rule_chat import discuss_rules, lookup_basis
 from knowledge.local.rule_learn import learn_from_excel
 from knowledge.weknora.weknora import ask as weknora_ask
 from knowledge.weknora.weknora import list_bases as weknora_bases
-from agent.subagents.rwa.market.weight_tables import ingest_weight_workbook, weight_catalog
+from agent.core.market.weight_tables import ingest_weight_workbook, weight_catalog
 
 ensure_library()
 
@@ -290,7 +289,7 @@ def working_paper_file():
 
 
 CLASS_DOC_PATH = (
-    APP_DIR / "agent" / "subagents" / "weight" / "knowledge" / "权重法风险暴露分类.json"
+    APP_DIR / "agent" / "steps" / "weight" / "knowledge" / "权重法风险暴露分类.json"
 )
 
 
@@ -691,7 +690,7 @@ def sheet_preview():
     kept = False
     try:
         upload.save(input_path)
-        from agent.subagents.weight.paper.paper_calc import plan_workbook_sheets
+        from agent.steps.weight.paper.engine import plan_workbook_sheets
 
         plan_book = load_workbook(input_path, read_only=True, data_only=True)
         try:
@@ -815,7 +814,7 @@ def sheet_clarify():
     """研判之后，模型列出拿不准的数据选择，等用户确认再映射。"""
     from openpyxl import load_workbook
 
-    from agent.subagents.weight.paper.clarify import clarify_workbook
+    from agent.steps.weight.paper.clarify import clarify_workbook
 
     data = request.get_json(silent=True) or {}
     upload_id = str(data.get("uploadId") or "")
@@ -865,7 +864,7 @@ def open_weights():
 @app.post("/api/calc-trace")
 def calc_trace():
     """把本次每一行的计算步骤写成 output/traces 下的 JSON，供以后倒查。"""
-    from agent.subagents.weight.paper.calc_trace import save_trace_file
+    from agent.core.weight.paper_trace import save_trace_file
 
     data = request.get_json(silent=True) or {}
     rows = data.get("rows") if isinstance(data.get("rows"), list) else []
@@ -880,8 +879,8 @@ def calc_export():
     lines = data.get("lines") if isinstance(data.get("lines"), list) else []
     source_lines = [line for line in lines if isinstance(line, dict) and line.get("excel_row") not in (None, "")]
     if source_lines:
-        from agent.subagents.weight.paper.paper_calc import write_annotated_source
-        from agent.subagents.weight.paper.working_paper import PAPER_PATH
+        from agent.steps.weight.paper.engine import write_annotated_source
+        from agent.core.weight.working_paper import PAPER_PATH
 
         upload_id = str(data.get("uploadId") or "")
         stored = UPLOADS.get(upload_id) if upload_id else None
@@ -912,7 +911,7 @@ def calc_export():
                     "trace": line.get("trace") or "",
                     "steps": line.get("steps") if isinstance(line.get("steps"), list) else [],
                 })
-            from agent.subagents.weight.paper.calc_trace import save_trace_file
+            from agent.core.weight.paper_trace import save_trace_file
 
             save_trace_file(filename or "计算", rows)
             buf = io.BytesIO()
@@ -997,7 +996,7 @@ def result_file(upload_id: str):
 
 
 # ---------------------------------------------------------------- 流动性 HQLA
-# 判定引擎在 agent/subagents/hqla/，不进计算流水线的 STEPS。
+# 判定引擎在 agent/core/hqla/，不进计算流水线的 STEPS。
 # 任务数据的持久化在 Koa（MySQL），这里只做解析、计算和导出。
 
 
@@ -1007,14 +1006,14 @@ def _hqla_payload():
 
 @app.get("/api/hqla/list-meta")
 def hqla_list_meta():
-    from agent.subagents.hqla import list_meta
+    from agent.core.hqla import list_meta
 
     return jsonify(list_meta())
 
 
 @app.post("/api/hqla/inspect")
 def hqla_inspect():
-    from agent.subagents.hqla import inspect
+    from agent.core.hqla import inspect
 
     try:
         return jsonify(inspect(_hqla_payload()))
@@ -1026,7 +1025,7 @@ def hqla_inspect():
 
 @app.post("/api/hqla/parse")
 def hqla_parse():
-    from agent.subagents.hqla import parse
+    from agent.core.hqla import parse
 
     try:
         return jsonify(parse(_hqla_payload()))
@@ -1038,7 +1037,7 @@ def hqla_parse():
 
 @app.post("/api/hqla/compute")
 def hqla_compute():
-    from agent.subagents.hqla import compute
+    from agent.core.hqla import compute
 
     try:
         return jsonify(compute(_hqla_payload()))
@@ -1048,7 +1047,7 @@ def hqla_compute():
 
 @app.post("/api/hqla/sample")
 def hqla_sample():
-    from agent.subagents.hqla import sample_plan
+    from agent.core.hqla import sample_plan
 
     try:
         return jsonify(sample_plan(_hqla_payload()))
@@ -1058,7 +1057,7 @@ def hqla_sample():
 
 @app.post("/api/hqla/list-hits")
 def hqla_list_hits():
-    from agent.subagents.hqla import list_hits
+    from agent.core.hqla import list_hits
 
     try:
         return jsonify(list_hits(_hqla_payload()))
@@ -1068,7 +1067,7 @@ def hqla_list_hits():
 
 @app.post("/api/hqla/export")
 def hqla_export():
-    from agent.subagents.hqla import export as export_hqla
+    from agent.core.hqla import export as export_hqla
 
     payload = _hqla_payload()
     try:

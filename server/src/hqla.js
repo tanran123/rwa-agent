@@ -1,7 +1,7 @@
 /**
  * 流动性 HQLA：计算任务的持久化（MySQL）与转发。
  *
- * 判定/抽样/加总/对账/导出都在 Flask 的 agent/subagents/hqla/ 里；
+ * 判定/抽样/加总/对账/导出都在 Flask 的 agent/core/hqla/ 里；
  * 这里只负责存任务、读任务，以及把 compute / parse / export 转发给 8766。
  */
 

@@ -3,7 +3,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const cachePath = path.join(root, "agent/subagents/weight/paper/底稿模型计算.json");
+const cachePath = path.join(root, "agent/steps/weight/paper/底稿模型计算.json");
 let cached = null;
 let samples = null;
 

@@ -16,10 +16,10 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
-from agent.subagents.weight.calc.exposure_class import class_fields, prototype_flow
-from agent.subagents.weight.calc.paper_calc import _classify, _cond, _when, _walk
+from agent.core.weight.rules import class_fields, prototype_flow
+from agent.steps.weight.calc.engine import _classify, _cond, _when, _walk
 
-OUT = REPO / "agent" / "subagents" / "weight" / "samples" / "同业_模拟.xlsx"
+OUT = REPO / "agent" / "steps" / "weight" / "samples" / "同业_模拟.xlsx"
 
 TONGYE_HEADERS = [
     "GL A/C No.",

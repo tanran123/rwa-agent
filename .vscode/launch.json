@@ -48,16 +48,6 @@
       "sourceMaps": true
     },
     {
-      "name": "MCP stdio",
-      "type": "debugpy",
-      "request": "launch",
-      "module": "agent.mcp",
-      "cwd": "${workspaceFolder}",
-      "console": "integratedTerminal",
-      "justMyCode": false,
-      "python": "${workspaceFolder}/.venv/bin/python"
-    },
-    {
       "name": "Python: current file",
       "type": "debugpy",
       "request": "launch",
@@ -71,7 +61,7 @@
       "name": "Calculation CLI",
       "type": "debugpy",
       "request": "launch",
-      "module": "agent.calculation.pipeline",
+      "module": "agent.core.pipeline.pipeline",
       "args": [
         "output/uploads/UP-mvoyi799.xlsx"
       ],

@@ -13,7 +13,7 @@ const MASTER = require(join(root, "server/data/master_data.cjs"));
 const FormulaEngine = require(join(root, "server/lib/formula.cjs"));
 const rulesSrc = readFileSync(join(root, "server/data/rules.js"), "utf8");
 const classDoc = JSON.parse(readFileSync(
-  join(root, "agent/subagents/weight/knowledge/权重法风险暴露分类.json"),
+  join(root, "agent/steps/weight/knowledge/权重法风险暴露分类.json"),
   "utf8"
 ));
 
@@ -227,7 +227,7 @@ const TREE_DOCS = [
 
 const exposureRows = [[
   1, classDoc.name, classDoc.title, "", 0,
-  "agent/subagents/weight/knowledge/权重法风险暴露分类.json",
+  "agent/steps/weight/knowledge/权重法风险暴露分类.json",
   "",
   JSON.stringify(classDoc)
 ]];

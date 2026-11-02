@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-import json
 import re
 from datetime import date, datetime
 from pathlib import Path
 
 import openpyxl
 
+from agent.llm.capabilities.rule_learn import learn as learn_rules
 from knowledge.local.library import PARAM_FIELDS, load_library
-from agent.subagents.rwa.market.mapper import _complete, _extract_json
 from knowledge.weknora.rule_chat import _updates
 
 _MAX_SHEETS = 6
@@ -21,16 +20,11 @@ _MAX_CHARS = 14000
 
 def learn_from_excel(path: str | Path, filename: str = "") -> dict:
     excerpt = workbook_excerpt(path)
-    raw = _complete(
-        _system(),
-        json.dumps(
-            {"filename": filename[:120], "workbook": excerpt, "rules": _catalog()},
-            ensure_ascii=False,
-        ),
-    )
     try:
-        parsed = _extract_json(raw)
-    except (RuntimeError, json.JSONDecodeError):
+        parsed = learn_rules(
+            {"filename": filename[:120], "workbook": excerpt, "rules": _catalog()}
+        )
+    except (RuntimeError, ValueError):
         raise RuntimeError("模型没有返回可用的规则") from None
     if not isinstance(parsed, dict):
         raise RuntimeError("模型没有返回可用的规则")
@@ -107,20 +101,3 @@ def _cell_text(value: object) -> str:
         return f"{value:.6f}".rstrip("0").rstrip(".")
     text = re.sub(r"\s+", " ", str(value)).strip()
     return text[:80]
-
-
-def _system() -> str:
-    return (
-        "你从用户上传的 Excel 里学习资本规则，并对照给出的现有规则库。"
-        "只输出一个 JSON 对象，不要写 Markdown。"
-        "格式是 {\"reply\":\"给用户看的中文说明\",\"updates\":null}。"
-        "reply 先说学到了哪些规则、准备改哪些参数。Excel 里对不上现有规则的内容也写在 reply，不要丢。"
-        "只有 Excel 明确写出、且能对应到现有规则 id 的公式、步骤或参数，才放入 updates。"
-        "updates 写成 {\"规则id\":{\"params\":{\"参数id\":数值},\"lines\":[\"公式\"],\"steps\":[{\"title\":\"\",\"line\":\"\"}]}}。"
-        "没有可写入的变更时 updates 必须是 null。"
-        "params 里的百分比用小数：10% 写成 0.10，8% 写成 0.08。倍数和月数用原数字。文字参数用字符串。"
-        "lines 和 steps 是给人看的，百分比写成 10% 这种形式，不要写成 0.10。"
-        "lines 最多 4 条。steps 按该规则原来的顺序，条数不要增减，只改 title 和 line。"
-        "只能使用给出的规则 id 和参数 id。评级权重表、期限档权重不能改；Excel 里如果有这些，在 reply 里说明，不要放进 updates。"
-        "公式文字里的百分比、倍数要和 params 一致。不要编造 Excel 里没有的数字。"
-    )

@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from knowledge.local.rules import DEFAULT_PACK_RULES, resolve_rules
-from agent.subagents.rwa.market.weight_tables import write_weight_markdown
+from agent.core.market.weight_tables import write_weight_markdown
 
 ROOT = Path(__file__).resolve().parent
 

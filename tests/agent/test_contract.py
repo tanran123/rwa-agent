@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from agent.composition import client
+from agent.llm.session import client
 
 
 def test_result_has_the_page_contract() -> None:
@@ -61,7 +61,7 @@ def test_reply_returns_the_same_shape(monkeypatch) -> None:
         def update_state(self, config, values):
             return None
 
-    import agent.platform.graph as graph_module
+    import agent.llm.graph as graph_module
 
     monkeypatch.setattr(graph_module, "graph", lambda: FakeGraph())
     monkeypatch.setattr(graph_module, "thread_config", lambda thread_id, checkpoint_id=None: {"configurable": {"thread_id": thread_id}})
@@ -85,7 +85,7 @@ def test_reply_reports_a_pending_confirmation(monkeypatch) -> None:
         def stream(self, payload, config, **kwargs):
             yield {}
 
-    import agent.platform.graph as graph_module
+    import agent.llm.graph as graph_module
 
     monkeypatch.setattr(graph_module, "graph", lambda: FakeGraph())
     monkeypatch.setattr(graph_module, "thread_config", lambda thread_id, checkpoint_id=None: {"configurable": {"thread_id": thread_id}})
@@ -153,7 +153,7 @@ def test_reply_returns_page_actions_from_a_tool_call(monkeypatch) -> None:
         def stream(self, payload, config, **kwargs):
             yield {}
 
-    import agent.platform.graph as graph_module
+    import agent.llm.graph as graph_module
 
     monkeypatch.setattr(graph_module, "graph", lambda: FakeGraph())
     monkeypatch.setattr(graph_module, "thread_config", lambda thread_id, checkpoint_id=None: {"configurable": {"thread_id": thread_id}})

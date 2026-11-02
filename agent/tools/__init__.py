@@ -1,12 +1,9 @@
-"""Tools the platform can call. MCP serves this same list."""
+"""Tools the coordinator can call. One registry, one docstring per tool."""
 
-from agent.calculation.pipeline import pipeline_steps
-from agent.composition.turn import note_page_actions
-from agent.runtime import CALCULATION, LATEST, store
-from agent.subagents.ccf import ccf_status
-from agent.subagents.crm import crm_status
-from agent.subagents.rwa import rwa_status
-from agent.subagents.weight import run_weight_decision
+from agent.core.pipeline.pipeline import pipeline_steps
+from agent.llm.session.turn import note_page_actions
+from agent.storage import CALCULATION, LATEST, store
+from agent.tools.steps import ccf_status, crm_status, rwa_status, run_weight_decision
 from agent.tools.domain import domain_tools
 from agent.tools.measure import identify_products, map_fields
 from langchain_core.tools import tool

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from agent.subagents.rwa.market.mapper import _complete
+from agent.llm.capabilities.rule_chat import answer as model_answer, basis as model_basis
 from knowledge.local.rules import DEFAULT_PACK_RULES, resolve_rules
 from knowledge.weknora.weknora import ask_libraries, chat_libraries
 
@@ -88,22 +88,12 @@ def _model_answer(messages: list[dict], title: str) -> str:
     for item in messages:
         who = "用户" if item["role"] == "user" else "助手"
         lines.append(f"{who}：{item['content']}")
-    raw = _complete(
-        "知识库里没有检索到相关原文。请直接回答用户最后一个问题。"
-        "不要编造澳门金管局的公告号、通告编号、条款号或填报表行号。不确定的条文不要写编号。"
-        "不要声称这些内容来自知识库。",
-        "\n".join(lines),
-    )
+    raw = model_answer("\n".join(lines))
     return _marked(raw, 4000)
 
 
 def _model_basis(name: str) -> str:
-    raw = _complete(
-        "知识库里没有这条规则的原文。用一段话说明这条规则在资本计量里通常指什么。"
-        "不要编造公告号、通告编号、条款号或表号。没有确切编号就不要写编号。"
-        "不要声称内容来自知识库。",
-        f"规则名称是「{name}」。",
-    )
+    raw = model_basis(name)
     paragraph = re.sub(r"\s+", " ", _marked(raw, 500)).strip()
     return paragraph[:500]
 

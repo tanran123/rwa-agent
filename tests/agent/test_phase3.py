@@ -1,11 +1,11 @@
 import uuid
 
-from agent.calculation import registry
-from agent.calculation.nodes import FIELDS
-from agent.calculation.pipeline import STEPS, active_steps, pipeline_steps
-from agent.calculation.state import PipelineState
-from agent.composition.subagents import build_subagents
-from agent.runtime.skills import read_skill
+from agent.core.pipeline import registry
+from agent.core.pipeline.nodes import FIELDS
+from agent.core.pipeline.pipeline import STEPS, active_steps, pipeline_steps
+from agent.core.pipeline.state import PipelineState
+from agent.llm.agents.subagents import build_subagents
+from agent.llm.skills import read_skill
 
 EXPECTED_STEPS = (
     "weight：会执行。风险暴露权重判断：按权重法风险暴露分类划分暴露、取权重并计算敞口。\n"
@@ -48,9 +48,9 @@ def test_subagent_specs_match_the_registry() -> None:
 
 
 def test_disabled_steps_stop_without_inventing_numbers() -> None:
-    from agent.subagents.ccf.program import run as run_ccf
-    from agent.subagents.crm.program import run as run_crm
-    from agent.subagents.rwa.program import run as run_rwa
+    from agent.steps.ccf.program import run as run_ccf
+    from agent.steps.crm.program import run as run_crm
+    from agent.steps.rwa.program import run as run_rwa
 
     for step in (run_ccf, run_crm, run_rwa):
         out = step({})
@@ -59,7 +59,7 @@ def test_disabled_steps_stop_without_inventing_numbers() -> None:
 
 
 def test_graph_has_all_nodes_but_only_weight_runs() -> None:
-    from agent.calculation.graph import calculation
+    from agent.core.pipeline.workflow import calculation
 
     graph = calculation()
     nodes = {name for name in graph.get_graph().nodes if name not in ("__start__", "__end__")}
@@ -81,7 +81,7 @@ def test_credit_weight_skill_loads() -> None:
 
 
 def test_subagents_can_be_disabled(monkeypatch) -> None:
-    from agent.composition.chat import _subagents_enabled
+    from agent.llm.agents.chat import _subagents_enabled
 
     monkeypatch.setenv("RWA_COORDINATOR_SUBAGENTS", "0")
     assert _subagents_enabled() is False
@@ -90,8 +90,8 @@ def test_subagents_can_be_disabled(monkeypatch) -> None:
 
 
 def test_step_spec_delegates_to_program_run(monkeypatch) -> None:
-    import agent.subagents.weight.program as program
-    from agent.calculation.registry import by_name
+    import agent.steps.weight.program as program
+    from agent.core.pipeline.registry import by_name
 
     seen = {}
 

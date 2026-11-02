@@ -4,16 +4,9 @@ from __future__ import annotations
 
 import json
 
-from langchain_core.messages import HumanMessage, SystemMessage
-
-from agent.runtime.model import chat_model
-from agent.runtime.skills import skill_body
+from agent.llm.agents.tree import propose as propose_tree
 
 _OPS = {"eq": True, "in": True, "gt": True, "gte": True, "lt": True, "lte": True}
-
-
-def _instructions() -> str:
-    return skill_body("decision-tree")
 
 
 def _plain(reply: str) -> str:
@@ -416,10 +409,7 @@ def propose(messages: list, document: dict, label: str, generic: dict | None = N
         parts.append("监管条款：\n" + json.dumps(clauses, ensure_ascii=False))
     parts.append("\n".join(cleaned))
     prompt = "\n\n".join(parts)
-    result = chat_model("chat").invoke([SystemMessage(content=_instructions()), HumanMessage(content=prompt)])
-    text = getattr(result, "content", "")
-    if not isinstance(text, str):
-        text = str(text or "")
+    text = propose_tree(prompt)
     try:
         body = _parse(text)
     except ValueError:

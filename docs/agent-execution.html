@@ -372,13 +372,12 @@
       <table>
         <thead><tr><th>链路</th><th>前端</th><th>中间层</th><th>agent 执行点</th></tr></thead>
         <tbody>
-          <tr><td>右下角 AI</td><td>AgentDock.vue</td><td>Koa 原样转发</td><td>Flask → platform/graph → DeepAgents</td></tr>
+          <tr><td>右下角 AI</td><td>AgentDock.vue</td><td>Koa 原样转发</td><td>Flask → llm/graph → DeepAgents</td></tr>
           <tr><td>计算确认</td><td>同上</td><td>同上</td><td>interrupt_on → run_pipeline</td></tr>
           <tr><td>信用风险计量向导</td><td>/measure/*</td><td>Koa measure.js</td><td>Koa 直接 spawn Python，不经过 Flask</td></tr>
-          <tr><td>HQLA 七步</td><td>HqlaWizardView</td><td>Koa hqla.js + MySQL</td><td>Flask → subagents/hqla</td></tr>
+          <tr><td>HQLA 七步</td><td>HqlaWizardView</td><td>Koa hqla.js + MySQL</td><td>Flask → core/hqla</td></tr>
           <tr><td>底稿页</td><td>fetchPaper</td><td>Koa paper.js</td><td>只读 JSON 缓存，不调用 agent</td></tr>
           <tr><td>决策树</td><td>暴露分类页</td><td>Koa 补文档</td><td>Flask → tree/edit → 模型</td></tr>
-          <tr><td>MCP</td><td>外部客户端</td><td>stdio</td><td>agent.mcp → 工具</td></tr>
         </tbody>
       </table>
     </div>
@@ -501,7 +500,7 @@ sequenceDiagram
     participant G as 计算图
     participant R as registry
     participant W as weight 工位
-    participant C as paper_calc
+    participant C as engine
     participant O as output
     T->>P: run_pipeline(工作簿)
     P->>G: invoke(thread::calculation)
@@ -569,7 +568,7 @@ sequenceDiagram
     <ol class="steps">
       <li><div><b>页面点“映射”。</b><div class="detail">请求发给 Koa 的 <code>/api/measure/map</code>。</div></div></li>
       <li><div><b>Koa 自己喊人。</b><div class="detail"><code>measure.js</code> 用 <code>spawn</code> 起一个 <code>.venv/bin/python -c ...</code>。</div></div></li>
-      <li><div><b>Python 调引擎。</b><div class="detail">import 的是 <code>agent/subagents/weight/calc/model.py</code>，调用 <code>suggest_standard_fields</code>。</div></div></li>
+      <li><div><b>Python 调引擎。</b><div class="detail">import 的是 <code>agent/steps/weight/calc/model.py</code>，调用 <code>suggest_standard_fields</code>。</div></div></li>
       <li><div><b>原路返回。</b><div class="detail">结果回到 Koa，再回页面；Flask 完全不参与。</div></div></li>
     </ol>
   </section>
@@ -626,11 +625,11 @@ sequenceDiagram
     <div class="sec-head">
       <div class="sec-no">E</div>
       <div>
-        <h2>三条旁路：底稿、决策树、MCP</h2>
-        <p class="sec-sub">这三条不参与右下角对话，但都在用同一套引擎或同一份数据。</p>
+        <h2>两条旁路：底稿、决策树</h2>
+        <p class="sec-sub">这两条不参与右下角对话，但都在用同一套引擎或同一份数据。</p>
       </div>
     </div>
-    <p class="one-line"><b>一句话：</b>底稿页直接翻账本，决策树只改草稿，MCP 给外部工具一个标准插座。</p>
+    <p class="one-line"><b>一句话：</b>底稿页直接翻账本，决策树只改草稿。</p>
 
     <figure class="diagram card">
       <div class="diagram-head"><span class="tag">图 E</span><span class="diagram-title">底稿页与决策树</span></div>
@@ -656,25 +655,7 @@ sequenceDiagram
       <figcaption>底稿页不重算；决策树只起草，不写文件，保存仍由 Koa 做。</figcaption>
     </figure>
 
-    <figure class="diagram card">
-      <div class="diagram-head"><span class="tag">图 E2</span><span class="diagram-title">MCP 标准插座</span></div>
-      <div class="diagram-scroll">
-        <pre class="mermaid">
-sequenceDiagram
-    autonumber
-    participant C as 外部客户端
-    participant M as python -m agent.mcp
-    participant T as tools
-    C->>M: tools/list
-    M-->>C: 14 个工具
-    C->>M: tools/call
-    M->>T: 执行
-    T-->>M: 结果
-    M-->>C: JSON-RPC
-        </pre>
-      </div>
-      <figcaption>没有对话循环，也没有页面；工具名单和右下角 AI 是同一份。</figcaption>
-    </figure>
+    
 
     <div class="grid-3">
       <div class="mini">
@@ -686,11 +667,6 @@ sequenceDiagram
         <div class="k">决策树</div>
         <h3>顾问只改草稿</h3>
         <p>模型返回“改哪几个节点”的 JSON，不落笔。保存、版本、复制仍然由 Koa 做。</p>
-      </div>
-      <div class="mini">
-        <div class="k">MCP</div>
-        <h3>同一套工具</h3>
-        <p>外部客户端先问有哪些工具，再按名字调用；<code>recent_calculation</code> 读的也是同一个存储。</p>
       </div>
     </div>
   </section>
@@ -707,7 +683,7 @@ sequenceDiagram
       <div class="mini">
         <div class="k">01</div>
         <h3>入口不是实现</h3>
-        <p><code>platform/graph.py</code> 只是总开关；默认转 <code>composition/chat.py</code>，只有 <code>RWA_CHAT_ENGINE=legacy</code> 才用旧循环。</p>
+        <p><code>llm/graph.py</code> 只是入口，实际图在 <code>llm/agents/chat.py</code>。</p>
       </div>
       <div class="mini">
         <div class="k">02</div>
@@ -717,13 +693,13 @@ sequenceDiagram
       <div class="mini">
         <div class="k">03</div>
         <h3>工具名单只有一份</h3>
-        <p>右下角 AI、MCP、旧引擎都读 <code>agent/tools/__init__.py</code>；新增工具只改这一处。</p>
+        <p>右下角 AI 读 <code>agent/tools/__init__.py</code>；新增工具只改这一处。</p>
       </div>
     </div>
   </section>
 
   <footer>
-    对应代码：<code>agent/platform/</code>、<code>agent/composition/</code>、<code>agent/calculation/</code>、<code>agent/subagents/</code>、<code>agent/tools/</code>。
+    对应代码：<code>agent/llm/</code>、<code>agent/llm/session/</code>、<code>agent/core/pipeline/</code>、<code>agent/steps/</code>、<code>agent/tools/</code>。
     图中的端口 8780 是 Koa，8766 是 Flask。
   </footer>
 </div>

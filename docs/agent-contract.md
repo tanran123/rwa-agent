@@ -65,19 +65,10 @@
 ## 5. HQLA 与底稿
 
 `/api/hqla/list-meta|inspect|parse|compute|sample|list-hits|export` 的请求 / 响应由
-`agent/subagents/hqla/service.py` 定义；`hqla/` 是纯函数库，不调用模型。
-`/api/working-paper` 只读 `agent/subagents/weight/paper/底稿模型计算.json`，不重算。
+`agent/core/hqla/service.py` 定义；`hqla/` 是纯函数库，不调用模型。
+`/api/working-paper` 只读 `agent/steps/weight/paper/底稿模型计算.json`，不重算。
 
-## 6. MCP
-
-`python -m agent.mcp` 的 `tools/list` 必须与 `agent/tools/__init__.py` 的 `tools` 一致。
-当前工具：`pipeline_steps`、`run_weight_decision`、`recent_calculation`、
-`ccf_status`、`crm_status`、`rwa_status`、`page_actions`、
-`identify_products`、`map_fields`、`working_paper_summary`、
-`hqla_compute_summary`、`hqla_sample_plan`、`market_modules`、
-`exposure_class_summary`。
-
-## 7. 计算顺序
+## 6. 计算顺序
 
 - `registry.ENABLED` 决定哪些步骤真的执行，当前只有 `weight`；`pipeline.STEPS` 是兼容别名。
 - `ORDER`（weight、ccf、crm、rwa）是监管顺序，只用于展示和组装；`registry.steps()` 把它和 `ENABLED` 合成一份。
@@ -108,5 +99,4 @@
 pm2 restart rwa-agent
 ```
 
-改过任何 Python 后必须重启 `rwa-agent`：`platform/graph.py` 的图在首次调用时构建。
-`RWA_CHAT_ENGINE=legacy` 可回到旧的 `llm_call` / `tool_node` 循环；默认是 DeepAgents。
+改过任何 Python 后必须重启 `rwa-agent`：`llm/graph.py` 的图在首次调用时构建。

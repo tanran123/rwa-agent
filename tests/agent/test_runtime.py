@@ -2,8 +2,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.runtime import model as runtime_model
-from agent.runtime import settings as runtime_settings
+from agent.llm import client as runtime_model
+from agent.llm import settings as runtime_settings
 
 
 @pytest.fixture(autouse=True)

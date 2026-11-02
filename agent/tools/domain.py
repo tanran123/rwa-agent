@@ -29,7 +29,9 @@ def _json(value: object) -> str:
 @tool
 def working_paper_summary() -> str:
     """问底稿页当前缓存了多少行、敞口和风险加权资产时调用。只读缓存文件，不重算，也不调用模型。"""
-    path = Path(__file__).resolve().parents[1] / "subagents" / "weight" / "paper" / "底稿模型计算.json"
+    from agent.core.paths import PAPER_CACHE
+
+    path = PAPER_CACHE
     if not path.is_file():
         return "底稿缓存不存在：" + str(path)
     try:
@@ -68,7 +70,7 @@ def hqla_compute_summary(task: dict, reference: list | None = None) -> str:
     """用户给出 HQLA 任务 JSON 并要求判定摘要时调用。只返回统计、汇总、上限、对账和规则自检，不返回逐笔明细。不写数据库。"""
     if not isinstance(task, dict):
         return "task 必须是任务 JSON 对象。"
-    from agent.subagents.hqla import compute
+    from agent.core.hqla import compute
 
     try:
         out = compute({"task": task, "reference": reference or []})
@@ -92,7 +94,7 @@ def hqla_sample_plan(task: dict, reference: list | None = None) -> str:
     """用户给出 HQLA 任务 JSON 并要求抽样计划时调用。只返回抽样结果，不写数据库。"""
     if not isinstance(task, dict):
         return "task 必须是任务 JSON 对象。"
-    from agent.subagents.hqla import sample_plan
+    from agent.core.hqla import sample_plan
 
     try:
         out = sample_plan({"task": task, "reference": reference or []})
@@ -104,7 +106,7 @@ def hqla_sample_plan(task: dict, reference: list | None = None) -> str:
 @tool
 def market_modules() -> str:
     """问市场风险有哪些计算模块时调用。只返回模块目录，不计算。"""
-    from agent.subagents.rwa.market.compare import module_catalog
+    from agent.core.market.compare import module_catalog
 
     return _json(module_catalog())
 
@@ -112,7 +114,7 @@ def market_modules() -> str:
 @tool
 def exposure_class_summary() -> str:
     """问暴露分类规则有多少字段、多少条规则时调用。只读分类 JSON，不修改。"""
-    from agent.subagents.weight.calc.exposure_class import class_fields, load_class_doc
+    from agent.core.weight.rules import class_fields, load_class_doc
 
     try:
         doc = load_class_doc()

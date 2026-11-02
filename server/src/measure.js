@@ -5,6 +5,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { pool, query } from "./db.js";
 import { eadConfigMap } from "./eadConfig.js";
+import { cellText, productGroups } from "./measureSampling.js";
 
 const require = createRequire(import.meta.url);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -748,24 +749,17 @@ function pythonBin() {
 
 const MAP_FIELDS = `
 import json, sys
-from agent.subagents.weight.calc.model import suggest_standard_fields
+from agent.llm.capabilities.field_mapping import standard_fields as suggest_standard_fields
 payload = json.load(sys.stdin)
 print(json.dumps(suggest_standard_fields(payload.get("headers") or [], payload.get("fields") or [], payload.get("samples") or [], payload.get("columnValues") or {}), ensure_ascii=False))
 `;
 
 const DETECT_PRODUCTS = `
 import json, sys
-from agent.subagents.weight.calc.model import suggest_product_types
+from agent.llm.capabilities.product_type import suggest as suggest_product_types
 payload = json.load(sys.stdin)
 print(json.dumps(suggest_product_types(payload.get("groups") or [], payload.get("products") or []), ensure_ascii=False))
 `;
-
-function cellText(value) {
-  if (value == null) return "";
-  const text = String(value).trim();
-  if (!text) return "";
-  return text.length > 60 ? text.slice(0, 60) : text;
-}
 
 function rowsForSampling(body) {
   const stored = body && body.uploadId && uploads.get(String(body.uploadId));
@@ -773,6 +767,8 @@ function rowsForSampling(body) {
   if (Array.isArray(loans) && loans.length) return loans.map((loan) => loan.raw || {});
   return Array.isArray(body && body.samples) ? body.samples : [];
 }
+
+const COLUMN_VALUES_MAX = 10;
 
 function sampleForModel(headers, rows) {
   const columnValues = {};
@@ -787,7 +783,7 @@ function sampleForModel(headers, rows) {
       if (!text) return;
       if (samples.length < 3) next[header] = row[header];
       const bag = columnValues[header];
-      if (bag.length < 5 && !bag.includes(text)) bag.push(text);
+      if (bag.length < COLUMN_VALUES_MAX && !bag.includes(text)) bag.push(text);
     });
     if (Object.keys(next).length && samples.length < 3) samples.push(next);
   }
@@ -795,43 +791,6 @@ function sampleForModel(headers, rows) {
     if (!columnValues[header].length) delete columnValues[header];
   });
   return { samples, columnValues };
-}
-
-const SAMPLE_KEYS = ["Product Code", "productCode", "Facility Type", "facilityType", "GL A/C No.", "glAcct", "Customer Name", "name", "Account Type"];
-
-function productCodeValue(row) {
-  if (!row || typeof row !== "object") return "";
-  const direct = row.productCode != null ? String(row.productCode).trim() : "";
-  if (direct) return direct;
-  const header = row["Product Code"] != null ? String(row["Product Code"]).trim() : "";
-  return header;
-}
-
-function sampleCells(row) {
-  const keys = Object.keys(row || {});
-  const ordered = [...SAMPLE_KEYS.filter((key) => keys.includes(key)), ...keys.filter((key) => !SAMPLE_KEYS.includes(key))];
-  const next = {};
-  ordered.forEach((key) => {
-    if (Object.keys(next).length >= 12) return;
-    const text = cellText(row[key]);
-    if (text) next[key] = text;
-  });
-  return next;
-}
-
-function productGroups(rows) {
-  const groups = new Map();
-  rows.forEach((row) => {
-    const id = productCodeValue(row);
-    if (!groups.has(id)) groups.set(id, { id, count: 0, samples: [] });
-    const group = groups.get(id);
-    group.count += 1;
-    if (group.samples.length < 3) {
-      const sample = sampleCells(row);
-      if (Object.keys(sample).length) group.samples.push(sample);
-    }
-  });
-  return [...groups.values()];
 }
 
 function detectWithModel(groups, products) {
@@ -866,7 +825,9 @@ export async function detectMeasureProducts(body) {
   if (version && products.some((item) => item.rule_version === version)) {
     products = products.filter((item) => item.rule_version === version);
   }
-  const groups = productGroups(rowsForSampling(body));
+  const groups = productGroups(rowsForSampling(body), {
+    seed: String((body && body.uploadId) || (body && body.version) || "")
+  });
   const catalog = products.map((item) => ({ code: item.code, label: item.label, description: item.description }));
   if (!groups.length || !catalog.length) return { groups: [], modelError: catalog.length ? "" : "没有已配置的产品" };
   try {
@@ -1469,7 +1430,7 @@ export function annotatedUpload(uploadId) {
 
 const CLASSIFY_WEIGHT = `
 import json, sys
-from agent.subagents.weight.program import run
+from agent.steps.weight.program import run
 done = run({"source": sys.argv[1], "dest": sys.argv[2]})
 result = done.get("result") or {}
 rows = []

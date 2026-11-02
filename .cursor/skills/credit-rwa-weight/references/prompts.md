@@ -1,12 +1,12 @@
 # 模型提示词
 
-调用在 `agent/subagents/weight/calc/model.py` 的 `_complete`。模型默认 `qwen-plus`，地址默认 `https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions`，`temperature` 为 0。密钥读仓库根目录 `.env` 的 `DASHSCOPE_API_KEY`，没有则读 `MODEL_API_KEY`。`MODEL_BASE_URL`、`MODEL_NAME` 可以覆盖默认值。
+能力通过 `agent/llm/agents/capability.py` 的 `Capability` 建一张 DeepAgents 图；底层模型工厂在 `agent/llm/client.py` 的 `complete`。模型默认 `qwen-plus`，地址默认 `https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions`，`temperature` 为 0。密钥读仓库根目录 `.env` 的 `DASHSCOPE_API_KEY`，没有则读 `MODEL_API_KEY`。`MODEL_BASE_URL`、`MODEL_NAME` 可以覆盖默认值。
 
-返回正文用 `_extract_json` 取出一个 JSON 对象。系统提示的原文在 `agent/skills/measure-*/SKILL.md`，函数只负责读这份文件。改某一步的说法时改对应技能，不用再改 Python 字符串。
+返回正文用 `agent/llm/capabilities/jsonx.py` 的 `extract_json` 取出一个 JSON 对象。系统提示的原文在 `agent/llm/skills/measure-*/SKILL.md`，函数只负责读这份文件。改某一步的说法时改对应技能，不用再改 Python 字符串。
 
 ## 1. 选哪些表逐笔算
 
-函数：`agent/subagents/weight/calc/paper_calc.py` 的 `_plan_system`。技能：`agent/skills/measure-sheets/SKILL.md`。调用：`plan_workbook_sheets`。底稿页走 `agent/skills/measure-sheets-paper/SKILL.md`。
+函数：`agent/llm/capabilities/sheet_plan.py` 的 `plan`。技能：`agent/llm/skills/measure-sheets/SKILL.md`。调用：两个 `plan_workbook_sheets` 适配器。底稿页走 `agent/llm/skills/measure-sheets-paper/SKILL.md`。
 
 用户消息是 `{"sheets":[{"sheet":"表名","rows":[{"row":行号,"cells":["单元格",...]}]}]}`。每张表最多看前 30 行、前 40 列。先取前 8 个非空单元格，再把同一行里像金额的表头（余额、敞口、Equiv to、额度）补进样例，最多再补 4 个。挑出至少 4 个非空单元格的行，最多 3 行，每个单元格截到 28 字。
 
@@ -28,7 +28,7 @@
 
 ## 2. 表头对到分类字段
 
-函数：`agent/subagents/weight/calc/model.py` 的 `_complete_system`。技能：`agent/skills/measure-mapping/SKILL.md`。调用：`suggest_complete_map`，由 `agent/subagents/weight/calc/paper_calc.py` 的 `_map_sheet` 使用。底稿页的 `_complete_system` 读同一份技能。
+函数：`agent/llm/capabilities/field_mapping.py` 的 `complete_map`。技能：`agent/llm/skills/measure-mapping/SKILL.md`。调用：`suggest_complete_map`，由两个适配器的 `_map_sheet` 使用。
 
 只在 `_strong_bind` 没有对上账面余额、并且这张表有数据行时才调用。已知底稿通常走固定列名，不会进这里。
 
@@ -56,11 +56,11 @@
 - `const` 原样收下，不在这里核对是不是 `options` 里的 code。
 - `extract` 最多留 240 字，不参与计算。
 
-`paper_calc._repair_mapping` 写了纠正规则，但当前没有任何地方调用它。已知表的纠正在 `_strong_bind`。
+`paper/engine.py` 的 `_repair_mapping` 写了纠正规则，但当前没有任何地方调用它。已知表的纠正在 `_strong_bind`。
 
 ## 3. 规则停住后补条件
 
-函数：`agent/subagents/weight/calc/paper_calc.py` 的 `_open_weight_system`。技能：`agent/skills/measure-open-weight/SKILL.md`。调用：`_ask_open_weights`，由 `_fill_open_weights` 使用。底稿页读同一份技能。
+函数：`agent/llm/capabilities/open_weight.py` 的 `choose`。技能：`agent/llm/skills/measure-open-weight/SKILL.md`。调用：两个适配器的 `_ask_open_weights`，由 `_fill_open_weights` 使用。
 
 只处理权重还不是数字、并且 `_open_kind` 认得出种类的行。种类和允许的 `choice`：
 

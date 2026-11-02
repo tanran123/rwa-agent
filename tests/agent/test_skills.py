@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from agent.runtime.skills import SKILLS_DIR, read_skill, skill_body, skill_text, split_front_matter
-from agent.skills import DIALOGUE
+from agent.llm.skills import SKILLS_DIR, read_skill, skill_body, skill_text, split_front_matter
+from agent.llm.skills import DIALOGUE
 
 
 def skill_names() -> list[str]:

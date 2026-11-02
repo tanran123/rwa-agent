@@ -1,10 +1,10 @@
 def test_agent_modules_import() -> None:
-    import agent.calculation.pipeline  # noqa: F401
-    import agent.platform.graph  # noqa: F401
-    import agent.subagents.hqla  # noqa: F401
+    import agent.core.pipeline.pipeline  # noqa: F401
+    import agent.llm.graph  # noqa: F401
+    import agent.core.hqla  # noqa: F401
     import agent.tools  # noqa: F401
     import agent.tree.edit  # noqa: F401
-    from agent.runtime import CALCULATION, LATEST, checkpointer, store
+    from agent.storage import CALCULATION, LATEST, checkpointer, store
 
     assert CALCULATION == ("rwa", "calculation")
     assert LATEST == "latest"

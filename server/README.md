@@ -13,7 +13,7 @@ Koa 2，前缀 `/api`，默认 `http://127.0.0.1:8780`。数据在 MySQL，连�
 | `src/exposureDocs.js` | 从 `exposure_document` 读页签分类（`seq > 0`）：通用、贷款、债券，以及后来新增的页签。每一份跟 `rule_version` 上的版本编号走。确认写入也写回这张表。页签可以删除，标签为「通用」的那一页不能删。某个版本还没有分类时，`POST /exposure-tree/provision` 从同一地区已有的分类复制一份。每个产品的决策树对话仍在仓库根目录 `决策树对话.json`。 |
 | `src/db.js` | 读取 `.env`，导出 `query(sql, params)`。 |
 | `src/measure.js` | `GET /measure`、`POST /measure/workbook`、`GET /measure/workbook.xlsx`、`POST /measure/runs` 和审计底稿。模拟债项在 `data/`，上传的 xlsx 用本机 Python 的 openpyxl 读。计量在 `lib/`。分类规则读 `exposure_document` 的 `id = 1`，EAD 读 `ead_product_config`、`ead_product_rule`，缓释读 `crm_product_config`、`crm_slot_column`、`crm_eligible_type`。跑完写入 `measure_batch.rules_json` 和 `measure_line.detail`。上传的工作簿会在原表每一行后面写上风险权重、EAD、RWA 和计算过程，`GET /measure/workbook.xlsx?uploadId=` 下载这份写回的文件。 |
-| `src/paper.js` | `GET /working-paper` 和上传样例。底稿读 `agent/subagents/weight/paper/底稿模型计算.json`，样例读 `data/data.js`。 |
+| `src/paper.js` | `GET /working-paper` 和上传样例。底稿读 `agent/steps/weight/paper/底稿模型计算.json`，样例读 `data/data.js`。 |
 | `src/eadConfig.js` | `GET`/`PUT /ead-config` 和 `POST /ead-formula/check`。读写 `ead_product_config`、`ead_product_rule`，产品清单查 `product_type`，公式校验用 `lib/formula.cjs`。 |
 | `src/crmConfig.js` | `GET`/`PUT /crm-config`。读写 `crm_product_config`、`crm_slot_column`、`crm_eligible_type`，产品清单查 `product_type`，可绑定的源表列从 `product_field` 的 `source_field` 推导（计算字段和占位符不算）。 |
 | `lib/formula.cjs` | EAD 公式的词法、语法分析、校验和求值。页面和计算共用这一份。 |
@@ -42,7 +42,7 @@ Koa 2，前缀 `/api`，默认 `http://127.0.0.1:8780`。数据在 MySQL，连�
 | POST | `/ead-trial` | 按配置的公式试算一条规则。 | 
 | GET、POST、PUT、DELETE | `/ccf` | 转换系数。另有 `POST /ccf/batch-delete`。 |
 | GET、POST | `/batches`、`/batches/:id`、`/batches/:id/lines` | 计量批次、一次已保存的计量过程、逐笔明细。批次名称是一次执行的主键，同名不能再写入。`POST /measure/runs` 也按这个名称落库。 |
-| GET、POST | `/measure`、`/measure/runs`、`/measure/workbook`、`/measure/workbook.xlsx`、`/measure/apply`、`/measure/map`、`/measure/products`、`/measure/classify` | 模拟计量，或读取上传的 xlsx。`POST /measure/products` 把每一组产品代码和抽样交给模型，从已配置产品里选。`POST /measure/apply` 按向导里选定的产品、表头列和分类文档重算。`POST /measure/map` 先按产品标准字段对表头，对不上的再交给模型，并带上各列抽样值和 RWA 用途说明。`POST /measure/classify` 把上传的工作簿交给 `agent/subagents/weight`，按权重法风险暴露分类逐笔取暴露和权重。`POST /measure/runs` 把这次用的分类、EAD、缓释和 RWA 写入批次。带 `uploadId` 时写入的是刚上传的工作簿，带 `choiceId` 时写入的是刚重算的模拟结果。`GET /measure/workbook.xlsx?uploadId=` 下载已经写回风险权重、EAD、RWA 和计算过程的那份上传工作簿。 |
+| GET、POST | `/measure`、`/measure/runs`、`/measure/workbook`、`/measure/workbook.xlsx`、`/measure/apply`、`/measure/map`、`/measure/products`、`/measure/classify` | 模拟计量，或读取上传的 xlsx。`POST /measure/products` 把每一组产品代码和抽样交给模型，从已配置产品里选。每组按 uploadId 做种子随机抽 5–10 笔（默认 8），每笔带全部非空字段；同一份上传重复执行抽到同一批样例。`POST /measure/apply` 按向导里选定的产品、表头列和分类文档重算。`POST /measure/map` 先按产品标准字段对表头，对不上的再交给模型，并带上各列抽样值和 RWA 用途说明。`POST /measure/classify` 把上传的工作簿交给 `agent/steps/weight`，按权重法风险暴露分类逐笔取暴露和权重。`POST /measure/runs` 把这次用的分类、EAD、缓释和 RWA 写入批次。带 `uploadId` 时写入的是刚上传的工作簿，带 `choiceId` 时写入的是刚重算的模拟结果。`GET /measure/workbook.xlsx?uploadId=` 下载已经写回风险权重、EAD、RWA 和计算过程的那份上传工作簿。 |
 | GET | `/working-paper`、`/upload-samples`、`/audit.xlsx` | 信用风险底稿缓存、上传样例、审计工作簿。 |
 | GET | `/assistant` | 规则助手历史。 |
 | POST | `/agent/chat` | 原样转发到 Flask `8766`。这里不实现智能体。决策树对话的提议也转发到 Flask，写入留在 `/exposure-tree/save`。 |
@@ -68,7 +68,7 @@ Koa 2，前缀 `/api`，默认 `http://127.0.0.1:8780`。数据在 MySQL，连�
 
 日期用文件顶部的 `date()`，JSON 列用 `json()`。参数用 `query(sql, [占位值])`。`query` 定义在 `src/db.js`，不要再创建连接池。
 
-`/measure` 的笔数和金额由 `src/measure.js` 算出来。上传工作簿时，没有指定工作表就读入所有带金额列的明细表。`term-Loan`、`Mortgage`、`BILLS` 和名称里带「贷款」的表对应对公贷款或个人贷款，`Bonds` 和名称里带「债券」「债权」的表对应债券投资。分类文档按产品名称对应 `exposure_document` 里 `seq > 0` 的页签：产品名称包含页签名时用最长的那一页，对不上时用页签「通用」。分类前，表头 `Cust Type`、`INDUSTRY`、`RATING` 按权重计算里已有的对应写入交易对手和发行人评级。债券分类文档有 `industry`、`credit_quality_grade` 时，`INDUSTRY` 写入行业，`RATING GRADES` 写入信用质量等级。金额列 `Value Balance(MOP)`、`Equiv to MOP`、`O/S BAL_MOP` 写入余额。同一张表上没有的列留空，不拿另一张表的空表头挡住后面的列。不要在路由或页面里写死另一套合计。`/working-paper` 只读 `agent/subagents/weight/paper/底稿模型计算.json`，不要在请求里重算。
+`/measure` 的笔数和金额由 `src/measure.js` 算出来。上传工作簿时，没有指定工作表就读入所有带金额列的明细表。`term-Loan`、`Mortgage`、`BILLS` 和名称里带「贷款」的表对应对公贷款或个人贷款，`Bonds` 和名称里带「债券」「债权」的表对应债券投资。分类文档按产品名称对应 `exposure_document` 里 `seq > 0` 的页签：产品名称包含页签名时用最长的那一页，对不上时用页签「通用」。分类前，表头 `Cust Type`、`INDUSTRY`、`RATING` 按权重计算里已有的对应写入交易对手和发行人评级。债券分类文档有 `industry`、`credit_quality_grade` 时，`INDUSTRY` 写入行业，`RATING GRADES` 写入信用质量等级。金额列 `Value Balance(MOP)`、`Equiv to MOP`、`O/S BAL_MOP` 写入余额。同一张表上没有的列留空，不拿另一张表的空表头挡住后面的列。不要在路由或页面里写死另一套合计。`/working-paper` 只读 `agent/steps/weight/paper/底稿模型计算.json`，不要在请求里重算。
 
 ## 加一个接口
 

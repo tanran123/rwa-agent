@@ -1,8 +1,8 @@
 import inspect
 import json
 
-from agent.platform.graph import agent
-from agent.runtime.skills import read_skill
+from agent.llm.graph import agent
+from agent.llm.skills import read_skill
 from agent.tools import tools
 from agent.tools.domain import (
     exposure_class_summary,

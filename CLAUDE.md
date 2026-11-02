@@ -42,12 +42,12 @@ pm2 logs rwa-agent
 pm2 restart rwa-agent         # 改过任何 Python 后必须执行
 ```
 
-`pm2 restart rwa-agent` 是硬性的：`agent/platform/graph.py` 的图在首次调用时构建，不重启就还是旧的。
+`pm2 restart rwa-agent` 是硬性的：`agent/llm/graph.py` 的图在首次调用时构建，不重启就还是旧的。
 
 其它：
 
 ```bash
-python -m agent.calculation.pipeline 工作簿.xlsx [结果.xlsx]   # 整表计算，在仓库根目录执行
+python -m agent.core.pipeline.pipeline 工作簿.xlsx [结果.xlsx]   # 整表计算，在仓库根目录执行
 node tools/build-seed.mjs                          # 重新生成 sql/002_seed.sql（别手改大段 002_seed.sql）
 ```
 
@@ -64,13 +64,13 @@ node tools/build-seed.mjs                          # 重新生成 sql/002_seed.s
 浏览器的两条路径：
 
 - 页面按钮 → `POST /api/...` → Vite 代理 → Koa → MySQL 或读文件。
-- 右下角 AI → `POST /api/agent/chat` → Koa **原样转发**到 `http://127.0.0.1:8766` → Flask 调 `agent.platform.graph.reply`。规则助手是另一条：`POST /api/rules/chat`，问的是微信知识库，不是计算子智能体。Koa 侧不实现智能体（见 `server/src/index.js` 的两个转发路由）。
+- 右下角 AI → `POST /api/agent/chat` → Koa **原样转发**到 `http://127.0.0.1:8766` → Flask 调 `agent.llm.graph.reply`。规则助手是另一条：`POST /api/rules/chat`，问的是微信知识库，不是计算子智能体。Koa 侧不实现智能体（见 `server/src/index.js` 的两个转发路由）。
 
 ## 四层结构
 
 - `client/` — Vue 3 + Vue Router + Vuex + axios。`src/router/index.js` 的路由和 `src/utils/nav.js` 的菜单必须一致；`meta.sections`/`PARENT` 表达「页内页签不是新菜单项」。所有页面包在 `App.vue` 里。新页面以 `src/view/rule/ClausesView.vue` 为模板（`useContext()`、`AsyncView`、`panel`、`tbl`）。页面只从 `src/api/*.js` 要数据，不在 `.vue` 里直接写 `axios`/`fetch`。
 - `server/` — Koa 2，前缀 `/api`。库列是下划线，给页面的键是驼峰，**转换只发生在路由函数里**（参考 `GET /products` 的映射）。日期用文件顶部的 `date()`，JSON 列用 `json()`，查询一律 `query(sql, [占位值])`，不要拼接 SQL、不要新建连接池。计算权重/跑工作簿/派子智能体都不在这里。
-- `agent/` — deepagents 计算智能体。见下节。
+- `agent/` — deepagents 计算智能体。内部分两层：`agent/core/` 只放纯 Python（禁止 import `agent.llm`），`agent/llm/` 是唯一能调模型的地方（每个能力一个 DeepAgents 图）。见下节。
 - `knowledge/` — 规则库。`local/` 是仓库里的规则包（Markdown + `library.py`），`weknora/` 是微信知识库对话。注意：**信用风险的分类 JSON 不在 `knowledge/`**，在 `agent/subagents/weight/knowledge/`。
 
 密钥只有两处，都在 `.env` 里，且都不提交：仓库根目录 `.env` 放 `DASHSCOPE_API_KEY`、`WEKNORA_*`；`server/.env` 放 MySQL 变量。
@@ -79,25 +79,25 @@ node tools/build-seed.mjs                          # 重新生成 sql/002_seed.s
 
 这几块不能混：
 
-- **平台**（`agent/platform/`、`agent/composition/`）：接收页面的话，默认用 DeepAgents 的 `create_deep_agent` 调用模型、执行 `agent/tools/`，不自己算数，也不负责打开页面。技能正文按需读取，不再拼进系统提示。`RWA_CHAT_ENGINE=legacy` 回到旧的 `platform/graph.py` 循环。底稿计算、计量向导、结果明细在左侧菜单。
-- **计算**（`agent/calculation/` 和 `agent/subagents/<步>/`）：信用风险按监管顺序计算。`calculation/registry.py` 是唯一的步骤注册表，`calculation/graph.py` 只进入 `ENABLED` 里的名字。
+- **平台**（`agent/llm/`、`agent/llm/session/`）：接收页面的话，默认用 DeepAgents 的 `create_deep_agent` 调用模型、执行 `agent/tools/`，不自己算数，也不负责打开页面。技能正文按需读取，不再拼进系统提示。没有 legacy 回滚。底稿计算、计量向导、结果明细在左侧菜单。
+- **计算**（`agent/core/pipeline/` 和 `agent/subagents/<步>/`）：信用风险按监管顺序计算。`core/pipeline/registry.py` 是唯一的步骤注册表，`core/pipeline/workflow.py` 只进入 `ENABLED` 里的名字。
 - **决策树**（`agent/tree/`）：暴露分类页起草修改，不进对话图。
-- **底稿页 / 市场风险**（`weight/paper/`、`rwa/market/`）：给 Flask 的接口用，**不进流水线名单**。
+- **底稿页 / 市场风险**（`subagents/weight/paper/engine.py`、`core/market/`）：给 Flask 的接口用，**不进流水线名单**。
 
 两个顺序概念必须分清：
 
-- `agent/calculation/registry.py` 的 `ENABLED` 决定**哪些步骤真的会执行**。当前只有 `("weight",)`；`pipeline.STEPS` 是兼容别名。
+- `agent/core/pipeline/registry.py` 的 `ENABLED` 决定**哪些步骤真的会执行**。当前只有 `("weight",)`；`pipeline.STEPS` 是兼容别名。
 - `agent/subagents/__init__.py` 的 `ORDER`（`weight, ccf, crm, rwa`）是**监管计算顺序**，只用于展示和组装子智能体，不能调换。
 
 `ccf`、`crm`、`rwa` 已经建了目录和提示，但 `program.run` 直接设 `stopped`/`stop_reason` 停住。**只有当某步的 `program.run` 能用真实输入跑通后，才把它的名字追加进 `registry.ENABLED`。** 在它进名单之前，不要在对话、工具或前端里补一个系数或金额让流水线继续。
 
-`weight` 是唯一实现了的步骤：`program.run(context)` 把工作簿交给 `calc/paper_calc.py:run_workbook`，把 `annotated`、`trace_file`、`ead_yi`、`rwa_yi` 放回 context（后两个单位是亿元，只从 `run_workbook` 的返回值抄）。留痕写仓库根目录 `output/traces/`，结果工作簿写 `output/workbooks/`（底稿不在权重目录里时写在底稿旁边）。
+`weight` 是唯一实现了的步骤：`program.run(context)` 把工作簿交给 `calc/engine.py:run_workbook`，把 `annotated`、`trace_file`、`ead_yi`、`rwa_yi` 放回 context（后两个单位是亿元，只从 `run_workbook` 的返回值抄）。留痕写仓库根目录 `output/traces/`，结果工作簿写 `output/workbooks/`（底稿不在权重目录里时写在底稿旁边）。
 
 `context` 至少含 `source`（工作簿路径）。缺路径或必需字段时设 `stopped`/`stop_reason` 后返回，不要估算敞口或 RWA。
 
 ### 提示词在文件里，不在代码里
 
-子智能体的说明和提示词写在 `agent/prompts/agents/<名字>/AGENTS.md`；`__init__.py` 只放工具函数，DeepAgents 的 `SubAgent` 规格在 `agent/composition/subagents.py`，通过 `agent/prompts/layout.py` 的 `subagent_prompt` 读取这份文件。**不要把提示词写回 Python 字符串。** 加一步的完整步骤见 `agent/README.md` 的「加一步」。
+子智能体的说明和提示词写在 `agent/llm/prompts/agents/<名字>/AGENTS.md`；工具统一放 `agent/tools/steps.py`，DeepAgents 的 `SubAgent` 规格在 `agent/llm/agents/subagents.py`，通过 `agent/llm/prompts/layout.py` 的 `subagent_prompt` 读取这份文件。**不要把提示词写回 Python 字符串。** 加一步的完整步骤见 `agent/README.md` 的「加一步」。
 
 ### 单一数据源
 

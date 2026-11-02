@@ -1,10 +1,10 @@
 # 计算留痕
 
-文件：`agent/subagents/weight/calc/calc_trace.py`。留痕写在仓库根目录 `output/traces/`。`save_trace_file` 在那里写两份文件，文件名是工作簿主文件名加 `-计算留痕`。主文件名里除字母、数字、中文、点、连字符以外的字符换成下划线。
+文件：`agent/core/weight/trace.py`。留痕写在仓库根目录 `output/traces/`。`save_trace_file` 在那里写两份文件，文件名是工作簿主文件名加 `-计算留痕`。主文件名里除字母、数字、中文、点、连字符以外的字符换成下划线。
 
 ## 一行里的步骤
 
-`agent/subagents/weight/calc/paper_calc.py` 的 `_calculate_sheet` 为每一笔先放事实，再放分类，再放敞口和风险加权资产。
+`agent/steps/weight/calc/engine.py` 的 `_calculate_sheet` 为每一笔先放事实，再放分类，再放敞口和风险加权资产。
 
 1. 阶段「取值」：事实里不以 `_` 开头、且不是空的每一项各一步。`field` 和 `actual` 都是该字段的值。
 2. 阶段「分类」：`condition_steps` 把走到的每个节点的 `all` / `any` 摊平。每条条件一步，带规则名、字段、比较、规则值、实际值、是否命中。节点没有条件时写一步说明：要么是同层其余都未命中所以落入这一档，要么是进入这一档。
