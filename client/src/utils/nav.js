@@ -6,45 +6,45 @@ export const NAV = [
     items: [
       { label: "监管规则版本", path: "/versions" },
       { label: "机构", path: "/orgs" },
-      { label: "监管条款库", path: "/clauses" },
-      { label: "产品标准字段", path: "/fields" },
-      { label: "暴露分类规则", path: "/tree" },
-      { label: "EAD 计算规则", path: "/ead" },
-      { label: "信用风险缓释", path: "/crm-config" }
+      { label: "监管条款库", path: "/clauses" }
     ]
   },
   {
     id: "run",
-    label: "计量执行",
+    label: "任务运行",
     items: [
+      { label: "任务工作台", path: "/tasks" },
       { label: "计量向导", path: "/wizard" },
       { label: "底稿计算", path: "/engine" },
       { label: "结果明细", path: "/results" }
-    ]
-  },
-  {
-    id: "hqla",
-    label: "流动性 HQLA 测试",
-    items: [
-      { label: "HQLA 计算任务", path: "/hqla" }
     ]
   }
 ];
 
 const PARENT = {
   "/params": "/versions",
-  "/mappings": "/fields",
-  "/exposure": "/generic",
-  "/crm": "/generic",
-  "/weights": "/tree",
-  "/ead-on": "/ead",
-  "/ead-off": "/ead",
+  "/mappings": "/versions",
+  "/fields": "/versions",
+  "/exposure": "/versions",
+  "/generic": "/versions",
+  "/crm": "/versions",
+  "/crm-config": "/versions",
+  "/weights": "/versions",
+  "/product-rules": "/versions",
+  "/assistant": "/versions",
+  "/ead": "/versions",
+  "/ead-on": "/versions",
+  "/ead-off": "/versions",
+  "/ccf": "/versions",
   "/batches": "/results",
   "/export": "/results"
 };
 
 export function menuPath(path) {
-  if (String(path || "").indexOf("/tree") === 0) return "/tree";
-  if (String(path || "").indexOf("/hqla/") === 0) return "/hqla";
-  return PARENT[path] || path;
+  const p = String(path || "");
+  if (p.indexOf("/tree") === 0) return "/versions";
+  if (p.indexOf("/tasks/") === 0) return "/tasks";
+  if (p.indexOf("/hqla") === 0) return "/tasks";
+  if (p.indexOf("/versions") === 0) return "/versions";
+  return PARENT[p] || p;
 }

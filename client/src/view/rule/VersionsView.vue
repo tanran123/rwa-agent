@@ -1,7 +1,6 @@
 <script setup>
 import { ref } from "vue";
 import { useRouter } from "vue-router";
-import { createExposureVersion } from "@/api/exposure";
 import { createRuleVersion, deleteRuleVersion, deleteRuleVersions, fetchRuleVersions, saveRuleVersion } from "@/api/rule";
 import { useContext } from "@/composables/useContext";
 import { runBatch, useBatchNote, usePick } from "@/composables/usePick";
@@ -12,7 +11,6 @@ import { askConfirm } from "@/utils/confirm";
 
 const { session } = useContext();
 const router = useRouter();
-const creatingExposure = ref("");
 const status = ref("");
 const q = ref("");
 const form = ref(null);
@@ -82,7 +80,8 @@ function blank() {
 
 function create() {
   error.value = "";
-  form.value = blank();
+  form.value = null;
+  router.push({ name: "version-new-workbench" });
 }
 
 function edit(row) {
@@ -149,10 +148,12 @@ async function save() {
   saving.value = true;
   try {
     const body = payload(form.value);
-    if (form.value.creating) await createRuleVersion(body);
-    else await saveRuleVersion(form.value.id, body);
+    const saved = form.value.creating
+      ? await createRuleVersion(body)
+      : await saveRuleVersion(form.value.id, body);
     form.value = null;
     await refresh();
+    if (saved && saved.id) openWorkbench(saved);
   } catch (err) {
     error.value = err.message;
   } finally {
@@ -185,30 +186,11 @@ async function removeSelected(rows) {
   if (result) await refresh();
 }
 
-function openVersion(row) {
+function openWorkbench(row) {
+  if (!row) return;
   session.versionId = row.id;
   session.jurisdiction = row.jurisdiction;
-}
-
-async function createExposure(row) {
-  if (!row || creatingExposure.value) return;
-  const yes = await askConfirm("为版本「" + row.version + "」创建风险暴露分类规则。会从已有分类复制一份，再在这一版上改。", {
-    title: "创建风险暴露分类规则",
-    confirmText: "创建"
-  });
-  if (!yes) return;
-  creatingExposure.value = row.id;
-  batch.clear();
-  try {
-    await createExposureVersion(row.version);
-    session.versionId = row.id;
-    session.jurisdiction = row.jurisdiction;
-    router.push("/tree");
-  } catch (err) {
-    batch.fail(err.message || "没有创建");
-  } finally {
-    creatingExposure.value = "";
-  }
+  router.push({ name: "version-workbench", params: { id: row.id } });
 }
 </script>
 
@@ -244,7 +226,7 @@ async function createExposure(row) {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="row in shown(data)" :key="row.id" class="clickable" @click="edit(row)">
+              <tr v-for="row in shown(data)" :key="row.id" class="clickable" @click="openWorkbench(row)">
                 <td class="pick" @click.stop><input type="checkbox" :checked="pick.on(row.id)" @change="pick.toggle(row.id)" /></td>
                 <td>{{ jurLabel(row.jurisdiction) }}</td>
                 <td class="mono">{{ row.version }}</td>
@@ -255,8 +237,8 @@ async function createExposure(row) {
                 <td><span class="tag" :class="tones[row.status]">{{ labels[row.status] || row.status }}</span></td>
                 <td>{{ row.author }}</td>
                 <td>
-                  <button type="button" class="btn sm" @click.stop="openVersion(row)">打开</button>
-                  <button v-if="!row.exposureCount" type="button" class="btn sm" :disabled="creatingExposure === row.id" @click.stop="createExposure(row)">创建分类</button>
+                  <button type="button" class="btn sm primary" @click.stop="openWorkbench(row)">维护</button>
+                  <button type="button" class="btn sm" @click.stop="edit(row)">编辑</button>
                 </td>
               </tr>
             </tbody>

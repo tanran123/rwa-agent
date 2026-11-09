@@ -1,16 +1,21 @@
 <script setup>
 import { computed, onMounted, ref, watch, watchEffect } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { applyMeasureChoices, classifyMeasure, detectMeasureProducts, fetchMeasure, mapMeasureFields, saveMeasureRun, uploadWorkbook } from "@/api/batch";
+import { archiveSubtask, fetchTask } from "@/api/tasks";
 import { fetchProducts } from "@/api/product";
 import { useContext } from "@/composables/useContext";
 import { askConfirm } from "@/utils/confirm";
 
 const STATUS = { draft: "草稿", reviewing: "审核中", published: "已发布", superseded: "已被取代", disabled: "已停用" };
+const route = useRoute();
 const router = useRouter();
 const { session, currentVersion, scopeVersion, versionOptions, setOrg, setJurisdiction } = useContext();
 const pack = ref(null);
 const error = ref("");
+const taskCtx = ref(null);
+const taskError = ref("");
+const archiveError = ref("");
 const step = ref(1);
 const done = ref({});
 const imported = ref(null);
@@ -142,6 +147,40 @@ function onBaseDate(value) {
   session.baseDate = value;
   if (!nameTouched.value) batchName.value = suggestedName();
 }
+function applyTaskScope() {
+  if (!taskCtx.value) return;
+  const { task, sub } = taskCtx.value;
+  session.jurisdiction = task.jurisdiction;
+  const version = session.versions.find((item) => item.jurisdiction === task.jurisdiction && item.version === task.version);
+  if (version) session.versionId = version.id;
+  else taskError.value = "主任务指定的监管规则版本「" + task.version + "」不在当前配置里。";
+  const org = session.orgs.find((item) => item.name === task.institution);
+  if (org) session.orgId = org.id;
+  else institutionText.value = task.institution;
+  session.baseDate = task.baseDate;
+  if (!nameTouched.value) {
+    batchName.value = sub.name;
+    nameTouched.value = true;
+  }
+}
+async function loadTaskContext() {
+  const taskId = route.query.task ? String(route.query.task) : "";
+  const subId = route.query.sub ? String(route.query.sub) : "";
+  if (!taskId || !subId) return;
+  try {
+    const task = await fetchTask(taskId);
+    const sub = (task.subs || []).find((item) => item.id === subId);
+    if (!sub) {
+      taskError.value = "主任务里没有这个子任务。";
+      return;
+    }
+    taskCtx.value = { task, sub };
+    applyTaskScope();
+  } catch (err) {
+    taskError.value = err.message || "主任务没有读到";
+  }
+}
+watch(() => [session.ready, session.versions.length, session.orgs.length], applyTaskScope);
 function resetMemory() {
   autoProduct.value = {};
   autoColumn.value = {};
@@ -359,6 +398,7 @@ async function finish(n) {
     if (saving.value) return;
     saving.value = true;
     saveError.value = "";
+    archiveError.value = "";
     try {
       const version = currentVersion.value || {};
       const saved = await saveMeasureRun({
@@ -371,6 +411,15 @@ async function finish(n) {
         choiceId: choiceId.value
       });
       savedId.value = saved.id;
+      if (taskCtx.value) {
+        try {
+          const detail = await archiveSubtask(taskCtx.value.task.id, taskCtx.value.sub.id, saved.id);
+          const sub = (detail.subs || []).find((item) => item.id === taskCtx.value.sub.id);
+          if (sub) taskCtx.value = { ...taskCtx.value, sub };
+        } catch (err) {
+          archiveError.value = err.message || "归档到子任务失败";
+        }
+      }
       done.value = { ...done.value, 8: true };
       step.value = 9;
     } catch (err) {
@@ -382,6 +431,18 @@ async function finish(n) {
   }
   done.value = { ...done.value, [n]: true };
   step.value = Math.min(n + 1, 9);
+}
+
+async function retryArchive() {
+  if (!taskCtx.value || !savedId.value) return;
+  archiveError.value = "";
+  try {
+    const detail = await archiveSubtask(taskCtx.value.task.id, taskCtx.value.sub.id, savedId.value);
+    const sub = (detail.subs || []).find((item) => item.id === taskCtx.value.sub.id);
+    if (sub) taskCtx.value = { ...taskCtx.value, sub };
+  } catch (err) {
+    archiveError.value = err.message || "归档到子任务失败";
+  }
 }
 
 function fileToBase64(file) {
@@ -506,6 +567,7 @@ watch(() => [session.orgId, session.baseDate, session.orgs.length], () => {
 });
 onMounted(async () => {
   batchName.value = suggestedName();
+  await loadTaskContext();
   try {
     const [book, list] = await Promise.all([fetchMeasure(), fetchProducts()]);
     configuredProducts.value = (list || []).filter((item) => item.ruleVersion === scopeVersion.value);
@@ -520,6 +582,11 @@ onMounted(async () => {
   <div v-if="error" class="notice danger"><span class="ni">!</span><div>{{ error }}</div></div>
   <div v-else-if="!pack" class="loading"><span class="spin"></span>正在读取</div>
   <template v-else>
+    <div v-if="taskCtx" class="notice info">
+      <span class="ni">i</span>
+      <div>本次向导由主任务「{{ taskCtx.task.name }}」的子任务「{{ taskCtx.sub.name }}」触发。监管规则版本 {{ taskCtx.task.version }}、机构 {{ taskCtx.task.institution }} 继承主任务，本次不能修改。计量写入数据库后自动归档到这个子任务。</div>
+    </div>
+    <div v-if="taskError" class="notice danger"><span class="ni">!</span><div>{{ taskError }}</div></div>
     <div class="panel" style="margin-bottom: 12px">
       <div class="panel-head">
         <h3>计量向导</h3>
@@ -542,25 +609,25 @@ onMounted(async () => {
       <div class="panel-body">
         <div class="grid c2">
           <div class="field"><label>司法管辖区</label>
-            <select v-if="session.jurisdictions.length" :value="session.jurisdiction" @change="onJurisdiction($event.target.value)">
+            <select v-if="session.jurisdictions.length" :value="session.jurisdiction" :disabled="!!taskCtx" @change="onJurisdiction($event.target.value)">
               <option v-for="item in session.jurisdictions" :key="item.code" :value="item.code">{{ item.label }}</option>
             </select>
-            <input v-else v-model="session.jurisdiction" />
+            <input v-else v-model="session.jurisdiction" :disabled="!!taskCtx" />
           </div>
           <div class="field"><label>监管规则版本</label>
-            <select v-if="versionOptions.length" v-model="session.versionId">
+            <select v-if="versionOptions.length" v-model="session.versionId" :disabled="!!taskCtx">
               <option v-for="item in versionOptions" :key="item.id" :value="item.id">{{ versionText(item) }}</option>
             </select>
             <input v-else :value="(currentVersion || {}).version || ''" readonly />
           </div>
           <div class="field"><label>计量基准日</label>
-            <input :value="session.baseDate" type="date" @input="onBaseDate($event.target.value)" />
+            <input :value="session.baseDate" type="date" :disabled="!!taskCtx" @input="onBaseDate($event.target.value)" />
           </div>
           <div class="field"><label>银行或机构</label>
-            <select v-if="orgsHere.length" :value="session.orgId" @change="onOrg($event.target.value)">
+            <select v-if="orgsHere.length" :value="session.orgId" :disabled="!!taskCtx" @change="onOrg($event.target.value)">
               <option v-for="item in orgsHere" :key="item.id" :value="item.id">{{ item.name }}</option>
             </select>
-            <input v-else :value="institutionText" @input="institutionText = $event.target.value" />
+            <input v-else :value="institutionText" :disabled="!!taskCtx" @input="institutionText = $event.target.value" />
           </div>
           <div class="field" style="grid-column: 1 / -1">
             <label>计量批次名称</label>
@@ -908,6 +975,13 @@ onMounted(async () => {
       <div class="panel-head"><h3>第九步：查看计量结果及审计证据</h3></div>
       <div class="panel-body">
         <div class="notice ok"><span class="ni">✓</span><div>批次「{{ batchName }}」已写入结果明细。分类、EAD、缓释和 RWA 都记在这个名称下。<template v-if="uploadId && pack.workbookReady"> 上传的工作簿每一行后面也写了风险权重、EAD、RWA 和计算过程。</template></div></div>
+        <div v-if="taskCtx && !archiveError" class="notice ok"><span class="ni">✓</span><div>本次计算已归档到主任务「{{ taskCtx.task.name }}」的子任务「{{ taskCtx.sub.name }}」。</div></div>
+        <div v-if="archiveError" class="notice danger">
+          <span class="ni">!</span>
+          <div>批次已写入，但归档到子任务失败：{{ archiveError }}
+            <button type="button" class="btn sm" @click="retryArchive">重试归档</button>
+          </div>
+        </div>
         <div class="grid c4">
           <div class="kpi accent"><div class="k-label">债项</div><div class="k-value">{{ pack.summary.total }}</div></div>
           <div class="kpi"><div class="k-label">EAD</div><div class="k-value">{{ shortMoney(pack.summary.ead) }}</div></div>
@@ -916,6 +990,7 @@ onMounted(async () => {
         </div>
         <div class="btn-group">
           <button type="button" class="btn primary" @click="router.push('/results?batch=' + savedId)">打开结果明细</button>
+          <button v-if="taskCtx" type="button" class="btn" @click="router.push('/tasks/' + taskCtx.task.id)">返回任务详情</button>
           <a v-if="uploadId && pack.workbookReady" class="btn" :href="'/api/measure/workbook.xlsx?uploadId=' + uploadId">下载写回的工作簿</a>
         </div>
       </div>

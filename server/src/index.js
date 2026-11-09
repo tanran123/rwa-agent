@@ -5,6 +5,10 @@ import bodyParser from "koa-bodyparser";
 import { query } from "./db.js";
 import { annotatedUpload, applyMeasureChoices, auditWorkbook, classifyUpload, detectMeasureProducts, mapMeasureFields, measureDemo, readClassifyTrace, readMeasureRun, readUploadedWorkbook, saveMeasureRun } from "./measure.js";
 import { paperView, uploadSamples } from "./paper.js";
+import {
+  archiveSubtask, createRwaTask, createSubtask, deleteRwaTask, deleteSubtask, getRwaTask,
+  listRwaTasks, updateRwaTask, updateSubtask
+} from "./tasks.js";
 import { trialEad } from "./ead.js";
 import { checkEadFormula, readEadConfig, saveEadConfig } from "./eadConfig.js";
 import { readCrmConfig, saveCrmConfig } from "./crmConfig.js";
@@ -624,6 +628,44 @@ router.post("/batches", async (ctx) => {
 
 router.get("/measure", async (ctx) => {
   ctx.body = await measureDemo();
+});
+
+router.get("/rwa-tasks", async (ctx) => {
+  ctx.body = await listRwaTasks();
+});
+
+router.post("/rwa-tasks", async (ctx) => {
+  ctx.status = 201;
+  ctx.body = await createRwaTask(ctx.request.body || {});
+});
+
+router.get("/rwa-tasks/:id", async (ctx) => {
+  ctx.body = await getRwaTask(ctx.params.id);
+});
+
+router.put("/rwa-tasks/:id", async (ctx) => {
+  ctx.body = await updateRwaTask(ctx.params.id, ctx.request.body || {});
+});
+
+router.delete("/rwa-tasks/:id", async (ctx) => {
+  ctx.body = await deleteRwaTask(ctx.params.id);
+});
+
+router.post("/rwa-tasks/:id/subs", async (ctx) => {
+  ctx.status = 201;
+  ctx.body = await createSubtask(ctx.params.id, ctx.request.body || {});
+});
+
+router.put("/rwa-tasks/:id/subs/:subId", async (ctx) => {
+  ctx.body = await updateSubtask(ctx.params.id, ctx.params.subId, ctx.request.body || {});
+});
+
+router.delete("/rwa-tasks/:id/subs/:subId", async (ctx) => {
+  ctx.body = await deleteSubtask(ctx.params.id, ctx.params.subId);
+});
+
+router.post("/rwa-tasks/:id/subs/:subId/archive", async (ctx) => {
+  ctx.body = await archiveSubtask(ctx.params.id, ctx.params.subId, ctx.request.body || {});
 });
 
 router.post("/measure/runs", async (ctx) => {

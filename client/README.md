@@ -11,9 +11,9 @@ Vue 3 + Vue Router + Vuex + axios。开发服务把 `/api` 代理到 `http://127
 | `index.html` | 页面壳。 |
 | `vite.config.js` | 开发端口、`@` 别名、`/api` 代理。 |
 | `src/main.js` | 挂上路由、Vuex 和 axios。 |
-| `src/App.vue` | 顶栏、菜单、机构、地区和版本。客户选择不显示，客户编号仍在 store。所有页面都包在这里。右下角挂 `AgentDock`。 |
-| `src/router/index.js` | 路由。`meta.group` 是菜单分组，`meta.sections` 是页内页签。 |
-| `src/utils/nav.js` | 左侧菜单。页签不单列菜单项，用 `PARENT` 指回父菜单。 |
+| `src/App.vue` | 左侧菜单和页面头。标题「银行Bank return 计算工作平台」。机构、地区、版本、基准日不在顶部筛选，由任务工作台和计量向导各自选择。所有页面都包在这里。右下角挂 `AgentDock`。 |
+| `src/router/index.js` | 路由。`meta.group` 是菜单分组，`meta.sections` 是页内页签，`meta.versionContext` 为真时页面顶部显示 `VersionContext`：完整的版本信息窗口和资本充足率/流动性快捷链接。`/versions/new/workbench` 是新建版本的入口，`/versions/:id/workbench` 是维护工作台，`/tasks/:id` 是任务详情工作台。 |
+| `src/utils/nav.js` | 左侧菜单。`规则配置` 只列监管规则版本、机构和监管条款库，其余配置从版本的「监管规则维护工作台」进入；`任务运行` 是任务工作台。页签不单列菜单项，用 `PARENT` 指回父菜单，配置子页都指回 `/versions`，`/hqla*` 都指回 `/tasks`。 |
 | `src/utils/agentCatalog.js` | 对话带给模型的页面、接口和表单。路径和字段跟路由、`src/api` 里已有的名字一致。 |
 | `src/store/index.js` | 当前客户、机构、地区、规则版本、基准日。数据来自 `GET /api/bootstrap`。 |
 | `src/composables/useContext.js` | 页面读取和修改上面这份上下文。 |
@@ -22,8 +22,8 @@ Vue 3 + Vue Router + Vuex + axios。开发服务把 `/api` 代理到 `http://127
 | `src/api/request.js` | axios 实例。成功时直接返回响应体。 |
 | `src/api/*.js` | 按业务拆开的请求函数。页面只从这里要数据。 |
 | `src/view/` | 一个路由一个 `.vue`。按菜单再分子目录。 |
-| `src/components/` | 多页共用的抽屉、瀑布、加载、智能体停靠栏、确认框、规则表单抽屉 `RuleForm.vue`。确认框由 `utils/confirm.js` 的 `askConfirm` 打开，不使用浏览器默认确认框。 |
-| `src/utils/` | 菜单、规则文案、瀑布布局、对话排版 `agentText.js`。决策图的拖拽跟在 `mermaidStage.js`。 |
+| `src/components/` | 多页共用的抽屉、瀑布、加载、智能体停靠栏、确认框、监管规则版本信息窗口 `VersionContext.vue`、规则表单抽屉 `RuleForm.vue`。确认框由 `utils/confirm.js` 的 `askConfirm` 打开，不使用浏览器默认确认框。 |
+| `src/utils/` | 菜单、规则文案、瀑布布局、版本快捷链接 `ruleLinks.js`、对话排版 `agentText.js`。决策图的拖拽跟在 `mermaidStage.js`。 |
 | `src/assets/main.css` | 引入 `src/assets/css/` 里的样式。新样式加在那些 css 里，或只写在单个组件上。 |
 | `src/assets/mermaid.min.js` | 决策图用的 Mermaid 10.9.1。页面从这里加载，不访问外网。 |
 
@@ -32,11 +32,11 @@ Vue 3 + Vue Router + Vuex + axios。开发服务把 `/api` 代理到 `http://127
 | 目录 | 页面 |
 | --- | --- |
 | `view/DashboardView.vue` | `/` 总览。 |
-| `view/rule/` | 规则配置：版本、机构、参数、条款、标准字段、字段映射。侧栏同一组里还有暴露分类规则、EAD 计算规则、信用风险缓释。机构名单给顶栏和版本的适用机构共用。 |
+| `view/rule/` | 规则配置：版本、机构、参数、条款、标准字段、字段映射。版本列表点「新建」进入 `/versions/new/workbench`，保存后进入监管规则维护工作台（`/versions/:id/workbench`）；点「维护」或行也进入工作台。工作台分资本充足率和流动性两个模块，分别链接到产品标准字段、暴露分类规则、EAD、信用风险缓释等这一版的配置。工作台和所有配置子页顶部是同一个 `VersionContext` 窗口：默认只显示版本编号、规则名称、状态和适用机构，点「展开详细」看司法管辖区、生效日期、规则文件、维护人、发布时间和变更说明；下面一行是资本充足率和流动性的快捷链接，点链接先切到这一版的上下文再跳转。机构名单给版本和任务的适用机构共用。 |
 | `view/exposure/` | 暴露分类。侧栏在「规则配置」下，一项「暴露分类规则」。页签是通用、贷款、债券各自的分类 JSON。 |
 | `view/ead/` | EAD 计算规则配置。左侧产品清单，右侧三步：是否需要配置、表内或表外、公式编辑器。转换系数仍是 `CcfView.vue`。 |
 | `view/crm/` | 信用风险缓释配置。左侧产品清单，右侧三步：是否需要配置、逐笔缓释字段绑定、合格缓释物字典。新建产品的默认状态是无需配置。第 2、3 步各有自己的草稿，「保存绑定」「保存字典」写回配置并立即落库，各自的「重置」丢弃未保存的改动；右上角「保存全部配置」保存整份。 |
-| `view/measure/` | 计量向导、底稿计算、结果明细。侧栏是计量向导、底稿计算和结果明细。第五步按第二步的债项、第三步的产品和第四步确认的字段映射，从数据库取该产品的风险暴露划分规则逐笔解析大类、子类和权重，每笔在 `output/traces/step5/` 生成一份 Markdown 留痕。结果写入计量批次后，结果明细按批次名称列出每一次执行，再展开这一次的逐笔结果。同名批次不能再次执行。向导把风险权重、EAD、RWA 和计算过程写回上传的工作簿，第八步和第九步可以下载。 |
+| `view/measure/` | 任务工作台、任务详情工作台、计量向导、底稿计算、结果明细。侧栏分组是「任务运行」。任务工作台（`/tasks`）没有页签，只列主任务，并统计每个主任务下资本充足率和流动性子任务的个数、已归档数和进度；点行或「进入」到任务详情工作台（`/tasks/:id`）。详情工作台分「资本充足率」和「流动性」两个上下排列的模块，各自新增、改名、删除子任务，子任务只填名称，不填暴露类型。「进入计量」把主任务和资本充足率子任务带进计量向导；流动性子任务到 HQLA 页签执行。第五步按第二步的债项、第三步的产品和第四步确认的字段映射，从数据库取该产品的风险暴露划分规则逐笔解析大类、子类和权重，每笔在 `output/traces/step5/` 生成一份 Markdown 留痕。结果写入计量批次后，结果明细按批次名称列出每一次执行，再展开这一次的逐笔结果。同名批次不能再次执行。向导把风险权重、EAD、RWA 和计算过程写回上传的工作簿，第八步和第九步可以下载；由子任务触发时，写入完成的批次自动归档回该子任务。 |
 
 页内页签不是新菜单。例如「标准字段 / 知识库字段」是 `/fields` 和 `/mappings`，菜单只挂在「产品标准字段」上。对应关系已经写在 `router/index.js` 的 `sections` 和 `nav.js` 的 `PARENT`。
 
@@ -74,6 +74,7 @@ Vue 3 + Vue Router + Vuex + axios。开发服务把 `/api` 代理到 `http://127
 | `api/ead.js` | EAD 计算配置的读取和保存、公式校验、试算、转换系数的读取、增删改和批量删除 |
 | `api/crm.js` | 信用风险缓释配置的读取和保存（`/crm-config`）。`/crm` 的缓释规则列表在 `api/exposure.js`。 |
 | `api/batch.js` | 批次、计量演示、底稿、上传样例、产品识别、字段映射 |
+| `api/tasks.js` | 信用风险 RWA 主任务和子任务：新建、改名、删除、新增/修改/删除子任务（`module` 为 `capital` 或 `liquidity`）、把计量批次归档回资本充足率子任务 |
 | `api/assistant.js` | 规则助手 |
 | `api/agent.js` | `/agent/chat`，只给 `AgentDock` 用。计算确认时多送 `confirm` 真或假 |
 

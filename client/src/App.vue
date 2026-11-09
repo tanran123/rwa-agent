@@ -4,6 +4,7 @@ import { useRoute, useRouter } from "vue-router";
 import { NAV, menuPath } from "@/utils/nav";
 import { useContext } from "@/composables/useContext";
 import SectionTabs from "@/components/SectionTabs.vue";
+import VersionContext from "@/components/VersionContext.vue";
 import AgentDock from "@/components/AgentDock.vue";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import { provideAgentForms } from "@/composables/useAgentForm";
@@ -22,22 +23,20 @@ const route = useRoute();
 const router = useRouter();
 const open = ref("");
 const navShown = ref(false);
-const { session, versionOptions, scopeVersion, setOrg, setJurisdiction, loadBootstrap } = useContext();
+const { session, scopeVersion, loadBootstrap } = useContext();
 
-const STATUS = { draft: "草稿", reviewing: "审核中", published: "已发布", superseded: "已被取代", disabled: "已停用" };
 const activePath = computed(() => menuPath(route.path));
-const orgsHere = computed(() => session.orgs.filter((item) => item.jurisdiction === session.jurisdiction));
 const viewKey = computed(() => (route.meta.chart ? "tree" : route.path + "|" + session.jurisdiction + "|" + session.versionId + "|" + scopeVersion.value));
 
-function versionText(item) {
-  const extra = item.status && item.status !== "published" ? "（" + (STATUS[item.status] || item.status) + "）" : "";
-  return item.version + extra;
+function moduleItems(group) {
+  if (group.modules) return group.modules.flatMap((module) => module.items);
+  return group.items || [];
 }
 
 onMounted(loadBootstrap);
 
 watch(activePath, (path) => {
-  const group = NAV.find((item) => item.items && item.items.some((child) => child.path === path));
+  const group = NAV.find((item) => moduleItems(item).some((child) => child.path === path));
   if (group) open.value = group.id;
 }, { immediate: true });
 
@@ -55,9 +54,9 @@ function toggle(id) {
     <div v-if="navShown" class="side-mask" @click="navShown = false"></div>
     <aside class="side-nav" :class="{ shown: navShown }">
       <button type="button" class="side-brand" @click="go('/')">
-        <span class="brand-mark">CR</span>
+        <span class="brand-mark">BR</span>
         <span class="brand-text">
-          <strong>信用风险 RWA</strong>
+          <strong>银行Bank return 计算工作平台</strong>
           <span>监管规则配置中心</span>
         </span>
       </button>
@@ -77,7 +76,7 @@ function toggle(id) {
             <button
               type="button"
               class="side-group-btn"
-              :class="{ 'has-active': group.items.some((item) => item.path === activePath) }"
+              :class="{ 'has-active': moduleItems(group).some((item) => item.path === activePath) }"
               @click="toggle(group.id)"
             >
               <svg class="side-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="ICONS[group.id]" /></svg>
@@ -85,48 +84,37 @@ function toggle(id) {
               <span class="side-caret">{{ open === group.id ? "▴" : "▾" }}</span>
             </button>
             <div v-if="open === group.id" class="side-sub">
-              <button
-                v-for="item in group.items"
-                :key="item.path"
-                type="button"
-                :class="{ active: activePath === item.path }"
-                @click="go(item.path)"
-              >{{ item.label }}</button>
+              <template v-if="group.modules">
+                <template v-for="module in group.modules" :key="module.label">
+                  <div v-if="module.label" class="side-module">{{ module.label }}</div>
+                  <button
+                    v-for="item in module.items"
+                    :key="item.path"
+                    type="button"
+                    :class="{ active: activePath === item.path }"
+                    @click="go(item.path)"
+                  >{{ item.label }}</button>
+                </template>
+              </template>
+              <template v-else>
+                <button
+                  v-for="item in group.items"
+                  :key="item.path"
+                  type="button"
+                  :class="{ active: activePath === item.path }"
+                  @click="go(item.path)"
+                >{{ item.label }}</button>
+              </template>
             </div>
           </div>
         </template>
       </nav>
     </aside>
     <div class="app-main">
-      <div class="content-bar">
-        <button type="button" class="btn menu-toggle" @click="navShown = true">菜单</button>
-        <div class="client-switch">
-          <label>机构</label>
-          <select :value="session.orgId" aria-label="机构" @change="setOrg($event.target.value)">
-            <option v-for="item in orgsHere" :key="item.id" :value="item.id">{{ item.name }}</option>
-          </select>
-        </div>
-        <div class="client-switch">
-          <label>地区</label>
-          <select :value="session.jurisdiction" aria-label="地区" @change="setJurisdiction($event.target.value)">
-            <option v-for="item in session.jurisdictions" :key="item.code" :value="item.code">{{ item.label }}</option>
-          </select>
-        </div>
-        <div class="client-switch">
-          <label>版本</label>
-          <select v-model="session.versionId" aria-label="版本">
-            <option v-for="item in versionOptions" :key="item.id" :value="item.id">{{ versionText(item) }}</option>
-          </select>
-        </div>
-        <div class="client-switch">
-          <label>基准日</label>
-          <span class="ctx-date">{{ session.baseDate }}</span>
-        </div>
-        <button type="button" class="btn btn-primary" @click="go('/wizard')">发起计量</button>
-      </div>
       <main class="main-col" :class="{ 'exp-full': route.meta.full, 'chart-page': route.meta.chart }">
         <header v-if="!route.meta.chart" class="page-head">
           <div>
+            <button type="button" class="btn menu-toggle" @click="navShown = true">菜单</button>
             <div class="page-kicker">{{ route.meta.group }}</div>
             <h1>{{ route.meta.title }}</h1>
             <p v-if="route.meta.blurb">{{ route.meta.blurb }}</p>
@@ -136,6 +124,7 @@ function toggle(id) {
         <AgentDock />
         <ConfirmDialog />
         <div id="auditBody">
+          <VersionContext v-if="route.meta.versionContext" />
           <p v-if="session.error" class="notice danger">{{ session.error }}</p>
           <router-view :key="viewKey" />
         </div>

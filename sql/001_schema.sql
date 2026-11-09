@@ -12,6 +12,8 @@ SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
 DROP TABLE IF EXISTS assistant_turn;
+DROP TABLE IF EXISTS rwa_task_sub;
+DROP TABLE IF EXISTS rwa_task;
 DROP TABLE IF EXISTS measure_line;
 DROP TABLE IF EXISTS measure_batch;
 DROP TABLE IF EXISTS product_exposure_rule;
@@ -291,6 +293,36 @@ CREATE TABLE product_exposure_rule (
   clause_id VARCHAR(32) NOT NULL,
   status VARCHAR(20) NOT NULL,
   KEY idx_product_rule (product_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 信用风险 RWA：主任务 = 一个季度的计量任务。监管版本和机构在创建时固定，
+-- 子任务只记暴露类型和归档批次，版本和机构随主任务。
+CREATE TABLE rwa_task (
+  id VARCHAR(32) NOT NULL PRIMARY KEY,
+  name VARCHAR(200) NOT NULL,
+  institution VARCHAR(64) NOT NULL DEFAULT '',
+  jurisdiction CHAR(2) NOT NULL,
+  version VARCHAR(40) NOT NULL,
+  base_date DATE NOT NULL,
+  created_at VARCHAR(32) NOT NULL,
+  updated_at VARCHAR(32) NOT NULL,
+  KEY idx_rwa_task_updated (updated_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 主任务下的子任务。module 区分资本充足率和流动性两大工作模块。
+-- 资本充足率子任务由计量向导执行，完成时把批次写回 batch_id；流动性子任务在流动性页签执行。
+CREATE TABLE rwa_task_sub (
+  id VARCHAR(32) NOT NULL PRIMARY KEY,
+  task_id VARCHAR(32) NOT NULL,
+  module VARCHAR(16) NOT NULL DEFAULT 'capital',
+  name VARCHAR(200) NOT NULL,
+  exposure_type VARCHAR(64) NOT NULL DEFAULT '',
+  status VARCHAR(16) NOT NULL DEFAULT 'draft',
+  batch_id VARCHAR(40) NULL,
+  batch_name VARCHAR(128) NOT NULL DEFAULT '',
+  created_at VARCHAR(32) NOT NULL,
+  updated_at VARCHAR(32) NOT NULL,
+  KEY idx_rwa_sub_task (task_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE measure_batch (
