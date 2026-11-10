@@ -181,6 +181,8 @@ button, select, input, textarea { font: inherit; }
   transition: border-color .12s, background .12s, box-shadow .12s;
 }
 .arch-item:hover { border-color: #9dc4b5; background: #f7faf9; box-shadow: var(--shadow); }
+.arch-item:disabled { cursor: not-allowed; opacity: .55; background: #fbfcfe; box-shadow: none; }
+.arch-item:disabled:hover { border-color: var(--border); background: #fbfcfe; }
 .arch-item .idx {
   width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center;
   font-size: 12px; font-weight: 700; background: #f1f5f9; color: #64748b;

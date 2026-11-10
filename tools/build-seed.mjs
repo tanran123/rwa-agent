@@ -64,18 +64,6 @@ const DEFAULT_CRM_ELIGIBLE_TYPES = [
     note: "由合格保證人（主權、PSE、銀行，或其他風險權重為 20% 或更佳且低於交易對手風險權重之實體）提供之保證。（第 84–85 段）" }
 ];
 
-const PARAMS = [
-  ["LTV_RES_50", "居住房地产", "LTV 分界 50%", "50%", "%", "居住用房地产权重条件引用。不依赖现金流且不超过此值、依赖现金流且不超过此值，各走一条权重。"],
-  ["LTV_RES_100", "居住房地产", "LTV 分界 100%", "100%", "%", "居住用房地产权重条件引用。超过此值时，不依赖现金流改为查交易对手，依赖现金流另有一条固定权重。"],
-  ["LTV_CRE_60", "商用房地产", "LTV 分界 60%", "60%", "%", "商用房地产权重条件引用。不超过此值才用该档固定权重，否则改查交易对手或下一档。"],
-  ["LTV_CRE_80", "商用房地产", "LTV 分界 80%", "80%", "%", "商用房地产、依赖现金流：介于 60% 分界与此值之间时，与 90% 取较大；超过此值另有一条固定权重。"],
-  ["SHORT_3M", "期限优惠", "短期原始期限", "3", "月", "第一档银行评级表的短期行引用。百分比在风险权重的评级表里改。"],
-  ["TRADE_6M", "期限优惠", "跨境货物贸易期限", "6", "月", "第一档银行评级表的跨境货物贸易行引用。百分比在风险权重的评级表里改。"],
-  ["DEF_PROV", "已违约", "准备占比门槛", "20%", "%", "已违约权重条件引用。低于此值和不低于此值是两条不同的固定权重。"],
-  ["RW_FLOOR", "CRM", "质物质押 RW 底线", "20%", "RW", "合格质物的覆盖部分引用。一般不低于此值，特定回购可豁免。"],
-  ["CARD_LIMIT", "CCF", "合格信用卡单卡上限", "100", "万元", "未使用信用卡额度的 20% 那条引用。还要满足监控。"]
-];
-
 const CUSTOMERS = [
   ["c-city", "示例城商行", "CITY", "银行", "城商行口径示意"],
   ["c-joint", "示例股份行", "JOINT", "银行", "股份行口径示意"],
@@ -242,19 +230,15 @@ lines.push(insert("exposure_document",
   ["id", "name", "title", "label", "seq", "source_file", "rule_version", "body"],
   exposureRows));
 
-lines.push(insert("rule_param",
-  ["id", "grp", "name", "value", "unit", "used_for"],
-  PARAMS));
-
 lines.push(insert("weight_rule",
   ["id", "class_name", "cond_text", "risk_weight", "priority", "bank_tier", "basis"],
   WEIGHTS.map((item) => [item.id, item.cls, item.cond, item.rw, item.pri, item.bank, item.basis])));
 
 lines.push(insert("bank_grade_row",
-  ["id", "label", "priority", "basis", "weights_json", "ids_json", "param_id"],
+  ["id", "label", "priority", "basis", "weights_json", "ids_json"],
   BANK_GRID.rows.map((item) => [
     item.id, item.label, item.pri, item.basis,
-    JSON.stringify(item.weights), JSON.stringify(item.ids), item.param || null
+    JSON.stringify(item.weights), JSON.stringify(item.ids)
   ])));
 
 lines.push(insert("mo_weight_row",

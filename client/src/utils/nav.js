@@ -5,8 +5,7 @@ export const NAV = [
     label: "规则配置",
     items: [
       { label: "监管规则版本", path: "/versions" },
-      { label: "机构", path: "/orgs" },
-      { label: "监管条款库", path: "/clauses" }
+      { label: "机构", path: "/orgs" }
     ]
   },
   {
@@ -22,7 +21,7 @@ export const NAV = [
 ];
 
 const PARENT = {
-  "/params": "/versions",
+  "/clauses": "/versions",
   "/mappings": "/versions",
   "/fields": "/versions",
   "/exposure": "/versions",

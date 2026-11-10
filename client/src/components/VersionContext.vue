@@ -7,8 +7,11 @@ import { CAPITAL_LINKS, LIQUIDITY_LINKS, ruleLinkActive } from "@/utils/ruleLink
 const props = defineProps({
   version: { type: Object, default: null },
   nav: { type: Boolean, default: true },
-  workbench: { type: Boolean, default: false }
+  workbench: { type: Boolean, default: false },
+  editable: { type: Boolean, default: false }
 });
+
+defineEmits(["edit"]);
 
 const route = useRoute();
 const router = useRouter();
@@ -47,6 +50,7 @@ function active(path) {
         <button type="button" class="btn sm" @click="detailOpen = !detailOpen">
           {{ detailOpen ? "收起详细 ▴" : "展开详细 ▾" }}
         </button>
+        <button v-if="editable" type="button" class="btn sm primary" @click="$emit('edit')">编辑版本信息</button>
         <button v-if="!workbench" type="button" class="btn sm" @click="openWorkbench">维护工作台</button>
         <button type="button" class="btn sm" @click="router.push('/versions')">返回版本列表</button>
       </div>

@@ -34,7 +34,7 @@ function create(kind) {
   if (kind === "rule") {
     form.value = { kind, creating: true, id: "", cls: "", cond: "", rw: "", pri: 0, bank: "", basis: "" };
   } else if (kind === "grade") {
-    form.value = { kind, creating: true, id: "", label: "", pri: 0, basis: "", weightsText: "", idsText: "", paramId: "" };
+    form.value = { kind, creating: true, id: "", label: "", pri: 0, basis: "", weightsText: "", idsText: "" };
   } else {
     form.value = { kind, creating: true, id: "", bucket: "", weightsText: "", note: "" };
   }
@@ -55,8 +55,7 @@ function editGrade(row) {
     pri: row.pri,
     basis: row.basis,
     weightsText: (row.weights || []).join("\n"),
-    idsText: (row.ids || []).join("\n"),
-    paramId: row.paramId || ""
+    idsText: (row.ids || []).join("\n")
   };
 }
 
@@ -99,14 +98,13 @@ useAgentForm({
         { key: "id", label: "编号" },
         { key: "pri", label: "优先级" },
         { key: "label", label: "情形" },
-        { key: "paramId", label: "参数" },
         { key: "basis", label: "依据" },
         { key: "weightsText", label: "权重" },
         { key: "idsText", label: "规则编号" }
       ],
       apply(values) {
         error.value = "";
-        form.value = fillForm({ kind: "grade", creating: true, id: "", label: "", pri: 0, basis: "", weightsText: "", idsText: "", paramId: "" }, values);
+        form.value = fillForm({ kind: "grade", creating: true, id: "", label: "", pri: 0, basis: "", weightsText: "", idsText: "" }, values);
       },
       save: finishSave(() => save(), error)
     },
@@ -148,8 +146,7 @@ async function save() {
         pri: Number(row.pri),
         basis: row.basis,
         weights: lines(row.weightsText),
-        ids: lines(row.idsText),
-        paramId: row.paramId
+        ids: lines(row.idsText)
       };
       if (row.creating) await createBankGrade(body);
       else await saveBankGrade(row.id, body);
@@ -339,9 +336,6 @@ async function removeMo(rows) {
       </label>
       <label class="field">情形
         <input v-model="form.label" type="text" />
-      </label>
-      <label class="field">参数
-        <input v-model="form.paramId" type="text" />
       </label>
       <label class="field full">依据
         <input v-model="form.basis" type="text" />

@@ -43,8 +43,7 @@ const NAV_GROUPS = [
 /* 不单独占菜单。挂在原型对应页面的页内切换上。 */
 const PAGE_SECTIONS = {
   versions: [
-    { id: "versions", label: "版本" },
-    { id: "params", label: "共用参数" }
+    { id: "versions", label: "版本" }
   ],
   fields: [
     { id: "fields", label: "标准字段" },
@@ -773,13 +772,7 @@ function rulesFromTables() {
       body: r.type + "：" + r.tool + "\n" + r.effect
     };
   });
-  const params = (typeof PARAMS !== "undefined" ? PARAMS : []).map(function (p) {
-    return {
-      id: p.id, pack: "规则参数", title: p.name, cite: p.group,
-      body: p.id + " = " + p.value + (p.unit ? (" " + p.unit) : "") + "\n" + (p.used || "")
-    };
-  });
-  return docs.concat(classes, weights, ccfs, crms, params);
+  return docs.concat(classes, weights, ccfs, crms);
 }
 
 function ensureRegRuleSelection(ver) {
@@ -796,14 +789,4 @@ function ensureRegRuleSelection(ver) {
   return filtered;
 }
 
-const PARAMS = [
-  { id: "LTV_RES_50", group: "居住房地产", name: "LTV 分界 50%", value: "50%", unit: "%", used: "居住用房地产权重条件引用。不依赖现金流且不超过此值、依赖现金流且不超过此值，各走一条权重。" },
-  { id: "LTV_RES_100", group: "居住房地产", name: "LTV 分界 100%", value: "100%", unit: "%", used: "居住用房地产权重条件引用。超过此值时，不依赖现金流改为查交易对手，依赖现金流另有一条固定权重。" },
-  { id: "LTV_CRE_60", group: "商用房地产", name: "LTV 分界 60%", value: "60%", unit: "%", used: "商用房地产权重条件引用。不超过此值才用该档固定权重，否则改查交易对手或下一档。" },
-  { id: "LTV_CRE_80", group: "商用房地产", name: "LTV 分界 80%", value: "80%", unit: "%", used: "商用房地产、依赖现金流：介于 60% 分界与此值之间时，与 90% 取较大；超过此值另有一条固定权重。" },
-  { id: "SHORT_3M", group: "期限优惠", name: "短期原始期限", value: "3", unit: "月", used: "第一档银行评级表的短期行引用。百分比在风险权重的评级表里改。" },
-  { id: "TRADE_6M", group: "期限优惠", name: "跨境货物贸易期限", value: "6", unit: "月", used: "第一档银行评级表的跨境货物贸易行引用。百分比在风险权重的评级表里改。" },
-  { id: "DEF_PROV", group: "已违约", name: "准备占比门槛", value: "20%", unit: "%", used: "已违约权重条件引用。低于此值和不低于此值是两条不同的固定权重。" },
-  { id: "RW_FLOOR", group: "CRM", name: "质物质押 RW 底线", value: "20%", unit: "RW", used: "合格质物的覆盖部分引用。一般不低于此值，特定回购可豁免。" },
-  { id: "CARD_LIMIT", group: "CCF", name: "合格信用卡单卡上限", value: "100", unit: "万元", used: "未使用信用卡额度的 20% 那条引用。还要满足监控。" }
-];
+const PARAMS = [];

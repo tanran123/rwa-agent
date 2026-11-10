@@ -19,7 +19,7 @@ const saving = ref(false);
 const view = ref(null);
 const pick = usePick();
 const batch = useBatchNote();
-const load = () => fetchRuleVersions(session.jurisdiction);
+const load = () => fetchRuleVersions();
 const labels = { draft: "草稿", reviewing: "审核中", published: "已发布", superseded: "已被取代", disabled: "已停用" };
 const tones = { draft: "muted", reviewing: "warn", published: "ok", superseded: "muted", disabled: "danger" };
 
@@ -82,16 +82,6 @@ function create() {
   error.value = "";
   form.value = null;
   router.push({ name: "version-new-workbench" });
-}
-
-function edit(row) {
-  error.value = "";
-  form.value = {
-    ...row,
-    effectiveFrom: row.effectiveFrom || "",
-    effectiveTo: row.effectiveTo || "",
-    creating: false
-  };
 }
 
 useAgentForm(() => ({
@@ -238,7 +228,6 @@ function openWorkbench(row) {
                 <td>{{ row.author }}</td>
                 <td>
                   <button type="button" class="btn sm primary" @click.stop="openWorkbench(row)">维护</button>
-                  <button type="button" class="btn sm" @click.stop="edit(row)">编辑</button>
                 </td>
               </tr>
             </tbody>

@@ -132,15 +132,15 @@ function versionFields(body) {
     jurisdiction: null,
     version: text(body, "version", "版本编号", 40),
     name: text(body, "name", "规则名称", 128),
-    ruleType: text(body, "ruleType", "规则类型", 32),
+    ruleType: text(body, "ruleType", "规则类型", 32, false),
     effectiveFrom: day(body.effectiveFrom, "生效日期"),
     effectiveTo: day(body.effectiveTo, "失效日期"),
     status: oneOf(body.status, "状态", VERSION_STATUS),
-    institution: text(body, "institution", "适用机构", 64),
-    rulesetFile: text(body, "rulesetFile", "规则文件", 64),
-    publishedAt: text(body, "publishedAt", "发布时间", 32),
-    author: text(body, "author", "维护人", 64),
-    changelog: text(body, "changelog", "变更说明", 65535)
+    institution: text(body, "institution", "适用机构", 64, false),
+    rulesetFile: text(body, "rulesetFile", "规则文件", 64, false),
+    publishedAt: text(body, "publishedAt", "发布时间", 32, false),
+    author: text(body, "author", "维护人", 64, false),
+    changelog: text(body, "changelog", "变更说明", 65535, false)
   };
 }
 
@@ -341,63 +341,6 @@ export async function deleteClause(id) {
     if (rules[0] || ead[0]) fail(400, "这条条款还被专属规则或 EAD 规则引用");
     await q("DELETE FROM clause_ref WHERE clause_id = ?", [key]);
     await q("DELETE FROM clause_doc WHERE id = ?", [key]);
-  });
-}
-
-function paramFields(body) {
-  return {
-    grp: text(body, "grp", "分组", 32),
-    name: text(body, "name", "名称", 64),
-    value: text(body, "value", "参数值", 32),
-    unit: text(body, "unit", "单位", 16, false),
-    usedFor: text(body, "usedFor", "用途", 255, false)
-  };
-}
-
-async function paramRow(q, id) {
-  const rows = await q("SELECT id, grp, name, value, unit, used_for AS usedFor FROM rule_param WHERE id = ?", [id]);
-  if (!rows[0]) fail(404, "参数不存在");
-  return rows[0];
-}
-
-export async function createParam(body) {
-  const id = keyOf(body.id, "编号");
-  if (id.length > 32) fail(400, "编号不能超过 32 个字");
-  const fields = paramFields(body);
-  return write(async () => {
-    await query(
-      "INSERT INTO rule_param (id, grp, name, value, unit, used_for) VALUES (?, ?, ?, ?, ?, ?)",
-      [id, fields.grp, fields.name, fields.value, fields.unit, fields.usedFor]
-    );
-    return paramRow(query, id);
-  }, "编号已存在");
-}
-
-export async function updateParam(id, body) {
-  const key = keyOf(id, "编号");
-  const current = await paramRow(query, key);
-  const valueOnly = body && body.value != null && body.grp == null && body.name == null && body.unit == null && body.usedFor == null;
-  const fields = valueOnly
-    ? { grp: current.grp, name: current.name, value: text(body, "value", "参数值", 32), unit: current.unit, usedFor: current.usedFor }
-    : paramFields(body);
-  await query(
-    "UPDATE rule_param SET grp = ?, name = ?, value = ?, unit = ?, used_for = ? WHERE id = ?",
-    [fields.grp, fields.name, fields.value, fields.unit, fields.usedFor, key]
-  );
-  return paramRow(query, key);
-}
-
-export async function deleteParam(id) {
-  const key = keyOf(id, "编号");
-  await tx(async (q) => {
-    await paramRow(q, key);
-    const [grades, ccf, ead] = await Promise.all([
-      q("SELECT id FROM bank_grade_row WHERE param_id = ? LIMIT 1", [key]),
-      q("SELECT id FROM ccf_rule WHERE JSON_SEARCH(conds_json, 'one', ?) IS NOT NULL LIMIT 1", [key]),
-      q("SELECT id FROM ead_product_rule WHERE JSON_SEARCH(params_json, 'one', ?) IS NOT NULL LIMIT 1", [key])
-    ]);
-    if (grades[0] || ccf[0] || ead[0]) fail(400, "这个参数还被银行评级档、转换系数或 EAD 规则引用");
-    await q("DELETE FROM rule_param WHERE id = ?", [key]);
   });
 }
 
@@ -698,8 +641,7 @@ function gradeBody(row) {
     pri: row.priority,
     basis: row.basis,
     weights: weights || [],
-    ids: ids || [],
-    paramId: row.param_id
+    ids: ids || []
   };
 }
 
@@ -710,14 +652,12 @@ async function gradeRow(q, id) {
 }
 
 function gradeFields(body) {
-  const paramId = text(body, "paramId", "参数", 32, false);
   return {
     label: text(body, "label", "情形", 64),
     pri: integer(body.pri, "优先级"),
     basis: text(body, "basis", "依据", 128),
     weights: jsonArray(body.weights, "权重", 32),
-    ids: strings(body.ids, "规则编号", 40, 40),
-    paramId: paramId || null
+    ids: strings(body.ids, "规则编号", 40, 40)
   };
 }
 
@@ -726,13 +666,9 @@ export async function createGrade(body) {
   if (id.length > 32) fail(400, "编号不能超过 32 个字");
   const fields = gradeFields(body);
   return write(async () => tx(async (q) => {
-    if (fields.paramId) {
-      const params = await q("SELECT id FROM rule_param WHERE id = ?", [fields.paramId]);
-      if (!params[0]) fail(400, "参数不存在");
-    }
     await q(
-      "INSERT INTO bank_grade_row (id, label, priority, basis, weights_json, ids_json, param_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      [id, fields.label, fields.pri, fields.basis, JSON.stringify(fields.weights), JSON.stringify(fields.ids), fields.paramId]
+      "INSERT INTO bank_grade_row (id, label, priority, basis, weights_json, ids_json) VALUES (?, ?, ?, ?, ?, ?)",
+      [id, fields.label, fields.pri, fields.basis, JSON.stringify(fields.weights), JSON.stringify(fields.ids)]
     );
     return gradeBody(await gradeRow(q, id));
   }), "编号已存在");
@@ -743,13 +679,9 @@ export async function updateGrade(id, body) {
   const fields = gradeFields(body);
   return tx(async (q) => {
     await gradeRow(q, key);
-    if (fields.paramId) {
-      const params = await q("SELECT id FROM rule_param WHERE id = ?", [fields.paramId]);
-      if (!params[0]) fail(400, "参数不存在");
-    }
     await q(
-      "UPDATE bank_grade_row SET label = ?, priority = ?, basis = ?, weights_json = ?, ids_json = ?, param_id = ? WHERE id = ?",
-      [fields.label, fields.pri, fields.basis, JSON.stringify(fields.weights), JSON.stringify(fields.ids), fields.paramId, key]
+      "UPDATE bank_grade_row SET label = ?, priority = ?, basis = ?, weights_json = ?, ids_json = ? WHERE id = ?",
+      [fields.label, fields.pri, fields.basis, JSON.stringify(fields.weights), JSON.stringify(fields.ids), key]
     );
     return gradeBody(await gradeRow(q, key));
   });
@@ -1048,7 +980,6 @@ async function batchDelete(body, removeOne) {
 export const deleteRuleVersions = (body) => batchDelete(body, deleteRuleVersion);
 export const deleteOrgs = (body) => batchDelete(body, deleteOrg);
 export const deleteClauses = (body) => batchDelete(body, deleteClause);
-export const deleteParams = (body) => batchDelete(body, deleteParam);
 export const deleteProducts = (body) => batchDelete(body, deleteProduct);
 export const deleteFields = (product, body) => batchDelete(body, (code) => deleteField(product, code));
 export const deleteMappings = (body) => batchDelete(body, deleteMapping);

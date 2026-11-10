@@ -28,7 +28,6 @@ DROP TABLE IF EXISTS ead_rule;
 DROP TABLE IF EXISTS mo_weight_row;
 DROP TABLE IF EXISTS bank_grade_row;
 DROP TABLE IF EXISTS weight_rule;
-DROP TABLE IF EXISTS rule_param;
 DROP TABLE IF EXISTS exposure_document;
 DROP TABLE IF EXISTS field_mapping;
 DROP TABLE IF EXISTS product_field;
@@ -165,15 +164,6 @@ CREATE TABLE exposure_document (
   KEY idx_exposure_document_version (rule_version)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE rule_param (
-  id VARCHAR(32) NOT NULL PRIMARY KEY,
-  grp VARCHAR(32) NOT NULL,
-  name VARCHAR(64) NOT NULL,
-  value VARCHAR(32) NOT NULL,
-  unit VARCHAR(16) NOT NULL,
-  used_for VARCHAR(255) NOT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
 CREATE TABLE weight_rule (
   id VARCHAR(40) NOT NULL PRIMARY KEY,
   class_name VARCHAR(64) NOT NULL,
@@ -191,8 +181,7 @@ CREATE TABLE bank_grade_row (
   priority INT NOT NULL,
   basis VARCHAR(128) NOT NULL,
   weights_json JSON NOT NULL,
-  ids_json JSON NOT NULL,
-  param_id VARCHAR(32) NULL
+  ids_json JSON NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE mo_weight_row (

@@ -20,12 +20,12 @@ import {
 import { copyExposureDoc, deleteExposureDoc, exposureChat, exposureDoc, exposureDocs, provisionExposureDocs, saveExposureChat, saveExposureDoc } from "./exposureDocs.js";
 import {
   createCcf, createClause, createCrmRule, createExposureRule, createField, createGrade, createMapping, createMoWeight,
-  createOrg, createParam, createProduct, createRuleVersion, createWeightRule, deleteCcf, deleteCcfs, deleteClause, deleteClauses,
+  createOrg, createProduct, createRuleVersion, createWeightRule, deleteCcf, deleteCcfs, deleteClause, deleteClauses,
   deleteCrmRule, deleteCrmRules, deleteExposureRule, deleteExposureRules, deleteField, deleteFields, deleteGrade, deleteGrades,
-  deleteMapping, deleteMappings, deleteMoWeight, deleteMoWeights, deleteOrg, deleteOrgs, deleteParam, deleteParams, deleteProduct, deleteProducts,
+  deleteMapping, deleteMappings, deleteMoWeight, deleteMoWeights, deleteOrg, deleteOrgs, deleteProduct, deleteProducts,
   deleteRuleVersion, deleteRuleVersions, deleteWeightRule, deleteWeightRules,
   updateCcf, updateClause, updateCrmRule, updateExposureRule, updateField, updateGrade, updateMapping, updateMoWeight,
-  updateOrg, updateParam, updateProduct, updateRuleVersion, updateWeightRule
+  updateOrg, updateProduct, updateRuleVersion, updateWeightRule
 } from "./ruleWrite.js";
 
 const app = new Koa();
@@ -389,32 +389,10 @@ router.get("/exposure-class", async (ctx) => {
   };
 });
 
-router.get("/params", async (ctx) => {
-  const rows = await query("SELECT id, grp, name, value, unit, used_for AS usedFor FROM rule_param ORDER BY id");
-  ctx.body = rows;
-});
-
-router.post("/params", async (ctx) => {
-  ctx.body = await createParam(ctx.request.body || {});
-});
-
-router.put("/params/:id", async (ctx) => {
-  ctx.body = await updateParam(ctx.params.id, ctx.request.body || {});
-});
-
-router.delete("/params/:id", async (ctx) => {
-  await deleteParam(ctx.params.id);
-  ctx.body = { ok: true };
-});
-
-router.post("/params/batch-delete", async (ctx) => {
-  ctx.body = await deleteParams(ctx.request.body || {});
-});
-
 router.get("/weights", async (ctx) => {
   const [rules, grades, mo] = await Promise.all([
     query("SELECT id, class_name AS cls, cond_text AS cond, risk_weight AS rw, priority AS pri, bank_tier AS bank, basis FROM weight_rule ORDER BY class_name, priority DESC"),
-    query("SELECT id, label, priority AS pri, basis, weights_json, ids_json, param_id AS paramId FROM bank_grade_row ORDER BY priority"),
+    query("SELECT id, label, priority AS pri, basis, weights_json, ids_json FROM bank_grade_row ORDER BY priority"),
     query("SELECT id, bucket, weights_json, note FROM mo_weight_row")
   ]);
   ctx.body = {

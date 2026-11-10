@@ -2,7 +2,6 @@ export const AGENT_PAGES = [
   { path: "/", title: "首页 / 计量工作台" },
   { path: "/versions", title: "监管规则版本管理" },
   { path: "/orgs", title: "机构" },
-  { path: "/params", title: "共用参数" },
   { path: "/clauses", title: "监管条款库" },
   { path: "/fields", title: "产品标准字段管理" },
   { path: "/mappings", title: "字段映射" },
@@ -41,11 +40,6 @@ export const AGENT_APIS = [
   "PUT /clauses/:id",
   "DELETE /clauses/:id",
   "POST /clauses/batch-delete",
-  "GET /params",
-  "POST /params",
-  "PUT /params/:id",
-  "DELETE /params/:id",
-  "POST /params/batch-delete",
   "GET /products",
   "POST /products",
   "PUT /products/:code",
@@ -124,19 +118,6 @@ export const AGENT_APIS = [
 const STATUS = ["draft", "reviewing", "published", "superseded", "disabled"];
 
 export const AGENT_FORMS = [
-  {
-    path: "/params",
-    id: "param",
-    title: "共用参数",
-    fields: [
-      { key: "id", label: "编号" },
-      { key: "grp", label: "分组" },
-      { key: "name", label: "名称" },
-      { key: "value", label: "值" },
-      { key: "unit", label: "单位" },
-      { key: "usedFor", label: "用途" }
-    ]
-  },
   {
     path: "/orgs",
     id: "org",
@@ -286,7 +267,6 @@ export const AGENT_FORMS = [
       { key: "id", label: "编号" },
       { key: "pri", label: "优先级" },
       { key: "label", label: "情形" },
-      { key: "paramId", label: "参数" },
       { key: "basis", label: "依据" },
       { key: "weightsText", label: "权重" },
       { key: "idsText", label: "规则编号" }
@@ -390,7 +370,6 @@ const PAGE_API = {
   "/": ["/bootstrap", "/dashboard"],
   "/orgs": ["/orgs"],
   "/versions": ["/rule-versions"],
-  "/params": ["/params"],
   "/clauses": ["/clauses"],
   "/fields": ["/products"],
   "/mappings": ["/field-mappings"],
