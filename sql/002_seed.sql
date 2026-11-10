@@ -361,3 +361,56 @@ INSERT INTO assistant_turn (seq, role, body) VALUES
   (2, 'assistant', '{"role":"assistant","text":"我识别到以下配置意图，请确认：","extract":[{"k":"适用地区","v":"澳门"},{"k":"监管版本","v":"MO-SA-2026.1（当前生效版本）"},{"k":"适用产品","v":"对公贷款"},{"k":"规则类型","v":"产品专属暴露分类规则"}],"ask":"请补充「特定交易对手类型」具体指哪一类，以及命中后应归入的暴露大类与子类。"}'),
   (3, 'user', '{"role":"user","text":"交易对手是农村信用合作社，归入商业银行风险暴露，权重按第二档中长期处理，关联第22条。"}'),
   (4, 'assistant', '{"role":"assistant","text":"已生成结构化规则草稿，请确认后保存。","draft":{"rule_id":"MO-CL-007","jurisdiction":"MO","rule_version":"MO-SA-2026.1","product_type":"对公贷款","priority":13,"conditions":{"all":[{"field":"counterparty_type","op":"eq","match":"commercial_bank"},{"field":"is_credit_cooperative","op":"eq","match":"yes"}]},"result":{"exposure_class":"商业银行风险暴露","sub_class":"第二档商业银行","risk_weight_kind":"const","risk_weight":0.5},"next_rule":"fi_bank_tier2_long","regulatory_reference":{"doc":"【模拟】澳门AMCM资本充足率指引","clause":"第22条"}},"checks":[{"level":"warn","text":"条件引用了字段 is_credit_cooperative，该字段尚未在产品标准字段中声明，需先在对公贷款产品下新增。"},{"level":"info","text":"农村合作银行、村镇银行、农村信用合作社按口径可并入 commercial_bank，也可另设新 code。本次采用新增独立字段的方式，避免影响既有规则。"},{"level":"warn","text":"拟设优先级 13 与现有规则 fi_bank（优先级 8）存在重叠区间：交易对手为商业银行时，fi_bank 会先命中。建议将本规则挂在 fi_bank 的 children 下，而非插入 rules 中间。"}],"treeEffect":"确认后，本规则将出现在决策树「对商业银行的暴露」节点之下，作为其子档之一，不改变外层顺序。"}');
+
+INSERT INTO app_role (id, name, description, is_super, status, menus_json) VALUES
+  ('R0', '超级管理员', '平台全部功能与配置权限', 1, 'on', '["*"]'),
+  ('R1', '验证主管', '全部项目读写、审批与配置查看', 0, 'on', '["home","versions","orgs","tasks","wizard","engine","results","sys-users","sys-roles","sys-perms","sys-logs","sys-llm","sys-tokens"]'),
+  ('R2', '验证经理', '所辖项目读写、执行与审计查看', 0, 'on', '["home","versions","orgs","tasks","wizard","engine","results","sys-logs","sys-llm"]'),
+  ('R3', '验证专员', '所辖项目编制与执行', 0, 'on', '["home","versions","tasks","wizard","engine","results","sys-llm"]'),
+  ('R4', '审批人', '方案与结论审批、只读项目', 0, 'on', '["home","versions","tasks","results","sys-llm"]'),
+  ('R5', '只读', '仅查看被授权项目', 0, 'on', '["home","versions","tasks","results"]');
+
+INSERT INTO app_user (id, username, name, role_id, dept, email, phone, password_hash, status, orgs_json, last_login) VALUES
+  ('U1', 'admin', '王静', 'R0', '模型验证部', 'wangjing@rwa-demo.cn', '138****1024', '240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9', 'on', '["*"]', '2026-11-09 09:12:00'),
+  ('U2', 'wangjing', '李强', 'R2', '模型验证部', 'liqiang@rwa-demo.cn', '139****2381', '0208535fe862b1f1073a4be45c2b5ebfa10243d035f5e2ac97831f252144d64a', 'on', '["mo-branch"]', '2026-11-08 17:40:00'),
+  ('U3', 'chenchen', '陈晨', 'R3', '模型验证部', 'chenchen@rwa-demo.cn', '137****6620', '0208535fe862b1f1073a4be45c2b5ebfa10243d035f5e2ac97831f252144d64a', 'on', '["mo-branch","hk-branch"]', '2026-11-08 15:22:00'),
+  ('U4', 'zhaoqm', '赵启明', 'R4', '风险审批部', 'zhaoqm@rwa-demo.cn', '136****8891', '0208535fe862b1f1073a4be45c2b5ebfa10243d035f5e2ac97831f252144d64a', 'on', '["*"]', '2026-11-07 11:06:00'),
+  ('U5', 'reviewer', '外部评审', 'R5', '外部评审', 'review@rwa-demo.cn', '—', '0208535fe862b1f1073a4be45c2b5ebfa10243d035f5e2ac97831f252144d64a', 'off', '["mo-branch"]', '2026-10-28 14:18:00'),
+  ('U6', 'liuyang', '刘洋', 'R1', '模型验证部', 'liuyang@rwa-demo.cn', '135****0917', '0208535fe862b1f1073a4be45c2b5ebfa10243d035f5e2ac97831f252144d64a', 'on', '["*"]', '2026-11-09 08:45:00');
+
+INSERT INTO login_log (at, username, name, ip, device, status, reason) VALUES
+  ('2026-11-09 09:12:00', 'admin', '王静', '127.0.0.1', 'Chrome 141 / macOS', 'success', ''),
+  ('2026-11-09 08:45:00', 'liuyang', '刘洋', '10.20.8.16', 'Edge 140 / Windows', 'success', ''),
+  ('2026-11-08 17:40:00', 'wangjing', '李强', '10.20.8.21', 'Chrome 141 / Windows', 'success', ''),
+  ('2026-11-08 15:22:00', 'chenchen', '陈晨', '10.20.8.33', 'Safari 18 / macOS', 'success', ''),
+  ('2026-11-08 09:04:00', 'reviewer', '外部评审', '10.20.9.7', 'Chrome 140 / Windows', 'fail', '账号已停用'),
+  ('2026-11-07 11:06:00', 'zhaoqm', '赵启明', '10.20.8.12', 'Chrome 141 / Windows', 'success', ''),
+  ('2026-11-07 08:51:00', 'admin', '王静', '127.0.0.1', 'Chrome 141 / macOS', 'success', ''),
+  ('2026-11-06 18:20:00', 'unknown', '—', '10.20.9.44', 'Chrome 139 / Windows', 'fail', '用户名或密码错误');
+
+INSERT INTO operation_log (at, actor, action, target, note) VALUES
+  ('2026-11-09 09:20:00', '王静', '保存菜单权限', '验证经理', '9 个菜单'),
+  ('2026-11-09 09:05:00', '王静', '编辑大模型配置', 'DeepSeek V4', 'deepseek-chat'),
+  ('2026-11-08 16:42:00', '刘洋', '新增用户', 'chenchen', '验证专员'),
+  ('2026-11-08 11:18:00', '李强', '重置密码', 'wangjing', '李强'),
+  ('2026-11-07 14:06:00', '王静', '停用用户', 'reviewer', '外部评审');
+
+INSERT INTO llm_config (id, owner, name, provider, base_url, model, api_key, temperature, max_tokens, timeout, status, is_default, last_test, calls) VALUES
+  ('LLM-01', 'admin', 'DeepSeek V4', 'DeepSeek', 'https://api.deepseek.com', 'deepseek-chat', 'sk-demo-deepseek-8f2a', 0.2, 8192, 60, 'on', 1, '2026-11-09 09:02:00', 1284),
+  ('LLM-02', 'admin', 'Qwen Max', '阿里云百炼', 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'qwen-max', 'sk-demo-qwen-31c7', 0.3, 6144, 60, 'on', 0, '2026-11-08 16:35:00', 316),
+  ('LLM-03', 'wangjing', 'Qwen Max', '阿里云百炼', 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'qwen-max', 'sk-demo-qwen-wj', 0.2, 6144, 60, 'on', 1, '2026-11-08 11:20:00', 58),
+  ('LLM-04', 'liuyang', '本地 Llama', 'Ollama', 'http://127.0.0.1:11434/v1', 'llama3.1:70b', 'local', 0.1, 4096, 120, 'on', 1, '2026-10-30 10:12:00', 42);
+
+INSERT INTO token_log (at, request_id, model, scene, user_name, org_name, prompt_tokens, completion_tokens, latency, status) VALUES
+  ('2026-11-09 09:18:00', 'TK-20261109-001', 'DeepSeek V4', '暴露分类解析', '王静', '澳门分行', 18420, 3120, 8.4, 'success'),
+  ('2026-11-09 09:15:00', 'TK-20261109-002', 'DeepSeek V4', '信息完整性检查', '王静', '澳门分行', 9620, 1840, 5.1, 'success'),
+  ('2026-11-09 09:10:00', 'TK-20261109-003', 'DeepSeek V4', '底稿计算说明', '刘洋', '总行（法人）', 12800, 5210, 12.6, 'success'),
+  ('2026-11-09 08:58:00', 'TK-20261109-004', 'Qwen Max', '计量向导问答', '李强', '澳门分行', 7420, 2310, 7.2, 'success'),
+  ('2026-11-09 08:44:00', 'TK-20261109-005', 'DeepSeek V4', '智能体对话', '刘洋', '总行（法人）', 2180, 860, 2.8, 'success'),
+  ('2026-11-08 18:03:00', 'TK-20261108-021', 'DeepSeek V4', '字段映射建议', '李强', '澳门分行', 4360, 1120, 4.1, 'success'),
+  ('2026-11-08 17:42:00', 'TK-20261108-020', 'Qwen Max', '缓释规则问答', '陈晨', '香港分行', 11320, 2740, 9.8, 'success'),
+  ('2026-11-08 16:35:00', 'TK-20261108-019', 'Qwen Max', '方案摘要', '李强', '澳门分行', 6120, 1480, 5.4, 'success'),
+  ('2026-11-08 15:28:00', 'TK-20261108-018', 'DeepSeek V4', '暴露分类解析', '陈晨', '香港分行', 15280, 3620, 11.2, 'success'),
+  ('2026-11-08 11:07:00', 'TK-20261108-017', 'DeepSeek V4', '结论摘要', '王静', '澳门分行', 8840, 1620, 4.9, 'success'),
+  ('2026-11-08 10:32:00', 'TK-20261108-016', '本地 Llama', '文档分类', '系统', '总行（法人）', 2280, 340, 21.6, 'fail'),
+  ('2026-11-07 17:51:00', 'TK-20261107-015', 'DeepSeek V4', '计量向导问答', '李强', '澳门分行', 6980, 2080, 6.3, 'success');

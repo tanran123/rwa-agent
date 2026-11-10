@@ -25,6 +25,15 @@ import TaskDetailView from '../view/measure/TaskDetailView.vue'
 import ExportView from '../view/measure/ExportView.vue'
 import HqlaTasksView from '../view/hqla/HqlaTasksView.vue'
 import HqlaWizardView from '../view/hqla/HqlaWizardView.vue'
+import LoginView from '../view/system/LoginView.vue'
+import UsersView from '../view/system/UsersView.vue'
+import RolesView from '../view/system/RolesView.vue'
+import PermissionsView from '../view/system/PermissionsView.vue'
+import LogsView from '../view/system/LogsView.vue'
+import LlmView from '../view/system/LlmView.vue'
+import TokensView from '../view/system/TokensView.vue'
+import { currentUser, can } from '@/utils/auth'
+import { menuIdFor } from '@/utils/nav'
 
 const fieldTabs = [
   { label: '标准字段', path: '/fields' },
@@ -36,6 +45,7 @@ const classTabs = [
   { label: '缓释', path: '/crm' },
 ]
 const routes = [
+  { path: '/login', name: 'login', component: LoginView, meta: { public: true, title: '登录', full: true } },
   { path: '/', name: 'dashboard', component: DashboardView, meta: { group: '总览', title: '首页 / 计量工作台', blurb: '按菜单顺序走：规则配置，然后计量。' } },
   { path: '/versions', name: 'versions', component: VersionsView, meta: { group: '规则配置', title: '监管规则版本管理', blurb: '三地规则分开维护。在已有版本上复制后再改，避免互相覆盖。' } },
   { path: '/versions/new/workbench', name: 'version-new-workbench', component: RuleWorkbenchView, meta: { group: '规则配置', title: '监管规则维护工作台', blurb: '先填写版本信息，创建后进入这一版的配置。' } },
@@ -66,11 +76,29 @@ const routes = [
   { path: '/export', name: 'export', component: ExportView, meta: { group: '任务运行', title: 'Excel 审计底稿导出', blurb: '导出真实的 xlsx。底稿里的业务数据是模拟数据。' } },
   { path: '/hqla', name: 'hqla', component: HqlaTasksView, meta: { group: '任务运行', title: 'HQLA 计算任务', blurb: '按任务组织：新建、复制、归档、导入归档。每个任务独立保存自己的明细、清单、判定标准与结论。', versionContext: true } },
   { path: '/hqla/:id', name: 'hqla-wizard', component: HqlaWizardView, meta: { group: '任务运行', title: '当前任务向导', blurb: '七步：明细 → 清单 → 标准 → 抽样 → 取数 → 核对 → 对账。', versionContext: true } },
+  { path: '/system/users', name: 'sys-users', component: UsersView, meta: { group: '系统管理', title: '用户管理', blurb: '管理平台账号、角色与授权机构。账号停用后立即失去访问权限；当前登录账号不可停用。', menu: 'sys-users' } },
+  { path: '/system/roles', name: 'sys-roles', component: RolesView, meta: { group: '系统管理', title: '角色管理', blurb: '角色是菜单权限与授权机构的模板。角色停用后，其下账号保留数据但无法登录。', menu: 'sys-roles' } },
+  { path: '/system/permissions', name: 'sys-perms', component: PermissionsView, meta: { group: '系统管理', title: '权限管理', blurb: '按角色配置可见菜单。这里控制的是「能否看到入口」，机构级数据权限仍由用户授权机构控制。', menu: 'sys-perms' } },
+  { path: '/system/logs', name: 'sys-logs', component: LogsView, meta: { group: '系统管理', title: '操作日志', blurb: '记录登录、用户与角色变更、配置修改等关键动作，用于回答「谁在何时做了什么」。', menu: 'sys-logs' } },
+  { path: '/system/llm', name: 'sys-llm', component: LlmView, meta: { group: '系统管理', title: '大模型配置', blurb: '每个账号只能配置自己调用的大模型 API；不同用户之间的 Base URL、模型与密钥相互隔离。', menu: 'sys-llm' } },
+  { path: '/system/tokens', name: 'sys-tokens', component: TokensView, meta: { group: '系统管理', title: 'Token 调用', blurb: '按时间区间与用户筛选模型调用明细，统计口径只覆盖所选区间、用户与模型。', menu: 'sys-tokens' } },
 ]
 
 const router = createRouter({
   history: createWebHistory(),
   routes,
+})
+
+router.beforeEach((to) => {
+  const user = currentUser()
+  if (to.meta.public) {
+    if (user && to.path === '/login') return { path: '/' }
+    return true
+  }
+  if (!user) return { path: '/login', query: { redirect: to.fullPath } }
+  const menu = to.meta.menu || menuIdFor(to.path)
+  if (menu && !can(menu)) return { path: '/' }
+  return true
 })
 
 export default router

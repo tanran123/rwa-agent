@@ -3,6 +3,7 @@
  * node tools/build-seed.mjs
  */
 import { createRequire } from "node:module";
+import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -79,6 +80,72 @@ const ORGS = [
   ["mo-branch", "澳门分行", "MO"],
   ["hq", "总行（法人）", "CN"],
   ["hk-branch", "香港分行", "HK"]
+];
+
+/** 系统管理演示数据。密码只写 SHA-256，页面上的默认密码是 admin/admin123 或 ecl2026。 */
+function hashPassword(value) {
+  return createHash("sha256").update(String(value)).digest("hex");
+}
+
+const ADMIN_MENUS = ["home", "versions", "orgs", "tasks", "wizard", "engine", "results", "sys-users", "sys-roles", "sys-perms", "sys-logs", "sys-llm", "sys-tokens"];
+
+const ROLES = [
+  ["R0", "超级管理员", "平台全部功能与配置权限", 1, "on", ["*"]],
+  ["R1", "验证主管", "全部项目读写、审批与配置查看", 0, "on", ADMIN_MENUS],
+  ["R2", "验证经理", "所辖项目读写、执行与审计查看", 0, "on", ["home", "versions", "orgs", "tasks", "wizard", "engine", "results", "sys-logs", "sys-llm"]],
+  ["R3", "验证专员", "所辖项目编制与执行", 0, "on", ["home", "versions", "tasks", "wizard", "engine", "results", "sys-llm"]],
+  ["R4", "审批人", "方案与结论审批、只读项目", 0, "on", ["home", "versions", "tasks", "results", "sys-llm"]],
+  ["R5", "只读", "仅查看被授权项目", 0, "on", ["home", "versions", "tasks", "results"]]
+];
+
+const USERS = [
+  ["U1", "admin", "王静", "R0", "模型验证部", "wangjing@rwa-demo.cn", "138****1024", hashPassword("admin123"), "on", ["*"], "2026-11-09 09:12:00"],
+  ["U2", "wangjing", "李强", "R2", "模型验证部", "liqiang@rwa-demo.cn", "139****2381", hashPassword("ecl2026"), "on", ["mo-branch"], "2026-11-08 17:40:00"],
+  ["U3", "chenchen", "陈晨", "R3", "模型验证部", "chenchen@rwa-demo.cn", "137****6620", hashPassword("ecl2026"), "on", ["mo-branch", "hk-branch"], "2026-11-08 15:22:00"],
+  ["U4", "zhaoqm", "赵启明", "R4", "风险审批部", "zhaoqm@rwa-demo.cn", "136****8891", hashPassword("ecl2026"), "on", ["*"], "2026-11-07 11:06:00"],
+  ["U5", "reviewer", "外部评审", "R5", "外部评审", "review@rwa-demo.cn", "—", hashPassword("ecl2026"), "off", ["mo-branch"], "2026-10-28 14:18:00"],
+  ["U6", "liuyang", "刘洋", "R1", "模型验证部", "liuyang@rwa-demo.cn", "135****0917", hashPassword("ecl2026"), "on", ["*"], "2026-11-09 08:45:00"]
+];
+
+const LOGIN_LOGS = [
+  ["2026-11-09 09:12:00", "admin", "王静", "127.0.0.1", "Chrome 141 / macOS", "success", ""],
+  ["2026-11-09 08:45:00", "liuyang", "刘洋", "10.20.8.16", "Edge 140 / Windows", "success", ""],
+  ["2026-11-08 17:40:00", "wangjing", "李强", "10.20.8.21", "Chrome 141 / Windows", "success", ""],
+  ["2026-11-08 15:22:00", "chenchen", "陈晨", "10.20.8.33", "Safari 18 / macOS", "success", ""],
+  ["2026-11-08 09:04:00", "reviewer", "外部评审", "10.20.9.7", "Chrome 140 / Windows", "fail", "账号已停用"],
+  ["2026-11-07 11:06:00", "zhaoqm", "赵启明", "10.20.8.12", "Chrome 141 / Windows", "success", ""],
+  ["2026-11-07 08:51:00", "admin", "王静", "127.0.0.1", "Chrome 141 / macOS", "success", ""],
+  ["2026-11-06 18:20:00", "unknown", "—", "10.20.9.44", "Chrome 139 / Windows", "fail", "用户名或密码错误"]
+];
+
+const OPERATION_LOGS = [
+  ["2026-11-09 09:20:00", "王静", "保存菜单权限", "验证经理", "9 个菜单"],
+  ["2026-11-09 09:05:00", "王静", "编辑大模型配置", "DeepSeek V4", "deepseek-chat"],
+  ["2026-11-08 16:42:00", "刘洋", "新增用户", "chenchen", "验证专员"],
+  ["2026-11-08 11:18:00", "李强", "重置密码", "wangjing", "李强"],
+  ["2026-11-07 14:06:00", "王静", "停用用户", "reviewer", "外部评审"]
+];
+
+const LLM_CONFIGS = [
+  ["LLM-01", "admin", "DeepSeek V4", "DeepSeek", "https://api.deepseek.com", "deepseek-chat", "sk-demo-deepseek-8f2a", 0.2, 8192, 60, "on", 1, "2026-11-09 09:02:00", 1284],
+  ["LLM-02", "admin", "Qwen Max", "阿里云百炼", "https://dashscope.aliyuncs.com/compatible-mode/v1", "qwen-max", "sk-demo-qwen-31c7", 0.3, 6144, 60, "on", 0, "2026-11-08 16:35:00", 316],
+  ["LLM-03", "wangjing", "Qwen Max", "阿里云百炼", "https://dashscope.aliyuncs.com/compatible-mode/v1", "qwen-max", "sk-demo-qwen-wj", 0.2, 6144, 60, "on", 1, "2026-11-08 11:20:00", 58],
+  ["LLM-04", "liuyang", "本地 Llama", "Ollama", "http://127.0.0.1:11434/v1", "llama3.1:70b", "local", 0.1, 4096, 120, "on", 1, "2026-10-30 10:12:00", 42]
+];
+
+const TOKEN_LOGS = [
+  ["2026-11-09 09:18:00", "TK-20261109-001", "DeepSeek V4", "暴露分类解析", "王静", "澳门分行", 18420, 3120, 8.4, "success"],
+  ["2026-11-09 09:15:00", "TK-20261109-002", "DeepSeek V4", "信息完整性检查", "王静", "澳门分行", 9620, 1840, 5.1, "success"],
+  ["2026-11-09 09:10:00", "TK-20261109-003", "DeepSeek V4", "底稿计算说明", "刘洋", "总行（法人）", 12800, 5210, 12.6, "success"],
+  ["2026-11-09 08:58:00", "TK-20261109-004", "Qwen Max", "计量向导问答", "李强", "澳门分行", 7420, 2310, 7.2, "success"],
+  ["2026-11-09 08:44:00", "TK-20261109-005", "DeepSeek V4", "智能体对话", "刘洋", "总行（法人）", 2180, 860, 2.8, "success"],
+  ["2026-11-08 18:03:00", "TK-20261108-021", "DeepSeek V4", "字段映射建议", "李强", "澳门分行", 4360, 1120, 4.1, "success"],
+  ["2026-11-08 17:42:00", "TK-20261108-020", "Qwen Max", "缓释规则问答", "陈晨", "香港分行", 11320, 2740, 9.8, "success"],
+  ["2026-11-08 16:35:00", "TK-20261108-019", "Qwen Max", "方案摘要", "李强", "澳门分行", 6120, 1480, 5.4, "success"],
+  ["2026-11-08 15:28:00", "TK-20261108-018", "DeepSeek V4", "暴露分类解析", "陈晨", "香港分行", 15280, 3620, 11.2, "success"],
+  ["2026-11-08 11:07:00", "TK-20261108-017", "DeepSeek V4", "结论摘要", "王静", "澳门分行", 8840, 1620, 4.9, "success"],
+  ["2026-11-08 10:32:00", "TK-20261108-016", "本地 Llama", "文档分类", "系统", "总行（法人）", 2280, 340, 21.6, "fail"],
+  ["2026-11-07 17:51:00", "TK-20261107-015", "DeepSeek V4", "计量向导问答", "李强", "澳门分行", 6980, 2080, 6.3, "success"]
 ];
 
 function q(value) {
@@ -354,6 +421,30 @@ lines.push(insert("measure_batch",
 lines.push(insert("assistant_turn",
   ["seq", "role", "body"],
   MASTER.NL_ASSISTANT_SCRIPT.map((item, index) => [index + 1, item.role, JSON.stringify(item)])));
+
+lines.push(insert("app_role",
+  ["id", "name", "description", "is_super", "status", "menus_json"],
+  ROLES.map((item) => [item[0], item[1], item[2], item[3], item[4], JSON.stringify(item[5])])));
+
+lines.push(insert("app_user",
+  ["id", "username", "name", "role_id", "dept", "email", "phone", "password_hash", "status", "orgs_json", "last_login"],
+  USERS.map((item) => [item[0], item[1], item[2], item[3], item[4], item[5], item[6], item[7], item[8], JSON.stringify(item[9]), item[10]])));
+
+lines.push(insert("login_log",
+  ["at", "username", "name", "ip", "device", "status", "reason"],
+  LOGIN_LOGS));
+
+lines.push(insert("operation_log",
+  ["at", "actor", "action", "target", "note"],
+  OPERATION_LOGS));
+
+lines.push(insert("llm_config",
+  ["id", "owner", "name", "provider", "base_url", "model", "api_key", "temperature", "max_tokens", "timeout", "status", "is_default", "last_test", "calls"],
+  LLM_CONFIGS));
+
+lines.push(insert("token_log",
+  ["at", "request_id", "model", "scene", "user_name", "org_name", "prompt_tokens", "completion_tokens", "latency", "status"],
+  TOKEN_LOGS));
 
 const out = join(root, "sql/002_seed.sql");
 writeFileSync(out, lines.filter(Boolean).join("\n\n") + "\n");

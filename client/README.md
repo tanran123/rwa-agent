@@ -11,9 +11,10 @@ Vue 3 + Vue Router + Vuex + axios。开发服务把 `/api` 代理到 `http://127
 | `index.html` | 页面壳。 |
 | `vite.config.js` | 开发端口、`@` 别名、`/api` 代理。 |
 | `src/main.js` | 挂上路由、Vuex 和 axios。 |
-| `src/App.vue` | 左侧菜单和页面头。标题「银行Bank return 计算工作平台」。机构、地区、版本、基准日不在顶部筛选，由任务工作台和计量向导各自选择。所有页面都包在这里。右下角挂 `AgentDock`。 |
-| `src/router/index.js` | 路由。`meta.group` 是菜单分组，`meta.sections` 是页内页签，`meta.versionContext` 为真时页面顶部显示 `VersionContext`：完整的版本信息窗口和资本充足率/流动性快捷链接。`/versions/new/workbench` 是新建版本的入口，`/versions/:id/workbench` 是维护工作台，`/tasks/:id` 是任务详情工作台。 |
-| `src/utils/nav.js` | 左侧菜单。`规则配置` 只列监管规则版本和机构，其余配置从版本的「监管规则维护工作台」进入；`任务运行` 是任务工作台。页签不单列菜单项，用 `PARENT` 指回父菜单，配置子页都指回 `/versions`，`/hqla*` 都指回 `/tasks`。 |
+| `src/App.vue` | 左侧菜单和页面头。标题「银行Bank return 计算工作平台」。机构、地区、版本、基准日不在顶部筛选，由任务工作台和计量向导各自选择。所有页面都包在这里。未登录时只渲染登录页；登录后侧栏底部显示当前账号和退出。右下角挂 `AgentDock`。 |
+| `src/router/index.js` | 路由和导航守卫。`meta.group` 是菜单分组，`meta.sections` 是页内页签，`meta.versionContext` 为真时页面顶部显示 `VersionContext`：完整的版本信息窗口和资本充足率/流动性快捷链接，`meta.public` 是登录页。`/versions/new/workbench` 是新建版本的入口，`/versions/:id/workbench` 是维护工作台，`/tasks/:id` 是任务详情工作台，`/system/*` 是系统管理。未登录访问业务页会跳到 `/login`，无菜单权限的地址回到总览。 |
+| `src/utils/nav.js` | 左侧菜单。`规则配置` 只列监管规则版本和机构，其余配置从版本的「监管规则维护工作台」进入；`任务运行` 是任务工作台；`系统管理` 是用户、角色、权限、日志、大模型和 Token 调用。页签不单列菜单项，用 `PARENT` 指回父菜单，配置子页都指回 `/versions`，`/hqla*` 都指回 `/tasks`。`MENU_BY_PATH` 把菜单 id 对到路由，供权限过滤和守卫使用。 |
+| `src/utils/auth.js` | 登录会话。`setSession`/`clearSession` 读写本机会话，`can(menuId)` 判断当前账号的菜单权限。会话只保存账号、角色和菜单，不保存密码。 |
 | `src/utils/agentCatalog.js` | 对话带给模型的页面、接口和表单。路径和字段跟路由、`src/api` 里已有的名字一致。 |
 | `src/store/index.js` | 当前客户、机构、地区、规则版本、基准日。数据来自 `GET /api/bootstrap`。 |
 | `src/composables/useContext.js` | 页面读取和修改上面这份上下文。 |
@@ -37,6 +38,7 @@ Vue 3 + Vue Router + Vuex + axios。开发服务把 `/api` 代理到 `http://127
 | `view/ead/` | EAD 计算规则配置。左侧产品清单，右侧三步：是否需要配置、表内或表外、公式编辑器。转换系数仍是 `CcfView.vue`。 |
 | `view/crm/` | 信用风险缓释配置。左侧产品清单，右侧三步：是否需要配置、逐笔缓释字段绑定、合格缓释物字典。新建产品的默认状态是无需配置。第 2、3 步各有自己的草稿，「保存绑定」「保存字典」写回配置并立即落库，各自的「重置」丢弃未保存的改动；右上角「保存全部配置」保存整份。 |
 | `view/measure/` | 任务工作台、任务详情工作台、计量向导、底稿计算、结果明细。侧栏分组是「任务运行」。任务工作台（`/tasks`）没有页签，只列主任务，并统计每个主任务下资本充足率和流动性子任务的个数、已归档数和进度；点行或「进入」到任务详情工作台（`/tasks/:id`）。详情工作台分「资本充足率」和「流动性」两个上下排列的模块，各自新增、改名、删除子任务，子任务只填名称，不填暴露类型。「进入计量」把主任务和资本充足率子任务带进计量向导；流动性子任务到 HQLA 页签执行。第五步按第二步的债项、第三步的产品和第四步确认的字段映射，从数据库取该产品的风险暴露划分规则逐笔解析大类、子类和权重，每笔在 `output/traces/step5/` 生成一份 Markdown 留痕。结果写入计量批次后，结果明细按批次名称列出每一次执行，再展开这一次的逐笔结果。同名批次不能再次执行。向导把风险权重、EAD、RWA 和计算过程写回上传的工作簿，第八步和第九步可以下载；由子任务触发时，写入完成的批次自动归档回该子任务。 |
+| `view/system/` | 登录与系统管理。`LoginView.vue` 是全屏登录页：左侧品牌说明，右侧账号密码、记住登录和演示账号；登录成功写会话并进入原地址。`UsersView.vue` 维护账号、角色、部门和授权机构，支持启停与重置密码，不能停用当前账号。`RolesView.vue` 维护角色并跳到权限页。`PermissionsView.vue` 按角色勾选菜单，全选、清空、保存，超级管理员只读。`LogsView.vue` 分操作日志和登录日志，可导出 CSV。`LlmView.vue` 只显示当前账号的模型配置，密钥以掩码展示，编辑留空不改，支持测试连接、设默认和启停。`TokensView.vue` 按日期、用户、模型筛选调用明细并统计调用次数、Token 和成功率，可导出当前结果。 |
 
 页内页签不是新菜单。例如暴露分类的「分类规则 / 产品线路 / 缓释」用 `sections` 表达，菜单不单列。对应关系已经写在 `router/index.js` 的 `sections` 和 `nav.js` 的 `PARENT`。
 
@@ -77,6 +79,7 @@ Vue 3 + Vue Router + Vuex + axios。开发服务把 `/api` 代理到 `http://127
 | `api/tasks.js` | 信用风险 RWA 主任务和子任务：新建、改名、删除、新增/修改/删除子任务（`module` 为 `capital` 或 `liquidity`）、把计量批次归档回资本充足率子任务 |
 | `api/assistant.js` | 规则助手 |
 | `api/agent.js` | `/agent/chat`，只给 `AgentDock` 用。计算确认时多送 `confirm` 真或假 |
+| `api/admin.js` | 登录与退出、菜单、账号、角色与角色菜单、登录日志和操作日志、大模型配置、Token 调用。登录页和 `view/system/` 只从这里要数据。 |
 
 ## 智能体停靠栏
 

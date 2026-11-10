@@ -43,6 +43,12 @@ DROP TABLE IF EXISTS hqla_task_list;
 DROP TABLE IF EXISTS hqla_task_reported;
 DROP TABLE IF EXISTS hqla_task;
 DROP TABLE IF EXISTS hqla_reference;
+DROP TABLE IF EXISTS token_log;
+DROP TABLE IF EXISTS llm_config;
+DROP TABLE IF EXISTS operation_log;
+DROP TABLE IF EXISTS login_log;
+DROP TABLE IF EXISTS app_user;
+DROP TABLE IF EXISTS app_role;
 
 SET FOREIGN_KEY_CHECKS = 1;
 
@@ -445,4 +451,86 @@ CREATE TABLE hqla_reference (
   sub VARCHAR(8) NOT NULL DEFAULT '',
   region VARCHAR(16) NOT NULL DEFAULT '',
   KEY idx_hqla_ref_isin (isin)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 平台账号与系统管理。登录只认启用中的账号和角色；密码存 SHA-256，不存明文。
+CREATE TABLE app_role (
+  id VARCHAR(16) NOT NULL PRIMARY KEY,
+  name VARCHAR(64) NOT NULL,
+  description VARCHAR(255) NOT NULL DEFAULT '',
+  is_super TINYINT NOT NULL DEFAULT 0,
+  status VARCHAR(8) NOT NULL DEFAULT 'on',
+  menus_json JSON NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE app_user (
+  id VARCHAR(32) NOT NULL PRIMARY KEY,
+  username VARCHAR(64) NOT NULL,
+  name VARCHAR(64) NOT NULL,
+  role_id VARCHAR(16) NOT NULL,
+  dept VARCHAR(64) NOT NULL DEFAULT '',
+  email VARCHAR(128) NOT NULL DEFAULT '',
+  phone VARCHAR(32) NOT NULL DEFAULT '',
+  password_hash CHAR(64) NOT NULL,
+  status VARCHAR(8) NOT NULL DEFAULT 'on',
+  orgs_json JSON NULL,
+  last_login VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uk_app_user_username (username),
+  KEY idx_app_user_role (role_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE login_log (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  at VARCHAR(32) NOT NULL,
+  username VARCHAR(64) NOT NULL,
+  name VARCHAR(64) NOT NULL DEFAULT '',
+  ip VARCHAR(64) NOT NULL DEFAULT '',
+  device VARCHAR(128) NOT NULL DEFAULT '',
+  status VARCHAR(16) NOT NULL,
+  reason VARCHAR(255) NOT NULL DEFAULT '',
+  KEY idx_login_log_at (at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE operation_log (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  at VARCHAR(32) NOT NULL,
+  actor VARCHAR(64) NOT NULL DEFAULT '',
+  action VARCHAR(64) NOT NULL,
+  target VARCHAR(128) NOT NULL DEFAULT '',
+  note VARCHAR(255) NOT NULL DEFAULT '',
+  KEY idx_operation_log_at (at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE llm_config (
+  id VARCHAR(32) NOT NULL PRIMARY KEY,
+  owner VARCHAR(64) NOT NULL,
+  name VARCHAR(64) NOT NULL,
+  provider VARCHAR(64) NOT NULL DEFAULT '',
+  base_url VARCHAR(255) NOT NULL,
+  model VARCHAR(64) NOT NULL,
+  api_key VARCHAR(255) NOT NULL DEFAULT '',
+  temperature DECIMAL(3, 1) NOT NULL DEFAULT 0.2,
+  max_tokens INT NOT NULL DEFAULT 8192,
+  timeout INT NOT NULL DEFAULT 60,
+  status VARCHAR(8) NOT NULL DEFAULT 'on',
+  is_default TINYINT NOT NULL DEFAULT 0,
+  last_test VARCHAR(32) NOT NULL DEFAULT '',
+  calls INT NOT NULL DEFAULT 0,
+  KEY idx_llm_config_owner (owner)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE token_log (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  at VARCHAR(32) NOT NULL,
+  request_id VARCHAR(40) NOT NULL,
+  model VARCHAR(64) NOT NULL,
+  scene VARCHAR(64) NOT NULL DEFAULT '',
+  user_name VARCHAR(64) NOT NULL DEFAULT '',
+  org_name VARCHAR(64) NOT NULL DEFAULT '',
+  prompt_tokens INT NOT NULL DEFAULT 0,
+  completion_tokens INT NOT NULL DEFAULT 0,
+  latency DECIMAL(8, 2) NOT NULL DEFAULT 0,
+  status VARCHAR(16) NOT NULL DEFAULT 'success',
+  KEY idx_token_log_at (at),
+  KEY idx_token_log_user (user_name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -19,6 +19,11 @@ import {
 } from "./hqla.js";
 import { copyExposureDoc, deleteExposureDoc, exposureChat, exposureDoc, exposureDocs, provisionExposureDocs, saveExposureChat, saveExposureDoc } from "./exposureDocs.js";
 import {
+  createLlm, createRole, createTokenLog, createUser, defaultLlm, listLlm, listLoginLogs, listOperationLogs,
+  listRoles, listTokenLogs, listUsers, login, logout, menuTree, resetPassword, saveRoleMenus, sessionInfo, testLlm,
+  toggleLlm, toggleRole, toggleUser, updateLlm, updateRole, updateUser
+} from "./admin.js";
+import {
   createCcf, createClause, createCrmRule, createExposureRule, createField, createGrade, createMapping, createMoWeight,
   createOrg, createProduct, createRuleVersion, createWeightRule, deleteCcf, deleteCcfs, deleteClause, deleteClauses,
   deleteCrmRule, deleteCrmRules, deleteExposureRule, deleteExposureRules, deleteField, deleteFields, deleteGrade, deleteGrades,
@@ -118,6 +123,121 @@ function countNodes(doc) {
 router.get("/health", async (ctx) => {
   await query("SELECT 1 AS ok");
   ctx.body = { ok: true };
+});
+
+// ---------------------------------------------------------------- 登录与系统管理
+
+router.post("/auth/login", async (ctx) => {
+  ctx.body = await login(ctx.request.body || {});
+});
+
+router.post("/auth/logout", async (ctx) => {
+  ctx.body = await logout(ctx.request.body || {});
+});
+
+router.get("/auth/session", async (ctx) => {
+  ctx.body = await sessionInfo(String(ctx.query.username || ""));
+});
+
+router.get("/menus", async (ctx) => {
+  ctx.body = menuTree();
+});
+
+router.get("/users", async (ctx) => {
+  ctx.body = await listUsers();
+});
+
+router.post("/users", async (ctx) => {
+  const body = ctx.request.body || {};
+  ctx.status = 201;
+  ctx.body = await createUser(body, body.actor);
+});
+
+router.put("/users/:id", async (ctx) => {
+  const body = ctx.request.body || {};
+  ctx.body = await updateUser(ctx.params.id, body, body.actor);
+});
+
+router.post("/users/:id/toggle", async (ctx) => {
+  const body = ctx.request.body || {};
+  ctx.body = await toggleUser(ctx.params.id, body.actor);
+});
+
+router.post("/users/:id/reset-password", async (ctx) => {
+  const body = ctx.request.body || {};
+  ctx.body = await resetPassword(ctx.params.id, body.actor);
+});
+
+router.get("/roles", async (ctx) => {
+  ctx.body = await listRoles();
+});
+
+router.post("/roles", async (ctx) => {
+  const body = ctx.request.body || {};
+  ctx.status = 201;
+  ctx.body = await createRole(body, body.actor);
+});
+
+router.put("/roles/:id", async (ctx) => {
+  const body = ctx.request.body || {};
+  ctx.body = await updateRole(ctx.params.id, body, body.actor);
+});
+
+router.put("/roles/:id/menus", async (ctx) => {
+  const body = ctx.request.body || {};
+  ctx.body = await saveRoleMenus(ctx.params.id, body, body.actor);
+});
+
+router.post("/roles/:id/toggle", async (ctx) => {
+  const body = ctx.request.body || {};
+  ctx.body = await toggleRole(ctx.params.id, body.actor);
+});
+
+router.get("/login-logs", async (ctx) => {
+  ctx.body = await listLoginLogs(Number(ctx.query.limit) || 200);
+});
+
+router.get("/operation-logs", async (ctx) => {
+  ctx.body = await listOperationLogs(Number(ctx.query.limit) || 200);
+});
+
+router.get("/llm-configs", async (ctx) => {
+  ctx.body = await listLlm(String(ctx.query.owner || ""));
+});
+
+router.post("/llm-configs", async (ctx) => {
+  const body = ctx.request.body || {};
+  ctx.status = 201;
+  ctx.body = await createLlm(body.owner, body, body.actor);
+});
+
+router.put("/llm-configs/:id", async (ctx) => {
+  const body = ctx.request.body || {};
+  ctx.body = await updateLlm(ctx.params.id, body.owner, body, body.actor);
+});
+
+router.post("/llm-configs/:id/toggle", async (ctx) => {
+  const body = ctx.request.body || {};
+  ctx.body = await toggleLlm(ctx.params.id, body.owner, body.actor);
+});
+
+router.post("/llm-configs/:id/default", async (ctx) => {
+  const body = ctx.request.body || {};
+  ctx.body = await defaultLlm(ctx.params.id, body.owner, body.actor);
+});
+
+router.post("/llm-configs/:id/test", async (ctx) => {
+  const body = ctx.request.body || {};
+  ctx.body = await testLlm(ctx.params.id, body.owner, body.actor);
+});
+
+router.get("/token-logs", async (ctx) => {
+  ctx.body = await listTokenLogs(ctx.query || {});
+});
+
+router.post("/token-logs", async (ctx) => {
+  ctx.status = 201;
+  ctx.body = await createTokenLog(ctx.request.body || {});
 });
 
 router.get("/bootstrap", async (ctx) => {

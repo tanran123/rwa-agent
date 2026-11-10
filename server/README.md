@@ -29,6 +29,13 @@ Koa 2，前缀 `/api`，默认 `http://127.0.0.1:8780`。数据在 MySQL，连�
 | 方法 | 路径 | 作用 |
 | --- | --- | --- |
 | GET | `/health` | 存活检查。 |
+| POST、GET | `/auth/login`、`/auth/logout`、`/auth/session` | 登录与退出。登录校验账号、角色状态和 SHA-256 密码，成功时返回账号、角色和可访问菜单，并写 `login_log`。退出也写一条登录日志。`GET /auth/session?username=` 给已登录页面刷新角色和菜单；账号或角色停用返回 403。密码不存明文、不回传。 |
+| GET | `/menus` | 系统管理的菜单分组，供权限页渲染勾选项。 |
+| GET、POST、PUT | `/users`、`/users/:id` | 账号列表、新增、编辑。`POST /users/:id/toggle` 启停账号，`POST /users/:id/reset-password` 把密码重置为 `ecl2026`。用户名创建后不改，授权的机构写在 `orgs_json`。 |
+| GET、POST、PUT | `/roles`、`/roles/:id` | 角色列表、新增、编辑。`PUT /roles/:id/menus` 保存这一角色的菜单权限，`POST /roles/:id/toggle` 启停角色；超级管理员角色不可停用，菜单权限不可改。 |
+| GET | `/login-logs`、`/operation-logs` | 登录日志和操作日志，按时间倒序，默认最近 200 条。用户、角色、大模型配置和权限的写入都会记一条操作日志。 |
+| GET、POST、PUT | `/llm-configs`、`/llm-configs/:id` | 当前账号的大模型配置，按 `owner` 隔离。列表只返回密钥掩码，更新时 `apiKey` 留空表示不改。`POST /llm-configs/:id/test` 记录一次测试时间并返回模拟延迟，`/default` 设为账号默认，`/toggle` 启停。 |
+| GET、POST | `/token-logs` | Token 调用明细与统计。筛选参数 `from`、`to`、`user`、`model`，返回 `rows`、`summary`、`users`、`models`。`POST` 预留给智能体写入调用记录。 |
 | GET | `/bootstrap` | 客户、机构、地区、版本。给前端 Vuex。 |
 | GET | `/dashboard` | 总览数字。批次清单不截断，页面再按顶栏版本筛。 |
 | GET、POST、PUT、DELETE | `/orgs`、`/rule-versions`、`/clauses` | 机构、规则版本、条款。机构名单同时给顶栏和版本的适用机构。改名称时，同一地区里规则版本和计量批次上的同名适用机构一起改。被规则版本或计量批次引用的机构不能删，也不能改地区。条款关键字匹配条款编号、标题、制度和制度版本。写入在 `src/ruleWrite.js`。编号创建后不改。规则版本的规则类型、适用机构、规则文件、发布时间、维护人、变更说明可以留空；地区和规则名称必填。版本被产品、EAD、专属规则或计量批次引用时不能删。条款被专属规则或 EAD 规则引用时不能删。另有 `POST /orgs/batch-delete`、`POST /rule-versions/batch-delete`、`POST /clauses/batch-delete`，请求体 `{ "ids": [] }`，返回 `{ deleted, blocked }`。被引用的留在 `blocked`。 |
@@ -54,7 +61,7 @@ Koa 2，前缀 `/api`，默认 `http://127.0.0.1:8780`。数据在 MySQL，连�
 
 ## 表
 
-`jurisdiction`、`customer`、`org_unit` 是客户和机构。`rule_version`、`clause_doc`、`clause_ref` 是规则版本和条款。`product_type`、`product_field`、`field_mapping` 是产品和字段。`exposure_document` 存权重法分类 JSON，`rule_version` 是规则版本编号，和 `rule_version.version` 对照；`seq = 0` 的那一行不挂版本。`weight_rule`、`bank_grade_row`、`mo_weight_row` 是权重表。`ead_product_config`、`ead_product_rule` 是按产品的 EAD 配置和公式。`ccf_rule`、`crm_rule`、`product_exposure_rule` 是转换系数、缓释和产品规则。`crm_product_config`、`crm_slot_column`、`crm_eligible_type` 是按产品的缓释配置、逐笔列名绑定和合格缓释物字典。`rwa_task`、`rwa_task_sub` 是任务工作台的主任务和子任务，子任务的 `module` 区分资本充足率和流动性，`batch_id` 指向资本充足率计量批次。`measure_batch`、`measure_line` 是批次和逐笔结果。`measure_batch.rules_json` 记下当时用的分类文档、EAD 规则和缓释配置，`measure_line.detail` 记下这一笔的分类、EAD 步骤、缓释结论和 RWA。`assistant_turn` 是规则助手对话。
+`jurisdiction`、`customer`、`org_unit` 是客户和机构。`rule_version`、`clause_doc`、`clause_ref` 是规则版本和条款。`product_type`、`product_field`、`field_mapping` 是产品和字段。`exposure_document` 存权重法分类 JSON，`rule_version` 是规则版本编号，和 `rule_version.version` 对照；`seq = 0` 的那一行不挂版本。`weight_rule`、`bank_grade_row`、`mo_weight_row` 是权重表。`ead_product_config`、`ead_product_rule` 是按产品的 EAD 配置和公式。`ccf_rule`、`crm_rule`、`product_exposure_rule` 是转换系数、缓释和产品规则。`crm_product_config`、`crm_slot_column`、`crm_eligible_type` 是按产品的缓释配置、逐笔列名绑定和合格缓释物字典。`rwa_task`、`rwa_task_sub` 是任务工作台的主任务和子任务，子任务的 `module` 区分资本充足率和流动性，`batch_id` 指向资本充足率计量批次。`measure_batch`、`measure_line` 是批次和逐笔结果。`measure_batch.rules_json` 记下当时用的分类文档、EAD 规则和缓释配置，`measure_line.detail` 记下这一笔的分类、EAD 步骤、缓释结论和 RWA。`assistant_turn` 是规则助手对话。`app_user`、`app_role` 是账号和角色，角色菜单写在 `app_role.menus_json`，账号授权机构写在 `app_user.orgs_json`；`login_log`、`operation_log` 是登录和关键操作留痕；`llm_config` 按 `owner` 存每个账号的模型配置，`token_log` 是模型调用明细。
 
 表内 / 表外 EAD 计算规则在 `ead_product_config`、`ead_product_rule`。一个产品只能选表内或表外。`tools/build-seed.mjs` 按产品公式生成这两张表的种子，公式先过 `lib/formula.cjs`。
 
