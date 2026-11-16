@@ -6,26 +6,40 @@ The graph itself is built in ``agent.llm.agents.chat``.
 
 from __future__ import annotations
 
+from agent.llm.client import active_settings
+from agent.llm.settings import Settings
 from agent.llm.session.client import reply
 from agent.storage import checkpointer, store
 
 __all__ = ["agent", "graph", "reply"]
 
-_GRAPH = None
+_GRAPHS: dict[Settings, object] = {}
+_MAX_GRAPHS = 8
 
 
 def agent():
-    """Return the compiled coordinator graph."""
+    """Return a compiled coordinator graph using the active model config."""
     from agent.llm.agents.chat import build_chat_agent
 
     return build_chat_agent()
 
 
+def _agent_for(current: Settings):
+    from agent.llm.agents.chat import build_chat_agent
+
+    return build_chat_agent(current)
+
+
 def graph():
-    global _GRAPH
-    if _GRAPH is None:
-        _GRAPH = agent()
-    return _GRAPH
+    """Return the coordinator for the account model active in this request."""
+    current = active_settings()
+    compiled = _GRAPHS.get(current)
+    if compiled is None:
+        compiled = _agent_for(current)
+        if len(_GRAPHS) >= _MAX_GRAPHS:
+            _GRAPHS.clear()
+        _GRAPHS[current] = compiled
+    return compiled
 
 
 def thread_config(thread_id: str, checkpoint_id: str | None = None) -> dict:

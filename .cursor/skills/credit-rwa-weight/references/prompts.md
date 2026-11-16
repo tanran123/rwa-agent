@@ -1,6 +1,6 @@
 # 模型提示词
 
-能力通过 `agent/llm/agents/capability.py` 的 `Capability` 建一张 DeepAgents 图；底层模型工厂在 `agent/llm/client.py` 的 `complete`。模型默认 `qwen-plus`，地址默认 `https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions`，`temperature` 为 0。密钥读仓库根目录 `.env` 的 `DASHSCOPE_API_KEY`，没有则读 `MODEL_API_KEY`。`MODEL_BASE_URL`、`MODEL_NAME` 可以覆盖默认值。
+能力通过 `agent/llm/agents/capability.py` 的 `Capability` 建一张 DeepAgents 图；底层模型工厂在 `agent/llm/client.py` 的 `complete`。任何 OpenAI 兼容接口都可以接：`MODEL_PROVIDER` 选预设或 `MODEL_BASE_URL` 给地址，`MODEL_NAME` 给模型名（默认回落到 `agent.json` 的 `runtime.model`），`temperature` 为 0。密钥读仓库根目录 `.env` 的 `MODEL_API_KEY`，旧名 `DASHSCOPE_API_KEY` 也兼容。
 
 返回正文用 `agent/llm/capabilities/jsonx.py` 的 `extract_json` 取出一个 JSON 对象。系统提示的原文在 `agent/llm/skills/measure-*/SKILL.md`，函数只负责读这份文件。改某一步的说法时改对应技能，不用再改 Python 字符串。
 

@@ -45,6 +45,7 @@ from knowledge.local.rule_graph import load_graph, save_graph
 from agent.llm.capabilities.product_flow import analyze_flow_gaps_local, generate_product_flow
 from agent.llm.capabilities.market_mapping import suggest_field_map, suggest_mappings
 from agent.llm.graph import reply as agent_reply
+from agent.llm.client import use_llm_config
 from agent.tree.edit import propose as propose_tree
 from knowledge.weknora.rule_chat import discuss_rules, lookup_basis
 from knowledge.local.rule_learn import learn_from_excel
@@ -126,6 +127,12 @@ def _credential(value: object, limit: int) -> str:
     if len(text) > limit:
         raise ValueError("内容过长")
     return text
+
+
+def _llm_of(data: dict) -> dict | None:
+    """Koa forwards the account's active llm_config; absence falls back to .env."""
+    llm = data.get("llm") if isinstance(data, dict) else None
+    return llm if isinstance(llm, dict) else None
 
 
 @app.get("/api/weixin")
@@ -425,13 +432,14 @@ def rules_basis():
 def exposure_tree_propose():
     data = request.get_json(silent=True) or {}
     try:
-        result = propose_tree(
-            data.get("messages") or [],
-            data.get("document") or {},
-            data.get("label") or "",
-            data.get("generic") if isinstance(data.get("generic"), dict) else None,
-            data.get("clauses") if isinstance(data.get("clauses"), list) else None,
-        )
+        with use_llm_config(_llm_of(data)):
+            result = propose_tree(
+                data.get("messages") or [],
+                data.get("document") or {},
+                data.get("label") or "",
+                data.get("generic") if isinstance(data.get("generic"), dict) else None,
+                data.get("clauses") if isinstance(data.get("clauses"), list) else None,
+            )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     except Exception as exc:
@@ -444,14 +452,15 @@ def agent_chat():
     data = request.get_json(silent=True) or {}
     try:
         flag = data.get("confirm")
-        result = agent_reply(
-            data.get("messages") or [],
-            data.get("page") or "/",
-            data.get("config") if isinstance(data.get("config"), dict) else None,
-            data.get("threadId") if isinstance(data.get("threadId"), str) else None,
-            flag if isinstance(flag, bool) else None,
-            data.get("catalog") if isinstance(data.get("catalog"), dict) else None,
-        )
+        with use_llm_config(_llm_of(data)):
+            result = agent_reply(
+                data.get("messages") or [],
+                data.get("page") or "/",
+                data.get("config") if isinstance(data.get("config"), dict) else None,
+                data.get("threadId") if isinstance(data.get("threadId"), str) else None,
+                flag if isinstance(flag, bool) else None,
+                data.get("catalog") if isinstance(data.get("catalog"), dict) else None,
+            )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     except Exception as exc:
@@ -463,7 +472,8 @@ def agent_chat():
 def rules_chat():
     data = request.get_json(silent=True) or {}
     try:
-        result = discuss_rules(data.get("messages"), data.get("rules"), data.get("focus"))
+        with use_llm_config(_llm_of(data)):
+            result = discuss_rules(data.get("messages"), data.get("rules"), data.get("focus"))
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except Exception as e:

@@ -18,7 +18,7 @@ from agent.llm.agents.skills_backend import SkillsBackend
 from agent.llm.session.turn_middleware import TurnContextMiddleware
 from agent.storage import checkpointer, store
 from agent.llm.client import chat_model
-from agent.llm.settings import LLM
+from agent.llm.settings import LLM, Settings
 from agent.tools import tools
 
 _READ_ONLY_TOOLS = ["ls", "read_file", "glob", "grep"]
@@ -33,11 +33,11 @@ def _subagents_enabled() -> bool:
     return value not in {"0", "false", "off", "no"}
 
 
-def build_chat_agent():
+def build_chat_agent(current: Settings | None = None):
     """Return the compiled coordinator graph. Kept in one place for rollback."""
     # The coordinator must not hand work to a generic subagent: the calculation
-    # pipeline is the only executor. Registering at provider level keeps this
-    # true when ``agent.json`` switches between qwen models.
+    # pipeline is the only executor. Every model goes through ChatOpenAI here,
+    # including non-DashScope providers, so the "openai" profile always applies.
     register_harness_profile(
         "openai",
         HarnessProfile(
@@ -47,7 +47,7 @@ def build_chat_agent():
     )
     backend = SkillsBackend(LLM)
     return create_deep_agent(
-        model=chat_model("chat"),
+        model=chat_model("chat", override=current),
         tools=tools,
         system_prompt=system_prompt(),
         skills=["/skills/"],

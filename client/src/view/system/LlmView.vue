@@ -128,7 +128,7 @@ async function test(row) {
 
 <template>
   <p class="notice info">
-    当前账号：<b>{{ me.name }}</b>（{{ me.username }}）· 仅显示本账号的模型配置。API Key 只回传掩码；编辑时留空表示不修改。
+    当前账号：<b>{{ me.name }}</b>（{{ me.username }}）· 仅显示本账号的模型配置。API Key 只回传掩码；编辑时留空表示不修改。启用后，本账号的对话、规则助手、决策树和计量助手直接使用这里的模型。
   </p>
   <p v-if="note" class="notice" :class="noteKind">{{ note }}</p>
 
@@ -140,7 +140,7 @@ async function test(row) {
       </div>
 
       <div v-if="!data.length" class="panel">
-        <div class="panel-body dim">当前账号尚未配置大模型。新增后，本账号的对话和计量助手会使用这里的默认模型。</div>
+        <div class="panel-body dim">当前账号尚未配置大模型。新增并启用后，本账号的对话、规则助手、决策树和计量助手会直接使用这里的模型；没有设默认时，第一个启用的配置生效。</div>
       </div>
 
       <div v-else class="adm-llm-grid">

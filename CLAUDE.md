@@ -19,7 +19,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env                      # 填 DASHSCOPE_API_KEY
+cp .env.example .env                      # 填 MODEL_API_KEY（兼容 DASHSCOPE_API_KEY）
 npm install -g pm2
 
 cd client && npm install
@@ -73,7 +73,7 @@ node tools/build-seed.mjs                          # 重新生成 sql/002_seed.s
 - `agent/` — deepagents 计算智能体。内部分两层：`agent/core/` 只放纯 Python（禁止 import `agent.llm`），`agent/llm/` 是唯一能调模型的地方（每个能力一个 DeepAgents 图）。见下节。
 - `knowledge/` — 规则库。`local/` 是仓库里的规则包（Markdown + `library.py`），`weknora/` 是微信知识库对话。注意：**信用风险的分类 JSON 不在 `knowledge/`**，在 `agent/subagents/weight/knowledge/`。
 
-密钥只有两处，都在 `.env` 里，且都不提交：仓库根目录 `.env` 放 `DASHSCOPE_API_KEY`、`WEKNORA_*`；`server/.env` 放 MySQL 变量。
+密钥只有两处，都在 `.env` 里，且都不提交：仓库根目录 `.env` 放 `MODEL_API_KEY`（兼容 `DASHSCOPE_API_KEY`）、`WEKNORA_*`；`server/.env` 放 MySQL 变量。
 
 ## 智能体：总控 + 流水线
 

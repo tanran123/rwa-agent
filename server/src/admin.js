@@ -3,7 +3,7 @@
  *
  * 账号、角色菜单权限、登录日志、操作日志、大模型配置和 Token 调用记录都在这里读写。
  * 密码只存 SHA-256，不回传。大模型 API Key 只回传掩码，修改时留空表示不改。
- * 这里不计算权重，也不调用模型；「测试连接」只核对配置并记一次测试时间。
+ * 这里不计算权重；「测试连接」会用这份配置向模型发一次最小请求。
  */
 
 import { createHash } from "node:crypto";
@@ -403,6 +403,35 @@ export async function listLlm(owner) {
   return rows.map(llmOut);
 }
 
+/** The account's active model, forwarded to Flask with model calls.
+ *  Prefer the default; if none is marked, the first enabled config wins. */
+export async function activeLlm(owner) {
+  const who = String(owner || "").trim();
+  if (!who) return null;
+  let rows;
+  try {
+    rows = await query(
+      "SELECT * FROM llm_config WHERE owner = ? AND status = 'on' ORDER BY is_default DESC, id LIMIT 1",
+      [who]
+    );
+  } catch (err) {
+    console.error("读取大模型配置失败，回退到 .env", err.message);
+    return null;
+  }
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    name: row.name,
+    provider: row.provider,
+    base_url: row.base_url,
+    model: row.model,
+    api_key: row.api_key,
+    temperature: Number(row.temperature),
+    max_tokens: Number(row.max_tokens),
+    timeout: Number(row.timeout)
+  };
+}
+
 async function nextLlmId() {
   const rows = await query("SELECT id FROM llm_config");
   const ids = new Set(rows.map((item) => item.id));
@@ -495,7 +524,33 @@ export async function defaultLlm(id, owner, actor) {
 export async function testLlm(id, owner, actor) {
   const row = await ownedLlm(id, owner);
   if (row.status !== "on") throw fail(400, "配置已停用，先启用再测试");
+  const base = String(row.base_url || "").replace(/\/+$/, "");
   const at = nowText();
+  const headers = { "content-type": "application/json" };
+  if (row.api_key) headers.authorization = "Bearer " + row.api_key;
+  const seconds = Number(row.timeout) > 0 ? Number(row.timeout) : 15;
+  const started = Date.now();
+  try {
+    const response = await fetch(base + "/chat/completions", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        model: row.model,
+        messages: [{ role: "user", content: "ping" }],
+        max_tokens: 1,
+        temperature: 0
+      }),
+      signal: AbortSignal.timeout(seconds * 1000)
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error("HTTP " + response.status + " " + text.slice(0, 160));
+    }
+    await response.text();
+  } catch (err) {
+    throw fail(502, "连接失败：" + String(err.message || err).slice(0, 200));
+  }
+  const latencyMs = Date.now() - started;
   await query("UPDATE llm_config SET last_test = ? WHERE id = ?", [at, id]);
   await audit(actor, "测试大模型连接", row.name, row.base_url + " / " + row.model);
   return {
@@ -504,7 +559,7 @@ export async function testLlm(id, owner, actor) {
     at,
     base: row.base_url,
     model: row.model,
-    latencyMs: 286,
+    latencyMs,
     auth: maskKey(row.api_key)
   };
 }

@@ -12,7 +12,7 @@ from typing import Any
 
 from deepagents import create_deep_agent
 
-from agent.llm.client import MAPPING, chat_model
+from agent.llm.client import MAPPING, active_settings, chat_model
 from agent.llm.skills import skill_body
 
 _REGISTRY: dict[tuple[str, str, str], "Capability"] = {}
@@ -36,11 +36,11 @@ class Capability:
         self.skill = skill
         self.role = role
         self.timeout = timeout
-        self._graph = None
+        self._graphs: dict = {}
 
-    def _build(self):
+    def _build(self, current):
         return create_deep_agent(
-            model=chat_model(self.role, timeout=self.timeout),
+            model=chat_model(self.role, timeout=self.timeout, override=current),
             tools=[],
             system_prompt=skill_body(self.skill),
             name=self.name,
@@ -51,9 +51,14 @@ class Capability:
         return self.ask_text(json.dumps(payload, ensure_ascii=False))
 
     def ask_text(self, text: str) -> str:
-        if self._graph is None:
-            self._graph = self._build()
-        state = self._graph.invoke({"messages": [{"role": "user", "content": text}]})
+        current = active_settings()
+        compiled = self._graphs.get(current)
+        if compiled is None:
+            compiled = self._build(current)
+            if len(self._graphs) >= 4:
+                self._graphs.clear()
+            self._graphs[current] = compiled
+        state = compiled.invoke({"messages": [{"role": "user", "content": text}]})
         messages = state.get("messages") if isinstance(state, dict) else None
         if not messages:
             raise RuntimeError("模型没有返回内容")

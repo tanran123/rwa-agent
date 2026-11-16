@@ -31,4 +31,4 @@ python -m agent.core.pipeline.pipeline 你的工作簿.xlsx
 
 `context` 至少带有 `source`（工作簿路径）。每步返回时保留 `annotated`、`trace_file`、`ead_yi`、`rwa_yi`。`ead_yi` 和 `rwa_yi` 的单位是亿元。
 
-密钥仍只放在仓库根目录 `.env` 的 `DASHSCOPE_API_KEY`。不要把密钥写进回复、日志或技能。底稿页在 `agent/steps/weight/paper/`，缓存是同目录 `底稿模型计算.json`。改流水线结果时不要改这两个地方。
+密钥仍只放在仓库根目录 `.env` 的 `MODEL_API_KEY`（旧名 `DASHSCOPE_API_KEY` 也可以）。不要把密钥写进回复、日志或技能。底稿页在 `agent/steps/weight/paper/`，缓存是同目录 `底稿模型计算.json`。改流水线结果时不要改这两个地方。

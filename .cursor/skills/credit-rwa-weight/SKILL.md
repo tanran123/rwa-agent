@@ -27,7 +27,7 @@ description: >-
 
 - Python 3.10 及以上。
 - 依赖只有 `openpyxl`，列在仓库根目录 `requirements.txt`。
-- 仓库根目录 `.env` 里有非空的 `DASHSCOPE_API_KEY`。只检查是否存在，不要打印，也不要写进回复、日志或本技能。没有就停，让用户自己写入 `.env`，不要让用户把密钥贴到对话里。
+- 仓库根目录 `.env` 里有非空的 `MODEL_API_KEY` 或旧名 `DASHSCOPE_API_KEY`。只检查是否存在，不要打印，也不要写进回复、日志或本技能。没有就停，让用户自己写入 `.env`，不要让用户把密钥贴到对话里。
 
 规则文件不是每次计算都要用户交的输入。只有用户要求改分类或权重时才编辑它。
 
@@ -38,7 +38,7 @@ description: >-
 ### 计算一本工作簿
 
 1. 确认底稿文件存在。在仓库根目录执行。
-2. 确认仓库根目录 `.env` 里有非空的 `DASHSCOPE_API_KEY`，不要输出它的值。
+2. 确认仓库根目录 `.env` 里有非空的 `MODEL_API_KEY` 或 `DASHSCOPE_API_KEY`，不要输出它的值。
 3. 还没装依赖时执行 `python3 -m pip install -r requirements.txt`。
 4. 执行：
 

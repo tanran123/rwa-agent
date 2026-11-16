@@ -69,7 +69,7 @@
 
 同步节点不能安全地按墙钟取消，所以 `llm_call` 没有设置节点超时。整轮 HTTP 仍受页面请求超时限制。
 
-模型名在 `agent.json` 的 `runtime.model`。对话和决策树助手读这一项。密钥在仓库根目录 `.env` 的 `DASHSCOPE_API_KEY`，没有则用 `MODEL_API_KEY`。工作簿表头对应仍用 `.env` 的 `MODEL_NAME`，不读 `agent.json`。接口地址要用别的，设 `MODEL_BASE_URL`。
+模型不限于千问，任何 OpenAI 兼容接口都能接。当前账号在「系统管理 → 大模型配置」里启用模型后，Koa 会把它随请求转给 Flask；计量流程的 Python 子进程也拿到同一份配置。这份配置优先级高于 `.env`。没有可用配置时，`MODEL_PROVIDER` 选预设（`dashscope`、`openai`、`deepseek`、`moonshot`、`zhipu`、`siliconflow`、`ollama`），或用 `MODEL_BASE_URL` 直接给地址。模型名用 `.env` 的 `MODEL_NAME`，没有则回落到 `agent.json` 的 `runtime.model`；`MAPPING_MODEL` 可以给表头对应单独指定。密钥在仓库根目录 `.env` 的 `MODEL_API_KEY`，也兼容旧名 `DASHSCOPE_API_KEY`。本地地址可以不配密钥。
 
 这里有六块，互不替代：
 
@@ -87,8 +87,8 @@
 
 | 路径 | 作用 |
 | --- | --- |
-| `agent.json` | 总控的名字、说明和模型。`llm/settings.py` 读取这一项。要换模型就改这里。密钥仍在仓库根目录 `.env`。 |
-| `llm/settings.py` | 统一模型名/密钥/路径。模型工厂在 `llm/client.py`。 |
+| `agent.json` | 总控的名字、说明和模型。`llm/settings.py` 读取这一项，作为没有 `MODEL_NAME` 时的模型回落，也可写 `provider` / `base_url`。密钥仍在仓库根目录 `.env`。 |
+| `llm/settings.py` | 统一模型服务商、模型名、密钥和路径。模型工厂在 `llm/client.py`。 |
 | `llm/skills/__init__.py` | 唯一 SKILL.md / AGENTS.md 解析器，`SKILLS_DIR` 指向同目录。 |
 | `storage.py` | 检查点与共享存储，流水线和对话共用。 |
 | `core/paths.py` | 仓库根目录与共享数据路径。留痕目录从这里找。 |

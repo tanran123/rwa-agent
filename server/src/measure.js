@@ -4,6 +4,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { pool, query } from "./db.js";
+import { activeLlm } from "./admin.js";
+import { requestContext } from "./requestContext.js";
 import { eadConfigMap } from "./eadConfig.js";
 import { cellText, productGroups } from "./measureSampling.js";
 
@@ -761,6 +763,28 @@ function pythonBin() {
   return existsSync(local) ? local : "python3";
 }
 
+/** Forward the account's active model to the Python step that calls it. */
+async function llmEnv() {
+  const owner = requestContext.getStore()?.owner || "";
+  const llm = await activeLlm(owner);
+  if (!llm) return {};
+  const values = {
+    MODEL_PROVIDER: llm.provider,
+    MODEL_BASE_URL: llm.base_url,
+    MODEL_API_KEY: llm.api_key,
+    MODEL_NAME: llm.model,
+    MODEL_TEMPERATURE: llm.temperature == null ? "" : String(llm.temperature),
+    MODEL_MAX_TOKENS: llm.max_tokens ? String(llm.max_tokens) : "",
+    MODEL_TIMEOUT: llm.timeout ? String(llm.timeout) : ""
+  };
+  const env = {};
+  Object.entries(values).forEach(([key, value]) => {
+    // Empty values stay out of the environment so .env can still fill them in.
+    if (value !== "" && value != null) env[key] = String(value);
+  });
+  return env;
+}
+
 const MAP_FIELDS = `
 import json, sys
 from agent.llm.capabilities.field_mapping import standard_fields as suggest_standard_fields
@@ -807,11 +831,12 @@ function sampleForModel(headers, rows) {
   return { samples, columnValues };
 }
 
-function detectWithModel(groups, products) {
+async function detectWithModel(groups, products) {
+  const env = await llmEnv();
   return new Promise((resolve, reject) => {
     const child = spawn(pythonBin(), ["-c", DETECT_PRODUCTS], {
       cwd: root,
-      env: { ...process.env, PYTHONPATH: root }
+      env: { ...process.env, PYTHONPATH: root, ...env }
     });
     let out = "";
     let err = "";
@@ -858,11 +883,12 @@ export async function detectMeasureProducts(body) {
   }
 }
 
-function mapWithModel(headers, fields, samples, columnValues) {
+async function mapWithModel(headers, fields, samples, columnValues) {
+  const env = await llmEnv();
   return new Promise((resolve, reject) => {
     const child = spawn(pythonBin(), ["-c", MAP_FIELDS], {
       cwd: root,
-      env: { ...process.env, PYTHONPATH: root }
+      env: { ...process.env, PYTHONPATH: root, ...env }
     });
     let out = "";
     let err = "";
@@ -1476,11 +1502,12 @@ payload = json.load(sys.stdin)
 print(json.dumps(classify_loans(payload), ensure_ascii=False))
 `;
 
-function runClassifyLoans(payload) {
+async function runClassifyLoans(payload) {
+  const env = await llmEnv();
   return new Promise((resolve, reject) => {
     const child = spawn(pythonBin(), ["-c", CLASSIFY_LOANS], {
       cwd: root,
-      env: { ...process.env, PYTHONPATH: root + path.delimiter + (process.env.PYTHONPATH || "") }
+      env: { ...process.env, PYTHONPATH: root + path.delimiter + (process.env.PYTHONPATH || ""), ...env }
     });
     let out = "";
     let err = "";
@@ -1600,11 +1627,12 @@ export function readClassifyTrace(uploadId, file) {
   return readFileSync(target, "utf8");
 }
 
-function runWeight(source, dest) {
+async function runWeight(source, dest) {
+  const env = await llmEnv();
   return new Promise((resolve, reject) => {
     const child = spawn(pythonBin(), ["-c", CLASSIFY_WEIGHT, source, dest], {
       cwd: root,
-      env: { ...process.env, PYTHONPATH: root + path.delimiter + (process.env.PYTHONPATH || "") }
+      env: { ...process.env, PYTHONPATH: root + path.delimiter + (process.env.PYTHONPATH || ""), ...env }
     });
     let out = "";
     let err = "";

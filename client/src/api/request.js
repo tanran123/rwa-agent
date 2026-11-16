@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { currentUser } from '@/utils/auth'
 
 const request = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
@@ -6,7 +7,11 @@ const request = axios.create({
 })
 
 request.interceptors.request.use(
-  (config) => config,
+  (config) => {
+    const user = currentUser()
+    if (user && user.username) config.headers['X-RWA-User'] = user.username
+    return config
+  },
   (error) => Promise.reject(error),
 )
 

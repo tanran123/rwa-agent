@@ -77,13 +77,22 @@
 
 ## 8. 模型
 
+服务地址只要兼容 OpenAI 的 `/chat/completions` 就能接，不限于 DashScope。
+
+优先级：Koa 按 `X-RWA-User` 找到当前账号启用的 `llm_config`，随
+`/agent/chat`、`/rules/chat`、`/exposure-tree/propose` 转发为 `llm` 字段；
+计量流程的 Python 子进程拿到同一份配置的环境变量。Flask / Python 用这份配置
+调用模型。没有可用配置时回落到下面的环境配置。
+
 | 用途 | 模型名来源 | 默认 |
 | --- | --- | --- |
-| 对话、决策树 | `agent/agent.json` 的 `runtime.model` | `qwen-plus` |
-| 表头 / 字段映射 | 环境变量 `MODEL_NAME` | `qwen-plus` |
+| 对话、决策树 | 环境变量 `MODEL_NAME`，没有则 `agent/agent.json` 的 `runtime.model` | `qwen-plus` |
+| 表头 / 字段映射 | 环境变量 `MAPPING_MODEL`，没有则跟对话模型一致 | `qwen-plus` |
 
-密钥：`DASHSCOPE_API_KEY`，其次 `MODEL_API_KEY`。
-地址：`MODEL_BASE_URL`，默认 DashScope 兼容接口。`temperature=0`。
+密钥：`MODEL_API_KEY`，其次兼容旧名 `DASHSCOPE_API_KEY`。
+地址：`MODEL_BASE_URL`（显式，优先）或 `MODEL_PROVIDER` 预设
+（`dashscope`、`openai`、`deepseek`、`moonshot`、`zhipu`、`siliconflow`、`ollama`）。
+本地地址（`localhost` / `127.0.0.1`）可以不配密钥。`temperature=0`。
 
 ## 9. 运行产物
 

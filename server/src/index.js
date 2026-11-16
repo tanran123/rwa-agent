@@ -20,6 +20,7 @@ import {
 import { copyExposureDoc, deleteExposureDoc, exposureChat, exposureDoc, exposureDocs, provisionExposureDocs, saveExposureChat, saveExposureDoc } from "./exposureDocs.js";
 import {
   createLlm, createRole, createTokenLog, createUser, defaultLlm, listLlm, listLoginLogs, listOperationLogs,
+  activeLlm,
   listRoles, listTokenLogs, listUsers, login, logout, menuTree, resetPassword, saveRoleMenus, sessionInfo, testLlm,
   toggleLlm, toggleRole, toggleUser, updateLlm, updateRole, updateUser
 } from "./admin.js";
@@ -32,6 +33,7 @@ import {
   updateCcf, updateClause, updateCrmRule, updateExposureRule, updateField, updateGrade, updateMapping, updateMoWeight,
   updateOrg, updateProduct, updateRuleVersion, updateWeightRule
 } from "./ruleWrite.js";
+import { requestContext } from "./requestContext.js";
 
 const app = new Koa();
 const router = new Router({ prefix: "/api" });
@@ -47,6 +49,12 @@ function json(value) {
     try { return JSON.parse(value); } catch { return value; }
   }
   return value;
+}
+
+/** Resolve the account's default model so Flask can use it for this request. */
+async function requestLlm(ctx) {
+  const owner = String(ctx.get("x-rwa-user") || (ctx.request.body || {}).owner || "").trim();
+  return activeLlm(owner);
 }
 
 function org(row) {
@@ -840,6 +848,7 @@ router.post("/exposure-tree/propose", async (ctx) => {
      FROM clause_doc c LEFT JOIN jurisdiction j ON j.code = c.jurisdiction
      ORDER BY c.jurisdiction, c.clause_no`
   );
+  const llm = await requestLlm(ctx);
   try {
     const response = await fetch("http://127.0.0.1:8766/api/exposure-tree/propose", {
       method: "POST",
@@ -856,7 +865,8 @@ router.post("/exposure-tree/propose", async (ctx) => {
           title: row.title,
           text: row.body,
           scope: row.scope
-        }))
+        })),
+        ...(llm ? { llm } : {})
       })
     });
     const text = await response.text();
@@ -903,10 +913,12 @@ router.post("/exposure-tree/save", async (ctx) => {
 
 router.post("/agent/chat", async (ctx) => {
   try {
+    const { llm: ignored, ...payload } = ctx.request.body || {};
+    const llm = await requestLlm(ctx);
     const response = await fetch("http://127.0.0.1:8766/api/agent/chat", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(ctx.request.body || {})
+      body: JSON.stringify(llm ? { ...payload, llm } : payload)
     });
     const text = await response.text();
     let body;
@@ -923,10 +935,12 @@ router.post("/agent/chat", async (ctx) => {
 
 router.post("/rules/chat", async (ctx) => {
   try {
+    const { llm: ignored, ...payload } = ctx.request.body || {};
+    const llm = await requestLlm(ctx);
     const response = await fetch("http://127.0.0.1:8766/api/rules/chat", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(ctx.request.body || {})
+      body: JSON.stringify(llm ? { ...payload, llm } : payload)
     });
     const text = await response.text();
     let body;
@@ -995,6 +1009,7 @@ router.post("/hqla/parse", async (ctx) => { ctx.body = await parseUpload(ctx.req
 
 app.use(cors());
 app.use(bodyParser({ jsonLimit: "32mb" }));
+app.use((ctx, next) => requestContext.run({ owner: String(ctx.get("x-rwa-user") || "") }, next));
 app.use(async (ctx, next) => {
   try {
     await next();
