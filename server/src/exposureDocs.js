@@ -350,7 +350,7 @@ export async function exposureDoc(name, version) {
   return rows[0] ? present(rows[0]) : null;
 }
 
-const CHAT_FILE = join(ROOT, "决策树对话.json");
+const CHAT_FILE = process.env.RWA_CHAT_FILE || join(ROOT, "决策树对话.json");
 
 function readChats() {
   try {

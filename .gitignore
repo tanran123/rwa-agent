@@ -9,3 +9,6 @@ __pycache__/
 *.xlsx
 *.xlsm
 output/
+决策树对话.json
+docker/deploy.env
+release/

@@ -82,3 +82,13 @@ cd client && npm run dev
 ```
 
 `./start.sh` 拉起 `rwa-agent`（http://127.0.0.1:8766）和 `rwa-api`（http://127.0.0.1:8780），并交给 PM2 常驻。进程退出会自动再拉起；本机登录后也会再拉起。前端开发地址默认 http://127.0.0.1:5173 。改了 Python 之后执行 `pm2 restart rwa-agent`。改了 Koa 之后执行 `pm2 restart rwa-api`。
+
+## Docker 部署
+
+服务器上已有 MySQL 和 Docker 时，可以把前端、Koa、Flask 打进一个镜像，导出成 tar 拷过去运行。MySQL 不在镜像里。
+
+```bash
+./docker/build-and-save.sh          # 生成 release/rwa-agent-1.0.0-linux-amd64.tar
+```
+
+完整的服务器准备、数据库初始化、启动和排错步骤见 [docker/README.md](docker/README.md)。

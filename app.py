@@ -18,7 +18,11 @@ if str(APP_DIR) not in sys.path:
 
 
 def _load_local_env() -> None:
-    for env_path in (APP_DIR.parent / ".env", APP_DIR / ".env"):
+    paths = [APP_DIR.parent / ".env", APP_DIR / ".env"]
+    extra = os.environ.get("RWA_ENV_FILE", "").strip()
+    if extra:
+        paths.append(Path(extra))
+    for env_path in paths:
         if not env_path.is_file():
             continue
         for line in env_path.read_text(encoding="utf-8").splitlines():
@@ -93,7 +97,7 @@ def health():
 
 
 def _weixin_env_path() -> Path:
-    return APP_DIR / ".env"
+    return Path(os.environ.get("RWA_ENV_FILE") or (APP_DIR / ".env"))
 
 
 def _upsert_env(updates: dict[str, str], path: Path | None = None) -> None:
