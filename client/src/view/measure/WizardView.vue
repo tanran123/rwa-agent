@@ -15,6 +15,7 @@ const { session, currentVersion, scopeVersion, versionOptions, setOrg, setJurisd
 const pack = ref(null);
 const error = ref("");
 const taskCtx = ref(null);
+const snapshotId = computed(() => (taskCtx.value && taskCtx.value.task && taskCtx.value.task.snapshotId) || "");
 const taskError = ref("");
 const archiveError = ref("");
 const step = ref(1);
@@ -261,6 +262,7 @@ async function detectProducts() {
     const detected = await detectMeasureProducts({
       uploadId: uploadId.value,
       version: (currentVersion.value && currentVersion.value.version) || "",
+      snapshotId: snapshotId.value,
       samples: uploadId.value ? [] : intake.value.loans.slice(0, 120).map((loan) => loan.raw || {})
     });
     const byCode = {};
@@ -307,6 +309,7 @@ async function applyChoices() {
       headerRow: headerRow.value,
       version: (currentVersion.value && currentVersion.value.version) || "",
       jurisdiction: session.jurisdiction,
+      snapshotId: snapshotId.value,
       products: productsBody,
       columns
     }));
@@ -339,6 +342,7 @@ async function fillMappings() {
       samples,
       uploadId: uploadId.value,
       version: (currentVersion.value && currentVersion.value.version) || "",
+      snapshotId: snapshotId.value,
       jurisdiction: session.jurisdiction
     });
     if (pack.value && pack.value.intake) pack.value.intake.mappings = mapped.mappings || {};
@@ -393,7 +397,7 @@ async function runClassification() {
   stepError.value = "";
   try {
     const version = (currentVersion.value && currentVersion.value.version) || "";
-    const data = await classifyMeasure(uploadId.value, version);
+    const data = await classifyMeasure(uploadId.value, version, snapshotId.value);
     pack.value = { ...pack.value, ...data };
     classified.value = true;
     weighted.value = false;
@@ -416,7 +420,7 @@ async function runWeight() {
   stepError.value = "";
   try {
     const version = (currentVersion.value && currentVersion.value.version) || "";
-    const data = await weightMeasure(uploadId.value, version);
+    const data = await weightMeasure(uploadId.value, version, snapshotId.value);
     pack.value = { ...pack.value, ...data };
     weighted.value = true;
   } catch (err) {
@@ -457,7 +461,9 @@ async function finish(n) {
         version: version.version || "",
         baseDate: session.baseDate,
         uploadId: uploadId.value,
-        choiceId: choiceId.value
+        choiceId: choiceId.value,
+        taskId: taskCtx.value ? taskCtx.value.task.id : "",
+        snapshotId: snapshotId.value
       });
       savedId.value = saved.id;
       if (taskCtx.value) {
@@ -536,7 +542,8 @@ async function loadFile(event) {
       content,
       headerRow: 1,
       version: (currentVersion.value && currentVersion.value.version) || "",
-      jurisdiction: session.jurisdiction
+      jurisdiction: session.jurisdiction,
+      snapshotId: snapshotId.value
     }));
   } catch (err) {
     readError.value = err.message || "工作簿没有读出来";
@@ -554,7 +561,8 @@ async function rereadSheet() {
       sheet: sheet.value,
       headerRow: headerRow.value,
       version: (currentVersion.value && currentVersion.value.version) || "",
-      jurisdiction: session.jurisdiction
+      jurisdiction: session.jurisdiction,
+      snapshotId: snapshotId.value
     }));
     return true;
   } catch (err) {
@@ -653,7 +661,7 @@ onMounted(async () => {
   <template v-else>
     <div v-if="taskCtx" class="notice info">
       <span class="ni">i</span>
-      <div>本次向导由主任务「{{ taskCtx.task.name }}」的子任务「{{ taskCtx.sub.name }}」触发。监管规则版本 {{ taskCtx.task.version }}、机构 {{ taskCtx.task.institution }} 继承主任务，本次不能修改。计量写入数据库后自动归档到这个子任务。</div>
+      <div>本次向导由主任务「{{ taskCtx.task.name }}」的子任务「{{ taskCtx.sub.name }}」触发。监管规则版本 {{ taskCtx.task.version }}、机构 {{ taskCtx.task.institution }} 继承主任务，本次不能修改。正式计量绑定配置快照 <span class="mono">{{ taskCtx.task.snapshotId || "未绑定" }}</span>，计量写入数据库后自动归档到这个子任务。</div>
     </div>
     <div v-if="taskError" class="notice danger"><span class="ni">!</span><div>{{ taskError }}</div></div>
     <div class="panel" style="margin-bottom: 12px">

@@ -13,3 +13,5 @@ export const createSubtask = (taskId, body) => request.post(`/rwa-tasks/${taskId
 export const updateSubtask = (taskId, subId, body) => request.put(`/rwa-tasks/${taskId}/subs/${subId}`, body)
 export const deleteSubtask = (taskId, subId) => request.delete(`/rwa-tasks/${taskId}/subs/${subId}`)
 export const archiveSubtask = (taskId, subId, batchId) => request.post(`/rwa-tasks/${taskId}/subs/${subId}/archive`, { batchId })
+export const openLiquidityTask = (taskId, subId) =>
+  request.post(`/rwa-tasks/${taskId}/subs/${subId}/hqla/open`, {}, { timeout: 120000 })

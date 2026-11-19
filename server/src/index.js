@@ -14,15 +14,24 @@ import { checkEadFormula, readEadConfig, saveEadConfig } from "./eadConfig.js";
 import { readCrmConfig, saveCrmConfig } from "./crmConfig.js";
 import { configProducts, productGroupMappings } from "./productStandard.js";
 import {
-  archiveTask, computeLcr, computeTask, createTask, deleteDataset, deleteList, deleteTask, demoData, duplicateTask, exportTask, exportWorkbook,
-  getTask, identifyTaskDatasets, importTask, inspectUpload, inspectWorkbook, listHitsFor, listMeta, listTasks,
-  mapTaskDatasets, parseUpload, parseWorkbook, planSample, qualityTaskDatasets, referenceRows,
-  saveDatasetMeta, saveDatasets, saveInput, saveList, saveReported, saveSimple, updateTask, upsertReference
+  archiveTask, computeLcr, computeTask, computeTaskRun, confirmTaskFields, confirmTaskRecognitions,
+  createTask, deleteDataset, deleteList, deleteTask, demoData, duplicateTask, exportTask,
+  exportTaskRunWorkbook, exportWorkbook,
+  getTask, getTaskRunDetail, getTaskSnapshot, identifyTaskDatasets, importTask, inspectUpload,
+  inspectWorkbook, listHitsFor, listMeta, listTaskFields, listTaskQualityIssues, listTaskQualityRuns,
+  listTaskAudit, listTaskRecognitions, listTaskRunExceptions, listTaskRunResults, listTaskRuns, listTasks,
+  mapTaskDatasets, openHqlaTask, parseUpload, parseWorkbook, planSample, preflightTask,
+  qualityTaskDatasets, recognizeTaskProducts, referenceRows, reviewTask, runTaskQuality,
+  saveDatasetMeta, saveDatasets, saveInput, saveList, saveReported, saveSimple, suggestTaskFields,
+  updateTask, upsertReference
 } from "./hqla.js";
 import {
-  deleteLiquidityField, deleteLiquidityProduct, getLiquidityProduct, liquidityConfigCheck,
+  copyLiquidityProduct, deleteLiquidityDictionary, deleteLiquidityDictionaryItem,
+  deleteLiquidityField, deleteLiquidityFieldGroup, deleteLiquidityGroup, deleteLiquidityProduct,
+  deleteLiquidityRuleScope, getLiquidityProduct, listLiquidityDictionaries,
   liquidityMeta, liquidityParams, liquidityRules, liquidityVersions, listLiquidityProducts,
-  saveLiquidityField, saveLiquidityProduct
+  saveLiquidityDictionary, saveLiquidityDictionaryItem, saveLiquidityField, saveLiquidityFieldGroup,
+  saveLiquidityGroup, saveLiquidityProduct, saveLiquidityRuleScope, validateProductGroups
 } from "./liquidity.js";
 import { copyExposureDoc, deleteExposureDoc, exposureChat, exposureDoc, exposureDocs, provisionExposureDocs, saveExposureChat, saveExposureDoc } from "./exposureDocs.js";
 import {
@@ -48,6 +57,12 @@ import {
 import {
   parameterTable, parameterTables, referenceList, referenceLists, saveParameterTable, saveReferenceList
 } from "./refData.js";
+import { resolveVersionRef } from "./ruleVersion.js";
+import {
+  clauseImpact, clauseRelations, cloneRuleVersion, compareSnapshots, configRevisions, createRuleConfigSnapshot,
+  diffRuleVersion, getRuleSnapshot, loadRwaConfig, publishRuleVersion, rollbackSnapshot,
+  ruleVersionOverview, saveClauseRelations, submitRuleVersionReview, validateRuleVersion
+} from "./ruleGovernance.js";
 
 const app = new Koa();
 const router = new Router({ prefix: "/api" });
@@ -71,6 +86,10 @@ async function requestLlm(ctx) {
   return activeLlm(owner);
 }
 
+function actorOf(ctx) {
+  return String(ctx.get("x-rwa-user") || (ctx.request.body || {}).actor || "").trim();
+}
+
 function org(row) {
   return { id: row.id, name: row.name, jurisdiction: row.jurisdiction };
 }
@@ -89,11 +108,18 @@ function version(row) {
     author: row.author,
     changelog: row.changelog,
     publishedAt: row.published_at,
-    rulesetFile: row.ruleset_file
+    rulesetFile: row.ruleset_file,
+    framework: row.framework || "CAR",
+    sourceVersionId: row.source_version_id || "",
+    revision: Number(row.revision) || 1,
+    configStatus: row.config_status || "",
+    createdAt: row.created_at || "",
+    updatedAt: row.updated_at || "",
+    updatedBy: row.updated_by || ""
   };
 }
 
-function clauseBody(row, referencedBy) {
+function clauseBody(row, referencedBy, relations) {
   return {
     id: row.id,
     jurisdiction: row.jurisdiction,
@@ -105,7 +131,12 @@ function clauseBody(row, referencedBy) {
     scope: row.scope,
     effectiveFrom: date(row.effective_from),
     source: row.source,
-    referencedBy: referencedBy || []
+    ruleVersionId: row.rule_version_id || "",
+    framework: row.framework || "CAR",
+    status: row.status || "ACTIVE",
+    revision: Number(row.revision) || 1,
+    referencedBy: referencedBy || [],
+    relations: relations || []
   };
 }
 
@@ -125,7 +156,10 @@ function batch(row) {
     ead: Number(row.ead),
     rwa: Number(row.rwa),
     createdAt: row.created_at,
-    status: row.status
+    status: row.status,
+    ruleVersionId: row.rule_version_id || "",
+    snapshotId: row.snapshot_id || "",
+    engineVersion: row.engine_version || ""
   };
 }
 
@@ -320,29 +354,48 @@ router.get("/dashboard", async (ctx) => {
 });
 
 router.get("/rule-versions", async (ctx) => {
-  const jur = ctx.query.jurisdiction;
+  const jur = String(ctx.query.jurisdiction || "");
+  const framework = String(ctx.query.framework || "");
+  const page = Number(ctx.query.page) || 0;
+  const pageSize = Math.min(200, Math.max(1, Number(ctx.query.pageSize) || 20));
+  const offset = page > 0 ? (page - 1) * pageSize : 0;
   const rows = await query(
-    "SELECT * FROM rule_version WHERE (? = '' OR jurisdiction = ?) ORDER BY jurisdiction, effective_from DESC",
-    [jur || "", jur || ""]
+    `SELECT * FROM rule_version WHERE (? = '' OR jurisdiction = ?) AND (? = '' OR framework = ?)
+      ORDER BY jurisdiction, effective_from DESC
+      ${page > 0 ? "LIMIT ? OFFSET ?" : ""}`,
+    page > 0 ? [jur, jur, framework, framework, pageSize, offset] : [jur, jur, framework, framework]
   );
   const counts = await query(
     "SELECT rule_version, COUNT(*) AS n FROM exposure_document WHERE seq > 0 GROUP BY rule_version"
   );
   const exposureCount = {};
   counts.forEach((row) => { exposureCount[row.rule_version] = Number(row.n); });
-  ctx.body = rows.map((row) => ({ ...version(row), exposureCount: exposureCount[row.version] || 0 }));
+  const mapped = rows.map((row) => ({ ...version(row), exposureCount: exposureCount[row.version] || 0 }));
+  if (page > 0) {
+    const totalRows = await query(
+      "SELECT COUNT(*) AS n FROM rule_version WHERE (? = '' OR jurisdiction = ?) AND (? = '' OR framework = ?)",
+      [jur, jur, framework, framework]
+    );
+    ctx.body = { rows: mapped, total: Number(totalRows[0].n), page, pageSize };
+    return;
+  }
+  ctx.body = mapped;
 });
 
 router.post("/rule-versions", async (ctx) => {
-  ctx.body = version(await createRuleVersion(ctx.request.body || {}));
+  const body = ctx.request.body || {};
+  if (!body.actor) body.actor = actorOf(ctx);
+  ctx.body = version(await createRuleVersion(body));
 });
 
 router.put("/rule-versions/:id", async (ctx) => {
-  ctx.body = version(await updateRuleVersion(ctx.params.id, ctx.request.body || {}));
+  const body = ctx.request.body || {};
+  if (!body.actor) body.actor = actorOf(ctx);
+  ctx.body = version(await updateRuleVersion(ctx.params.id, body));
 });
 
 router.delete("/rule-versions/:id", async (ctx) => {
-  await deleteRuleVersion(ctx.params.id);
+  await deleteRuleVersion(ctx.params.id, actorOf(ctx));
   ctx.body = { ok: true };
 });
 
@@ -350,36 +403,134 @@ router.post("/rule-versions/batch-delete", async (ctx) => {
   ctx.body = await deleteRuleVersions(ctx.request.body || {});
 });
 
+router.get("/rule-versions/:id/overview", async (ctx) => {
+  ctx.body = await ruleVersionOverview(ctx.params.id);
+});
+
+router.post("/rule-versions/:id/validate", async (ctx) => {
+  ctx.body = await validateRuleVersion(ctx.params.id);
+});
+
+router.post("/rule-versions/:id/submit-review", async (ctx) => {
+  ctx.body = await submitRuleVersionReview(ctx.params.id, actorOf(ctx));
+});
+
+router.post("/rule-versions/:id/publish", async (ctx) => {
+  ctx.body = await publishRuleVersion(ctx.params.id, actorOf(ctx));
+});
+
+router.post("/rule-versions/:id/clone", async (ctx) => {
+  ctx.status = 201;
+  ctx.body = await cloneRuleVersion(ctx.params.id, ctx.request.body || {}, actorOf(ctx));
+});
+
+router.get("/rule-versions/:id/diff/:sourceId", async (ctx) => {
+  ctx.body = await diffRuleVersion(ctx.params.id, ctx.params.sourceId);
+});
+
+router.get("/rule-versions/:id/revisions", async (ctx) => {
+  ctx.body = await configRevisions(ctx.params.id, ctx.query.limit);
+});
+
+router.post("/rule-versions/:id/snapshot", async (ctx) => {
+  ctx.status = 201;
+  ctx.body = await createRuleConfigSnapshot(ctx.params.id, actorOf(ctx), "DRAFT");
+});
+
+router.get("/rule-snapshots/:snapshotId", async (ctx) => {
+  ctx.body = await getRuleSnapshot(ctx.params.snapshotId, ctx.query.items !== "0");
+});
+
+router.get("/rule-snapshots/:snapshotId/compare/:otherId", async (ctx) => {
+  ctx.body = await compareSnapshots(ctx.params.snapshotId, ctx.params.otherId);
+});
+
+router.post("/rule-snapshots/:snapshotId/rollback", async (ctx) => {
+  ctx.body = await rollbackSnapshot(ctx.params.snapshotId, actorOf(ctx));
+});
+
+router.get("/rule-config/load", async (ctx) => {
+  ctx.body = await loadRwaConfig({
+    version: String(ctx.query.version || ""),
+    ruleVersionId: String(ctx.query.ruleVersionId || ""),
+    jurisdiction: String(ctx.query.jurisdiction || ""),
+    snapshotId: String(ctx.query.snapshotId || ""),
+    mode: String(ctx.query.mode || "draft")
+  });
+});
+
 router.get("/clauses", async (ctx) => {
   const jur = ctx.query.jurisdiction || "";
+  const versionRef = String(ctx.query.version || "");
+  const versionId = versionRef ? await resolveVersionRef(versionRef, jur) : "";
   const q = "%" + (ctx.query.q || "") + "%";
+  const page = Number(ctx.query.page) || 0;
+  const pageSize = Math.min(500, Math.max(1, Number(ctx.query.pageSize) || 50));
   const rows = await query(
     `SELECT * FROM clause_doc
      WHERE (? = '' OR jurisdiction = ?)
+       AND (? = '' OR rule_version_id = ?)
        AND (clause_no LIKE ? OR title LIKE ? OR doc LIKE ? OR doc_version LIKE ?)
-     ORDER BY jurisdiction, clause_no`,
-    [jur, jur, q, q, q, q]
+     ORDER BY jurisdiction, clause_no
+     ${page > 0 ? "LIMIT ? OFFSET ?" : ""}`,
+    page > 0
+      ? [jur, jur, versionId, versionId, q, q, q, q, pageSize, (page - 1) * pageSize]
+      : [jur, jur, versionId, versionId, q, q, q, q]
   );
   const refs = await query("SELECT clause_id, rule_name FROM clause_ref");
   const byId = {};
   refs.forEach((item) => {
     (byId[item.clause_id] || (byId[item.clause_id] = [])).push(item.rule_name);
   });
-  ctx.body = rows.map((row) => clauseBody(row, byId[row.id]));
+  const relationRows = await query("SELECT clause_id, rule_version_id, rule_document_id, rule_node_id, relation_type FROM rule_clause_relation");
+  const relationsById = {};
+  relationRows.forEach((item) => {
+    (relationsById[item.clause_id] || (relationsById[item.clause_id] = [])).push(item);
+  });
+  const mapped = rows.map((row) => clauseBody(row, byId[row.id], relationsById[row.id]));
+  if (page > 0) {
+    const totalRows = await query(
+      `SELECT COUNT(*) AS n FROM clause_doc
+        WHERE (? = '' OR jurisdiction = ?)
+          AND (? = '' OR rule_version_id = ?)
+          AND (clause_no LIKE ? OR title LIKE ? OR doc LIKE ? OR doc_version LIKE ?)`,
+      [jur, jur, versionId, versionId, q, q, q, q]
+    );
+    ctx.body = { rows: mapped, total: Number(totalRows[0].n), page, pageSize };
+    return;
+  }
+  ctx.body = mapped;
 });
 
 router.post("/clauses", async (ctx) => {
-  const saved = await createClause(ctx.request.body || {});
+  const body = ctx.request.body || {};
+  if (!body.actor) body.actor = actorOf(ctx);
+  const saved = await createClause(body);
   ctx.body = clauseBody(saved.row, saved.referencedBy);
 });
 
 router.put("/clauses/:id", async (ctx) => {
-  const saved = await updateClause(ctx.params.id, ctx.request.body || {});
+  const body = ctx.request.body || {};
+  if (!body.actor) body.actor = actorOf(ctx);
+  const saved = await updateClause(ctx.params.id, body);
   ctx.body = clauseBody(saved.row, saved.referencedBy);
 });
 
+router.get("/clauses/:id/impact", async (ctx) => {
+  ctx.body = await clauseImpact(ctx.params.id);
+});
+
+router.get("/clauses/:id/relations", async (ctx) => {
+  ctx.body = await clauseRelations(ctx.params.id);
+});
+
+router.put("/clauses/:id/relations", async (ctx) => {
+  const body = ctx.request.body || {};
+  ctx.body = await saveClauseRelations(ctx.params.id, body.relations || [], actorOf(ctx));
+});
+
 router.delete("/clauses/:id", async (ctx) => {
-  await deleteClause(ctx.params.id);
+  await deleteClause(ctx.params.id, actorOf(ctx));
   ctx.body = { ok: true };
 });
 
@@ -525,14 +676,27 @@ router.get("/rule-documents/:id", async (ctx) => {
 });
 
 router.post("/rule-documents", async (ctx) => {
-  ctx.body = await createRuleDocument(ctx.request.body || {});
+  const body = ctx.request.body || {};
+  if (!body.actor) body.actor = actorOf(ctx);
+  ctx.body = await createRuleDocument(body);
+});
+
+router.post("/rule-documents/import/preview", async (ctx) => {
+  const body = ctx.request.body || {};
+  ctx.body = await importStcDocuments({
+    jurisdiction: String(body.jurisdiction || "HK"),
+    version: String(body.version || ""),
+    actor: actorOf(ctx),
+    dryRun: true
+  });
 });
 
 router.post("/rule-documents/import", async (ctx) => {
   const body = ctx.request.body || {};
   ctx.body = await importStcDocuments({
     jurisdiction: String(body.jurisdiction || "HK"),
-    version: String(body.version || "")
+    version: String(body.version || ""),
+    actor: actorOf(ctx)
   });
 });
 
@@ -541,7 +705,9 @@ router.post("/rule-documents/validate", async (ctx) => {
 });
 
 router.put("/rule-documents/:id", async (ctx) => {
-  ctx.body = await saveRuleDocument(ctx.params.id, ctx.request.body || {});
+  const body = ctx.request.body || {};
+  if (!body.actor) body.actor = actorOf(ctx);
+  ctx.body = await saveRuleDocument(ctx.params.id, body);
 });
 
 router.post("/rule-documents/:id/validate", async (ctx) => {
@@ -549,12 +715,12 @@ router.post("/rule-documents/:id/validate", async (ctx) => {
 });
 
 router.delete("/rule-documents/:id", async (ctx) => {
-  await deleteRuleDocument(ctx.params.id);
+  await deleteRuleDocument(ctx.params.id, actorOf(ctx));
   ctx.body = { ok: true };
 });
 
 router.get("/parameter-tables", async (ctx) => {
-  ctx.body = await parameterTables(String(ctx.query.jurisdiction || ""));
+  ctx.body = await parameterTables(String(ctx.query.jurisdiction || ""), String(ctx.query.version || ""));
 });
 
 router.get("/parameter-tables/:id", async (ctx) => {
@@ -564,11 +730,11 @@ router.get("/parameter-tables/:id", async (ctx) => {
 });
 
 router.put("/parameter-tables/:id", async (ctx) => {
-  ctx.body = await saveParameterTable(ctx.params.id, ctx.request.body || {});
+  ctx.body = await saveParameterTable(ctx.params.id, ctx.request.body || {}, actorOf(ctx));
 });
 
 router.get("/reference-lists", async (ctx) => {
-  ctx.body = await referenceLists(String(ctx.query.jurisdiction || ""));
+  ctx.body = await referenceLists(String(ctx.query.jurisdiction || ""), String(ctx.query.version || ""));
 });
 
 router.get("/reference-lists/:id", async (ctx) => {
@@ -578,7 +744,7 @@ router.get("/reference-lists/:id", async (ctx) => {
 });
 
 router.put("/reference-lists/:id", async (ctx) => {
-  ctx.body = await saveReferenceList(ctx.params.id, ctx.request.body || {});
+  ctx.body = await saveReferenceList(ctx.params.id, ctx.request.body || {}, actorOf(ctx));
 });
 
 router.get("/exposure-classes", async (ctx) => {
@@ -682,11 +848,19 @@ router.post("/mo-weights/batch-delete", async (ctx) => {
 });
 
 router.get("/ead-config", async (ctx) => {
-  ctx.body = await readEadConfig();
+  ctx.body = await readEadConfig({
+    version: String(ctx.query.version || ""),
+    jurisdiction: String(ctx.query.jurisdiction || "")
+  });
 });
 
 router.put("/ead-config", async (ctx) => {
-  ctx.body = await saveEadConfig((ctx.request.body || {}).config);
+  const body = ctx.request.body || {};
+  ctx.body = await saveEadConfig(body.config, {
+    version: String(body.version || ""),
+    jurisdiction: String(body.jurisdiction || ""),
+    actor: String(ctx.get("x-rwa-user") || body.actor || "")
+  });
 });
 
 router.post("/ead-formula/check", async (ctx) => {
@@ -699,11 +873,19 @@ router.post("/ead-trial", async (ctx) => {
 });
 
 router.get("/crm-config", async (ctx) => {
-  ctx.body = await readCrmConfig();
+  ctx.body = await readCrmConfig({
+    version: String(ctx.query.version || ""),
+    jurisdiction: String(ctx.query.jurisdiction || "")
+  });
 });
 
 router.put("/crm-config", async (ctx) => {
-  ctx.body = await saveCrmConfig((ctx.request.body || {}).config);
+  const body = ctx.request.body || {};
+  ctx.body = await saveCrmConfig(body.config, {
+    version: String(body.version || ""),
+    jurisdiction: String(body.jurisdiction || ""),
+    actor: String(ctx.get("x-rwa-user") || body.actor || "")
+  });
 });
 
 router.get("/ccf", async (ctx) => {
@@ -825,6 +1007,8 @@ router.post("/batches", async (ctx) => {
      VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?)`,
     [row.id, row.name, row.institution, row.jurisdiction, row.version, row.baseDate, row.createdAt, row.status]
   );
+  const ruleVersionId = await resolveVersionRef(row.version, row.jurisdiction);
+  if (ruleVersionId) await query("UPDATE measure_batch SET rule_version_id = ? WHERE id = ?", [ruleVersionId, row.id]);
   ctx.body = { ...row, imported: 0, success: 0, exception: 0, onEad: 0, offEad: 0, ead: 0, rwa: 0 };
 });
 
@@ -873,6 +1057,10 @@ router.delete("/rwa-tasks/:id/subs/:subId", async (ctx) => {
 router.post("/rwa-tasks/:id/subs/:subId/archive", async (ctx) => {
   ctx.body = await archiveSubtask(ctx.params.id, ctx.params.subId, ctx.request.body || {});
 });
+router.post("/rwa-tasks/:id/subs/:subId/hqla/open", async (ctx) => {
+  const body = ctx.request.body || {};
+  ctx.body = await openHqlaTask(ctx.params.id, ctx.params.subId, body.actor || "");
+});
 
 router.post("/measure/runs", async (ctx) => {
   ctx.body = await saveMeasureRun(ctx.request.body || {});
@@ -903,12 +1091,12 @@ router.post("/measure/products", async (ctx) => {
 
 router.post("/measure/classify", async (ctx) => {
   const body = ctx.request.body || {};
-  ctx.body = await classifyUpload(body.uploadId, body.version || "");
+  ctx.body = await classifyUpload(body.uploadId, body.version || "", body.snapshotId || "");
 });
 
 router.post("/measure/weight", async (ctx) => {
   const body = ctx.request.body || {};
-  ctx.body = await weightUpload(body.uploadId, body.version || "");
+  ctx.body = await weightUpload(body.uploadId, body.version || "", body.snapshotId || "");
 });
 
 router.get("/measure/classify/trace/:uploadId/:file", async (ctx) => {
@@ -1070,10 +1258,44 @@ router.get("/liquidity/meta", async (ctx) => { ctx.body = await liquidityMeta(ct
 router.get("/liquidity/products", async (ctx) => { ctx.body = await listLiquidityProducts(ctx.query); });
 router.get("/liquidity/products/:code", async (ctx) => { ctx.body = await getLiquidityProduct(ctx.params.code, ctx.query); });
 router.post("/liquidity/products", async (ctx) => { ctx.status = 201; ctx.body = await saveLiquidityProduct(ctx.request.body || {}); });
+router.post("/liquidity/products/:code/copy", async (ctx) => {
+  ctx.status = 201;
+  ctx.body = await copyLiquidityProduct(ctx.params.code, ctx.request.body || {});
+});
 router.put("/liquidity/products/:code", async (ctx) => {
   ctx.body = await saveLiquidityProduct({ ...(ctx.request.body || {}), code: ctx.params.code });
 });
 router.delete("/liquidity/products/:code", async (ctx) => { ctx.body = await deleteLiquidityProduct(ctx.params.code, ctx.query); });
+router.post("/liquidity/products/:code/groups/validate", async (ctx) => {
+  ctx.body = await validateProductGroups(ctx.params.code, { ...ctx.query, ...(ctx.request.body || {}) });
+});
+router.post("/liquidity/products/:code/groups", async (ctx) => {
+  ctx.status = 201;
+  ctx.body = await saveLiquidityGroup(ctx.params.code, ctx.request.body || {});
+});
+router.put("/liquidity/products/:code/groups/:groupCode", async (ctx) => {
+  ctx.body = await saveLiquidityGroup(ctx.params.code, { ...(ctx.request.body || {}), groupCode: ctx.params.groupCode });
+});
+router.delete("/liquidity/products/:code/groups/:groupCode", async (ctx) => {
+  ctx.body = await deleteLiquidityGroup(ctx.params.code, ctx.params.groupCode, ctx.query);
+});
+router.post("/liquidity/products/:code/field-groups", async (ctx) => {
+  ctx.status = 201;
+  ctx.body = await saveLiquidityFieldGroup(ctx.params.code, ctx.request.body || {});
+});
+router.put("/liquidity/products/:code/field-groups/:groupCode", async (ctx) => {
+  ctx.body = await saveLiquidityFieldGroup(ctx.params.code, { ...(ctx.request.body || {}), groupCode: ctx.params.groupCode });
+});
+router.delete("/liquidity/products/:code/field-groups/:groupCode", async (ctx) => {
+  ctx.body = await deleteLiquidityFieldGroup(ctx.params.code, ctx.params.groupCode, ctx.query);
+});
+router.post("/liquidity/products/:code/rule-scopes", async (ctx) => {
+  ctx.status = 201;
+  ctx.body = await saveLiquidityRuleScope(ctx.params.code, ctx.request.body || {});
+});
+router.delete("/liquidity/products/:code/rule-scopes/:id", async (ctx) => {
+  ctx.body = await deleteLiquidityRuleScope(ctx.params.id, { ...ctx.query, product_code: ctx.params.code });
+});
 router.post("/liquidity/products/:code/fields", async (ctx) => {
   ctx.status = 201;
   ctx.body = await saveLiquidityField(ctx.params.code, ctx.request.body || {});
@@ -1086,7 +1308,27 @@ router.delete("/liquidity/products/:code/fields/:fieldCode", async (ctx) => {
 });
 router.get("/liquidity/rules", async (ctx) => { ctx.body = await liquidityRules(ctx.query); });
 router.get("/liquidity/params", async (ctx) => { ctx.body = await liquidityParams(ctx.query); });
-router.get("/liquidity/config-check", async (ctx) => { ctx.body = await liquidityConfigCheck(ctx.query); });
+router.get("/liquidity/dictionaries", async (ctx) => { ctx.body = await listLiquidityDictionaries(ctx.query); });
+router.post("/liquidity/dictionaries", async (ctx) => {
+  ctx.status = 201;
+  ctx.body = await saveLiquidityDictionary(ctx.request.body || {});
+});
+router.put("/liquidity/dictionaries/:dictCode", async (ctx) => {
+  ctx.body = await saveLiquidityDictionary({ ...(ctx.request.body || {}), dictCode: ctx.params.dictCode });
+});
+router.delete("/liquidity/dictionaries/:dictCode", async (ctx) => {
+  ctx.body = await deleteLiquidityDictionary(ctx.params.dictCode, ctx.query);
+});
+router.post("/liquidity/dictionaries/:dictCode/items", async (ctx) => {
+  ctx.status = 201;
+  ctx.body = await saveLiquidityDictionaryItem(ctx.params.dictCode, ctx.request.body || {});
+});
+router.put("/liquidity/dictionaries/:dictCode/items/:itemCode", async (ctx) => {
+  ctx.body = await saveLiquidityDictionaryItem(ctx.params.dictCode, { ...(ctx.request.body || {}), itemCode: ctx.params.itemCode });
+});
+router.delete("/liquidity/dictionaries/:dictCode/items/:itemCode", async (ctx) => {
+  ctx.body = await deleteLiquidityDictionaryItem(ctx.params.dictCode, ctx.params.itemCode, ctx.query);
+});
 
 // ---------------------------------------------------------------- 流动性 HQLA
 // 判定/抽样/加总/对账/导出在 Flask；这里存任务并转发。
@@ -1099,6 +1341,47 @@ router.get("/hqla/demo/:kind", async (ctx) => { ctx.body = await demoData(ctx.pa
 router.get("/hqla/tasks", async (ctx) => { ctx.body = await listTasks(); });
 router.post("/hqla/tasks", async (ctx) => { ctx.status = 201; ctx.body = await createTask(ctx.request.body || {}); });
 router.get("/hqla/tasks/:id", async (ctx) => { ctx.body = await getTask(ctx.params.id); });
+router.get("/hqla/tasks/:id/snapshot", async (ctx) => { ctx.body = await getTaskSnapshot(ctx.params.id); });
+router.post("/hqla/tasks/:id/products/recognize", async (ctx) => {
+  ctx.body = await recognizeTaskProducts(ctx.params.id, ctx.request.body || {});
+});
+router.get("/hqla/tasks/:id/recognitions", async (ctx) => { ctx.body = await listTaskRecognitions(ctx.params.id, ctx.query || {}); });
+router.post("/hqla/tasks/:id/recognitions/confirm", async (ctx) => {
+  ctx.body = await confirmTaskRecognitions(ctx.params.id, ctx.request.body || {});
+});
+router.post("/hqla/tasks/:id/fields/suggest", async (ctx) => {
+  ctx.body = await suggestTaskFields(ctx.params.id, ctx.request.body || {});
+});
+router.get("/hqla/tasks/:id/fields", async (ctx) => { ctx.body = await listTaskFields(ctx.params.id, ctx.query || {}); });
+router.post("/hqla/tasks/:id/fields/confirm", async (ctx) => {
+  ctx.body = await confirmTaskFields(ctx.params.id, ctx.request.body || {});
+});
+router.get("/hqla/tasks/:id/preflight", async (ctx) => {
+  ctx.body = await preflightTask(ctx.params.id, { allowPartial: ctx.query.allowPartial === "1" || ctx.query.allowPartial === "true" });
+});
+router.post("/hqla/tasks/:id/quality/run", async (ctx) => {
+  ctx.body = await runTaskQuality(ctx.params.id, ctx.request.body || {});
+});
+router.get("/hqla/tasks/:id/quality/runs", async (ctx) => { ctx.body = await listTaskQualityRuns(ctx.params.id); });
+router.get("/hqla/tasks/:id/quality/issues", async (ctx) => { ctx.body = await listTaskQualityIssues(ctx.params.id, ctx.query || {}); });
+router.post("/hqla/tasks/:id/runs", async (ctx) => {
+  ctx.body = await computeTaskRun(ctx.params.id, ctx.request.body || {});
+});
+router.get("/hqla/tasks/:id/runs", async (ctx) => { ctx.body = await listTaskRuns(ctx.params.id); });
+router.get("/hqla/tasks/:id/audit", async (ctx) => { ctx.body = await listTaskAudit(ctx.params.id); });
+router.get("/hqla/tasks/:id/runs/:runId", async (ctx) => { ctx.body = await getTaskRunDetail(ctx.params.id, ctx.params.runId); });
+router.get("/hqla/tasks/:id/runs/:runId/results", async (ctx) => {
+  ctx.body = await listTaskRunResults(ctx.params.id, ctx.params.runId, ctx.query || {});
+});
+router.get("/hqla/tasks/:id/runs/:runId/exceptions", async (ctx) => {
+  ctx.body = await listTaskRunExceptions(ctx.params.id, ctx.params.runId, ctx.query || {});
+});
+router.get("/hqla/tasks/:id/runs/:runId/export.xlsx", async (ctx) => {
+  const { buffer, filename } = await exportTaskRunWorkbook(ctx.params.id, ctx.params.runId);
+  ctx.set("content-type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  ctx.set("content-disposition", `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
+  ctx.body = buffer;
+});
 router.put("/hqla/tasks/:id", async (ctx) => { ctx.body = await updateTask(ctx.params.id, ctx.request.body || {}); });
 router.delete("/hqla/tasks/:id", async (ctx) => { ctx.body = await deleteTask(ctx.params.id); });
 
@@ -1109,6 +1392,9 @@ router.post("/hqla/tasks/:id/quality", async (ctx) => { ctx.body = await quality
 router.post("/hqla/tasks/:id/archive", async (ctx) => {
   const body = ctx.request.body || {};
   ctx.body = await archiveTask(ctx.params.id, !!body.archived);
+});
+router.post("/hqla/tasks/:id/review", async (ctx) => {
+  ctx.body = await reviewTask(ctx.params.id, ctx.request.body || {});
 });
 router.get("/hqla/tasks/:id/archive.json", async (ctx) => {
   const doc = await exportTask(ctx.params.id);
@@ -1166,6 +1452,17 @@ app.use(async (ctx, next) => {
     ctx.body = { error: status >= 500 ? "服务异常" : (err.message || "服务异常") };
   }
 });
+
+// V3.5 是唯一正式配置体系。旧表保留读取用于历史版本，但不再接受写入。
+const LEGACY_WRITE = /^\/api\/(products|field-mappings|weights|weight-rules|bank-grades|mo-weights|crm|product-rules|ccf|exposure-class)(\/|$)/;
+const LEGACY_TREE_WRITE = /^\/api\/exposure-tree\/(copy|delete|save|provision)$/;
+app.use(async (ctx, next) => {
+  if (ctx.method !== "GET" && ctx.method !== "HEAD" && (LEGACY_WRITE.test(ctx.path) || LEGACY_TREE_WRITE.test(ctx.path))) {
+    ctx.throw(409, "旧配置体系已停止写入，请在监管规则维护工作台的 V3.5 配置中维护");
+  }
+  await next();
+});
+
 app.use(router.routes());
 app.use(router.allowedMethods());
 

@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from "vue";
 import RefGridEditor from "@/components/RefGridEditor.vue";
 import { fetchParameterTable, fetchReferenceList, saveParameterTable, saveReferenceList, saveRuleDocument, validateRuleBody } from "@/api/config";
 import { contextOf, nodeView, summarizeConditions, conditionText, listCheckText } from "@/utils/ruleMap";
+import { askConfirm } from "@/utils/confirm";
 
 const props = defineProps({
   classification: { type: Object, default: null },
@@ -515,7 +516,13 @@ function expandAll(open) {
   }
 }
 
-function switchFile(key) {
+async function switchFile(key) {
+  if (key !== activeFile.value && dirty.value) {
+    const yes = await askConfirm("当前配置有未保存的修改，切换后会丢掉这些修改。", {
+      title: "未保存的修改", confirmText: "继续切换", danger: true
+    });
+    if (!yes) return;
+  }
   activeFile.value = key;
   selectedPath.value = "";
   subView.value = key === "weight" ? "table" : key === "cls" ? "route" : "schema";
@@ -616,7 +623,7 @@ async function save() {
     if (activeFile.value === "cls" || activeFile.value === "weight") {
       const meta = activeFile.value === "cls" ? classMeta.value : weightMeta.value;
       if (!meta) throw new Error("没有对应的规则文档");
-      const saved = await saveRuleDocument(meta.id, { body: currentBody.value });
+      const saved = await saveRuleDocument(meta.id, { body: currentBody.value, baseRevision: meta.revision });
       if (activeFile.value === "cls") {
         bodies.value = { ...bodies.value, cls: clone(saved.body) };
         originals.value = { ...originals.value, cls: clone(saved.body) };
@@ -625,11 +632,11 @@ async function save() {
         originals.value = { ...originals.value, weight: clone(saved.body) };
       }
     } else if (activeFile.value === "param") {
-      const saved = await saveParameterTable(paramId.value, currentBody.value);
+      const saved = await saveParameterTable(paramId.value, { ...currentBody.value, baseRevision: currentBody.value.revision });
       paramBodies.value = { ...paramBodies.value, [paramId.value]: clone(saved) };
       paramOriginals.value = { ...paramOriginals.value, [paramId.value]: clone(saved) };
     } else {
-      const saved = await saveReferenceList(listId.value, currentBody.value);
+      const saved = await saveReferenceList(listId.value, { ...currentBody.value, baseRevision: currentBody.value.revision });
       listBodies.value = { ...listBodies.value, [listId.value]: clone(saved) };
       listOriginals.value = { ...listOriginals.value, [listId.value]: clone(saved) };
     }

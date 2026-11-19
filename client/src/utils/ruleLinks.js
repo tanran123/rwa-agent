@@ -8,8 +8,7 @@ export const CAPITAL_LINKS = [
 
 export const LIQUIDITY_LINKS = [
   { label: "流动性产品管理", path: "/liquidity-config", desc: "注册 LCR 产品，确定侧别、来源系统和标准字段，并维护每个产品的规则范围。" },
-  { label: "清单与参数", path: "/liquidity-params", desc: "维护 HQLA 折扣率、现金流入/流出率、上限参数和监管名单。" },
-  { label: "HQLA 计算任务", path: "/hqla", desc: "七步计量：基本信息 → 数据导入 → 产品识别 → 字段 Mapping → 质量检查 → 计算 → 复核输出。" }
+  { label: "清单与参数", path: "/liquidity-params", desc: "维护 HQLA 折扣率、现金流入/流出率、上限参数和监管名单。" }
 ];
 
 // 页内页签和子页都指回菜单里的那一项。

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, reactive, ref } from "vue";
+import { computed, nextTick, reactive, ref, watch } from "vue";
 import { checkEadFormula, fetchEadConfig, saveEadConfig, trialEad } from "@/api/ead";
 import { useContext } from "@/composables/useContext";
 import { OP_LABELS } from "@/utils/ruleText";
@@ -12,7 +12,7 @@ const OPS = ["+", "−", "×", "÷", "(", ")"];
 const FNS = ["max(", "min(", "abs(", "round("];
 const COND_OPS = Object.keys(OP_LABELS);
 
-const { scopeVersion } = useContext();
+const { session, scopeVersion } = useContext();
 const view = ref(null);
 const data = ref(null);
 const active = ref("");
@@ -63,8 +63,10 @@ function scopedProducts(cfg) {
   return ((cfg && cfg.products) || []).filter((item) => item.ruleVersion === version);
 }
 
+watch(scopeVersion, () => { load().catch((err) => { pageError.value = err.message; }); });
+
 async function load() {
-  const cfg = hydrate(await fetchEadConfig());
+  const cfg = hydrate(await fetchEadConfig({ version: scopeVersion.value, jurisdiction: session.jurisdiction }));
   data.value = cfg;
   const visible = scopedProducts(cfg);
   if (!active.value || !visible.some((item) => item.code === active.value)) {
@@ -284,6 +286,7 @@ function conditionsPayload(rule) {
 function payload() {
   return {
     version: data.value.version,
+    baseRevision: data.value.configRevision,
     products: data.value.products.map((item) => ({
       code: item.code,
       ruleVersion: item.ruleVersion,
@@ -319,7 +322,7 @@ async function save() {
   pageError.value = "";
   pageMessage.value = "";
   try {
-    data.value = hydrate(await saveEadConfig(payload()));
+    data.value = hydrate(await saveEadConfig(payload(), { version: scopeVersion.value, jurisdiction: session.jurisdiction }));
     pageMessage.value = "配置已保存到 ead_product_config / ead_product_rule";
   } catch (err) {
     pageError.value = err.message;
@@ -341,7 +344,7 @@ async function runTrial(item, rule) {
   trialView.value = null;
   trialError.value = "";
   try {
-    const result = await trialEad({ product: item.code, side: item.side, rule });
+    const result = await trialEad({ product: item.code, side: item.side, rule, version: scopeVersion.value });
     trialInputs.value = result.inputs;
     trialView.value = result;
   } catch (err) {
@@ -356,7 +359,8 @@ async function rerun() {
       product: trialProduct.value.code,
       side: trialProduct.value.side,
       rule: trialRule.value,
-      std: trialInputs.value
+      std: trialInputs.value,
+      version: scopeVersion.value
     });
     trialView.value = result;
   } catch (err) {

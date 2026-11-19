@@ -5,6 +5,7 @@ import { fileURLToPath } from "url";
 import { query } from "./db.js";
 import { configProducts, versionRuleDocuments, parameterPayload } from "./productStandard.js";
 import { eadConfigMap } from "./eadConfig.js";
+import { resolveVersionRef } from "./ruleVersion.js";
 
 const require = createRequire(import.meta.url);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -188,11 +189,10 @@ export function suggestionsFor(product, mappingDoc, headers) {
   });
 }
 
-export async function buildV35Pack({ loans, headers, sheets, headerRow, sourceFile, version, jurisdiction, choices }) {
-  const [products, docs] = await Promise.all([
-    configProducts(version),
-    versionRuleDocuments(version)
-  ]);
+export async function buildV35Pack({ loans, headers, sheets, headerRow, sourceFile, version, jurisdiction, choices, config = null }) {
+  const [products, docs] = config
+    ? [config.products || [], config.docs || {}]
+    : await Promise.all([configProducts(version), versionRuleDocuments(version)]);
   const productByCode = new Map(products.map((item) => [item.code, item]));
   const mappingByName = new Map((docs.mappings || []).map((item) => [item.name, item.doc]));
   const productByProductCode = {};
@@ -321,12 +321,14 @@ function rowFor(pack, loanId) {
   return pack.results.find((row) => String(row.loanId) === String(loanId)) || null;
 }
 
-export async function classifyV35Pack(pack, version, jurisdiction) {
-  const [docs, params, products] = await Promise.all([
-    versionRuleDocuments(version),
-    parameterPayload(jurisdiction),
-    configProducts(version)
-  ]);
+export async function classifyV35Pack(pack, version, jurisdiction, config = null) {
+  const [docs, params, products] = config
+    ? [config.docs || {}, config.params || { tables: {}, lists: {} }, config.products || []]
+    : await Promise.all([
+      versionRuleDocuments(version),
+      parameterPayload(jurisdiction, version),
+      configProducts(version)
+    ]);
   if (!docs.classification) {
     const error = new Error("当前监管版本没有产品注册或 V3.5 暴露分类规则文档");
     error.status = 400;
@@ -413,11 +415,13 @@ export async function classifyV35Pack(pack, version, jurisdiction) {
   return pack;
 }
 
-export async function weightV35Pack(pack, version, jurisdiction) {
-  const [docs, params] = await Promise.all([
-    versionRuleDocuments(version),
-    parameterPayload(jurisdiction)
-  ]);
+export async function weightV35Pack(pack, version, jurisdiction, config = null) {
+  const [docs, params] = config
+    ? [config.docs || {}, config.params || { tables: {}, lists: {} }]
+    : await Promise.all([
+      versionRuleDocuments(version),
+      parameterPayload(jurisdiction, version)
+    ]);
   if (!docs.weight) {
     const error = new Error("当前监管版本没有 V3.5 风险权重规则文档");
     error.status = 400;
@@ -509,36 +513,66 @@ function evalEadRule(config, facts) {
   return null;
 }
 
-function crmConfigMap(rows, columns, types) {
+function crmConfigMap(rows, columns, types, versionId) {
   const byProduct = {};
   rows.forEach((row) => {
+    if (!versionId && byProduct[row.product_code]) return;
+    const own = versionId ? rows.find((item) => item.product_code === row.product_code && item.rule_version_id === versionId) : null;
+    const picked = own || row;
+    if (picked !== row) return;
+    const chosen = picked.rule_version_id || "";
     byProduct[row.product_code] = {
       code: row.product_code,
-      needed: !!Number(row.needed),
-      reason: row.reason || "",
-      maxSlots: Number(row.max_slots) || 1,
+      needed: !!Number(picked.needed),
+      reason: picked.reason || "",
+      maxSlots: Number(picked.max_slots) || 1,
       columns: { crm_type: [], crm_value: [], crm_weight: [] },
-      types: []
+      facts: { crm_type: [], crm_value: [], crm_weight: [] },
+      types: [],
+      ruleVersionId: chosen
     };
   });
   columns.forEach((row) => {
     const item = byProduct[row.product_code];
-    if (item && item.columns[row.attr]) item.columns[row.attr][Number(row.slot) - 1] = row.column_name;
+    if (!item || !item.columns[row.attr]) return;
+    if ((row.rule_version_id || "") !== item.ruleVersionId) return;
+    item.columns[row.attr][Number(row.slot) - 1] = row.column_name;
+    item.facts[row.attr][Number(row.slot) - 1] = row.target_fact_code || row.attr;
   });
   types.forEach((row) => {
     const item = byProduct[row.product_code];
-    if (item) item.types.push({ code: row.code, name: row.name });
+    if (!item) return;
+    if ((row.rule_version_id || "") !== item.ruleVersionId) return;
+    item.types.push({ code: row.code, name: row.name });
   });
   return byProduct;
 }
 
-async function crmSnapshot() {
-  const [configs, columns, types] = await Promise.all([
-    query("SELECT product_code, needed, reason, max_slots FROM crm_product_config"),
-    query("SELECT product_code, attr, slot, column_name FROM crm_slot_column ORDER BY product_code, attr, slot"),
-    query("SELECT product_code, code, name, note, seq FROM crm_eligible_type ORDER BY product_code, seq, code")
+async function crmSnapshot(version = "", jurisdiction = "") {
+  const versionId = version ? await resolveVersionRef(version, jurisdiction) : "";
+  const load = (scoped) => Promise.all([
+    query(
+      scoped
+        ? "SELECT product_code, needed, reason, max_slots, rule_version_id FROM crm_product_config WHERE rule_version_id = ? OR rule_version_id = ''"
+        : "SELECT product_code, needed, reason, max_slots, rule_version_id FROM crm_product_config",
+      scoped ? [versionId] : []
+    ),
+    query(
+      scoped
+        ? "SELECT product_code, attr, slot, column_name, target_fact_code, rule_version_id FROM crm_slot_column WHERE rule_version_id = ? OR rule_version_id = '' ORDER BY product_code, attr, slot"
+        : "SELECT product_code, attr, slot, column_name, target_fact_code, rule_version_id FROM crm_slot_column ORDER BY product_code, attr, slot",
+      scoped ? [versionId] : []
+    ),
+    query(
+      scoped
+        ? "SELECT product_code, code, name, note, seq, rule_version_id FROM crm_eligible_type WHERE rule_version_id = ? OR rule_version_id = '' ORDER BY product_code, seq, code"
+        : "SELECT product_code, code, name, note, seq, rule_version_id FROM crm_eligible_type ORDER BY product_code, seq, code",
+      scoped ? [versionId] : []
+    )
   ]);
-  return crmConfigMap(configs, columns, types);
+  let [configs, columns, types] = await load(!!versionId);
+  if (versionId && !configs.length) [configs, columns, types] = await load(false);
+  return crmConfigMap(configs, columns, types, versionId);
 }
 
 function applyCrm(row, facts, cfg) {
@@ -550,10 +584,13 @@ function applyCrm(row, facts, cfg) {
     const typeColumn = cfg.columns.crm_type[index] || "";
     const valueColumn = cfg.columns.crm_value[index] || "";
     const weightColumn = cfg.columns.crm_weight[index] || "";
+    const typeFact = (cfg.facts && cfg.facts.crm_type[index]) || "crm_type";
+    const valueFact = (cfg.facts && cfg.facts.crm_value[index]) || "crm_value";
+    const weightFact = (cfg.facts && cfg.facts.crm_weight[index]) || "crm_weight";
     if (!typeColumn && !valueColumn && !weightColumn) continue;
-    const type = typeColumn ? facts[typeColumn] : "";
-    const value = valueColumn ? numberOrNull(facts[valueColumn]) : null;
-    const weight = weightColumn ? numberOrNull(facts[weightColumn]) : null;
+    const type = typeColumn ? (facts[typeFact] == null ? facts[typeColumn] : facts[typeFact]) : "";
+    const value = valueColumn ? numberOrNull(facts[valueFact] == null ? facts[valueColumn] : facts[valueFact]) : null;
+    const weight = weightColumn ? numberOrNull(facts[weightFact] == null ? facts[weightColumn] : facts[weightFact]) : null;
     const text = type == null ? "" : String(type);
     const eligible = cfg.types.find((item) => item.code === text || item.name === text);
     slots.push({ slot: index + 1, typeColumn, valueColumn, weightColumn, type: text, value, weight, eligible: eligible ? eligible.code : "" });
@@ -596,9 +633,9 @@ function applyCrm(row, facts, cfg) {
   };
 }
 
-export async function finalizeV35Pack(pack, version) {
-  const eadConfig = await eadConfigMap();
-  const crm = await crmSnapshot();
+export async function finalizeV35Pack(pack, version, config = null) {
+  const eadConfig = config ? (config.eadConfig || {}) : await eadConfigMap(version);
+  const crm = config ? (config.crm || {}) : await crmSnapshot(version);
   (pack.results || []).forEach((row) => {
     const loan = productOf(pack, row);
     const facts = Object.assign({}, (loan && loan.facts) || row.facts || {});

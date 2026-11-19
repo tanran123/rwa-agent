@@ -20,9 +20,9 @@ export const mapMeasureFields = (body) => request.post('/measure/map', body, { t
 
 export const detectMeasureProducts = (body) => request.post('/measure/products', body, { timeout: 180000 })
 
-export const classifyMeasure = (uploadId, version = '') => request.post('/measure/classify', { uploadId, version }, { timeout: 300000 })
+export const classifyMeasure = (uploadId, version = '', snapshotId = '') => request.post('/measure/classify', { uploadId, version, snapshotId }, { timeout: 300000 })
 
-export const weightMeasure = (uploadId, version = '') => request.post('/measure/weight', { uploadId, version }, { timeout: 300000 })
+export const weightMeasure = (uploadId, version = '', snapshotId = '') => request.post('/measure/weight', { uploadId, version, snapshotId }, { timeout: 300000 })
 
 export const fetchPaper = (offset = 0) => request.get('/working-paper', { params: { offset, limit: 80 }, timeout: 60000 })
 

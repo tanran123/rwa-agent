@@ -1,4 +1,5 @@
 import { query } from "./db.js";
+import { resolveVersionRef } from "./ruleVersion.js";
 
 /**
  * EAD / 信用风险缓释配置共用的产品清单。
@@ -181,31 +182,47 @@ export async function versionRuleDocuments(version) {
   };
 }
 
-/** 参数表和名单按 table_id / list_id 展开，供规则执行器查询。 */
-export async function parameterPayload(jurisdiction) {
+/** 参数表和名单按 table_id / list_id 展开，供规则执行器查询。
+ *  有 rule_version_id 时先取该版本的，没有版本的旧行作为兼容回退。 */
+export async function parameterPayload(jurisdiction, version = "") {
+  const versionId = version ? await resolveVersionRef(version, jurisdiction) : "";
   const [tableRows, listRows] = await Promise.all([
-    query("SELECT * FROM rule_parameter_table WHERE (? = '' OR jurisdiction = ?)", [jurisdiction || "", jurisdiction || ""]),
-    query("SELECT * FROM rule_list WHERE (? = '' OR jurisdiction = ?)", [jurisdiction || "", jurisdiction || ""])
+    query(
+      versionId
+        ? "SELECT * FROM rule_parameter_table WHERE (jurisdiction = ? OR ? = '') AND (rule_version_id = ? OR rule_version_id = '')"
+        : "SELECT * FROM rule_parameter_table WHERE (? = '' OR jurisdiction = ?)",
+      versionId ? [jurisdiction || "", jurisdiction || "", versionId] : [jurisdiction || "", jurisdiction || ""]
+    ),
+    query(
+      versionId
+        ? "SELECT * FROM rule_list WHERE (jurisdiction = ? OR ? = '') AND (rule_version_id = ? OR rule_version_id = '')"
+        : "SELECT * FROM rule_list WHERE (? = '' OR jurisdiction = ?)",
+      versionId ? [jurisdiction || "", jurisdiction || "", versionId] : [jurisdiction || "", jurisdiction || ""]
+    )
   ]);
-  const tables = {};
-  tableRows.forEach((row) => {
-    tables[row.table_id] = {
-      tableId: row.table_id,
-      version: row.table_version,
-      columns: json(row.columns_json) || [],
-      rows: json(row.rows_json) || []
-    };
-  });
-  const lists = {};
-  listRows.forEach((row) => {
-    lists[row.list_id] = {
-      listId: row.list_id,
-      version: row.list_version,
-      columns: json(row.columns_json) || [],
-      rows: json(row.rows_json) || []
-    };
-  });
-  return { tables, lists };
+  const pick = (rows, key, idKey) => {
+    const result = {};
+    rows.filter((row) => !row.rule_version_id).forEach((row) => {
+      result[row[key]] = row;
+    });
+    rows.filter((row) => row.rule_version_id).forEach((row) => {
+      result[row[key]] = row;
+    });
+    const out = {};
+    Object.entries(result).forEach(([id, row]) => {
+      out[id] = {
+        [idKey]: row[key],
+        version: idKey === "tableId" ? row.table_version : row.list_version,
+        columns: json(row.columns_json) || [],
+        rows: json(row.rows_json) || []
+      };
+    });
+    return out;
+  };
+  return {
+    tables: pick(tableRows, "table_id", "tableId"),
+    lists: pick(listRows, "list_id", "listId")
+  };
 }
 
 function conditionFields(condition, fields) {

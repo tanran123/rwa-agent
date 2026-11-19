@@ -1,9 +1,10 @@
 <script setup>
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { getTask, updateTask } from "@/api/hqla";
+import { getTask, reviewTask, updateTask } from "@/api/hqla";
 import { fetchLiquidityMeta } from "@/api/liquidity";
 import { useContext } from "@/composables/useContext";
+import { auth } from "@/utils/auth";
 import StepBasic from "./steps/StepBasic.vue";
 import StepImport from "./steps/StepImport.vue";
 import StepProduct from "./steps/StepProduct.vue";
@@ -22,7 +23,7 @@ const loading = ref(true);
 const error = ref("");
 
 const STEPS = [
-  { key: "basic", title: "基本信息与规则版本", desc: "选择监管规则版本，锁定版本快照与适用产品范围" },
+  { key: "basic", title: "基本信息", desc: "继承主任务和子任务信息，只读展示配置快照" },
   { key: "import", title: "Excel 数据导入", desc: "上传原始工作簿，按 Sheet 解析为数据集" },
   { key: "product", title: "产品自动识别", desc: "按数据集识别产品，低置信度人工确认" },
   { key: "mapping", title: "标准字段 Mapping", desc: "Excel 表头映射到产品标准字段" },
@@ -43,25 +44,33 @@ const step = computed(() => Math.min(7, Math.max(1, Number(task.value && task.va
 const stepComponent = computed(() => COMPONENTS[step.value - 1]);
 const cfg = computed(() => (task.value && task.value.cfg) || {});
 const datasets = computed(() => (task.value && task.value.datasets) || []);
-const result = computed(() => (task.value && task.value.summary && task.value.summary.calculation) || null);
 
 const checks = computed(() => {
   const t = task.value;
   if (!t) return [];
   const list = t.datasets || [];
   const c = t.cfg || {};
-  const mappedAmount = (dataset) => {
-    const keys = Object.keys(dataset.mapping || {});
-    return ["amount", "book_value", "fair_value", "undrawn_amount"].some((key) => keys.includes(key));
-  };
+  const quality = t.qualityRun;
+  const run = t.currentRun;
+  const qualityOk = !!(
+    quality &&
+    Number(quality.inputVersion) === Number(t.inputVersion) &&
+    quality.status === "succeeded"
+  );
+  const runOk = !!(
+    run &&
+    ["succeeded", "partial_failed"].includes(run.status) &&
+    Number(run.inputVersion) === Number(t.inputVersion)
+  );
+  const reviewed = t.reviewStatus === "reviewed" || !!(c.review && c.review.status === "reviewed");
   return [
-    !!(c.ruleVersion && c.snapshotLockedAt && Object.keys(c.snapshot || {}).length),
+    !!(c.ruleVersion && (c.snapshotId || c.snapshotLockedAt)),
     list.length > 0,
-    list.length > 0 && list.every((item) => !!item.productCode && (!!item.confirmedAt || item.level === "CONFIRMED" || item.level === "HIGH")),
-    list.length > 0 && list.every((item) => !item.productCode || mappedAmount(item)),
-    list.length > 0 && list.every((item) => !!item.quality) && !list.some((item) => item.quality.status === "BLOCK"),
-    !!(t.summary && t.summary.calculation),
-    !!(c.review && c.review.status === "reviewed")
+    !!(t.recognition && t.recognition.total > 0 && !t.recognition.pending && !t.recognition.unmatched && !t.recognition.conflict),
+    !!(t.fieldMappingCount > 0 || list.some((item) => Object.keys(item.mapping || {}).length)),
+    qualityOk,
+    runOk,
+    reviewed
   ];
 });
 
@@ -77,17 +86,29 @@ const summaryLine = computed(() => {
   if (!t) return "";
   const rows = datasets.value.reduce((sum, item) => sum + (item.rows || []).length, 0);
   switch (step.value) {
-    case 1: return cfg.value.ruleVersion ? `已锁定 ${cfg.value.ruleVersion}` : "尚未选择监管规则版本";
+    case 1: return cfg.value.ruleVersion ? `继承主任务版本 ${cfg.value.ruleVersion} · 输入版本 v${t.inputVersion || 1}` : "缺少主任务监管规则版本";
     case 2: return `${datasets.value.length} 个数据集 · ${rows.toLocaleString("zh-CN")} 行`;
-    case 3: return `${datasets.value.filter((item) => item.productCode).length} / ${datasets.value.length} 个数据集已识别产品`;
-    case 4: return `${datasets.value.filter((item) => Object.keys(item.mapping || {}).length).length} / ${datasets.value.length} 个数据集已映射`;
-    case 5: {
-      const blocking = datasets.value.filter((item) => item.quality && item.quality.status === "BLOCK").length;
-      const warnings = datasets.value.filter((item) => item.quality && item.quality.status === "WARN").length;
-      return `阻断 ${blocking} · 警告 ${warnings}`;
+    case 3: {
+      const r = t.recognition || {};
+      return `${r.confirmed || 0} / ${r.total || 0} 条记录已确认产品${r.pending ? " · 待确认 " + r.pending : ""}${r.unmatched ? " · 无法识别 " + r.unmatched : ""}${r.conflict ? " · 冲突 " + r.conflict : ""}`;
     }
-    case 6: return result.value ? `LCR ${result.value.lcr == null ? "—" : result.value.lcr.toFixed(2) + "%"}` : "待执行计算";
-    case 7: return result.value ? `LCR ${result.value.lcr == null ? "—" : result.value.lcr.toFixed(2) + "%"} · ${result.value.stats.exceptions} 条异常` : "待计算";
+    case 4: return `${t.fieldMappingCount || 0} 条字段对应已确认`;
+    case 5: {
+      const quality = t.qualityRun;
+      if (!quality) return "待执行质量检查";
+      const stale = Number(quality.inputVersion) !== Number(t.inputVersion);
+      return `输入版本 v${quality.inputVersion}${stale ? "（已过期）" : ""} · 阻断 ${quality.summary ? quality.summary.block : 0} · 警告 ${quality.summary ? quality.summary.warn : 0}`;
+    }
+    case 6: {
+      const run = t.currentRun;
+      if (!run) return "待执行计算";
+      return `批次 #${run.runNo} · ${run.status} · LCR ${run.metrics && run.metrics.lcr != null ? Number(run.metrics.lcr).toFixed(2) + "%" : "—"}`;
+    }
+    case 7: {
+      const run = t.currentRun;
+      if (!run) return "待计算";
+      return `LCR ${run.metrics && run.metrics.lcr != null ? Number(run.metrics.lcr).toFixed(2) + "%" : "—"} · ${run.exceptionCount} 条异常 · ${t.reviewStatus || "未复核"}`;
+    }
     default: return "";
   }
 });
@@ -143,13 +164,9 @@ async function goStep(n) {
 
 async function finish() {
   if (!task.value) return;
-  const now = new Date().toISOString().slice(0, 19).replace("T", " ");
-  await updateTask(task.value.id, {
-    status: "done",
-    step: 7,
-    config: { ...cfg.value, review: { status: "reviewed", reviewedAt: now } }
-  });
-  router.push("/hqla");
+  const reviewer = auth.user ? auth.user.username : "";
+  await reviewTask(task.value.id, { reviewer });
+  router.push(task.value.rwaTaskId ? `/tasks/${task.value.rwaTaskId}` : "/tasks");
 }
 
 watch(() => route.params.id, reload);
@@ -184,7 +201,7 @@ onMounted(async () => {
           <div class="lq-progress-bar"><i :style="{ width: pct + '%' }"></i></div>
           <span :class="{ ok: pct >= 100 }">{{ pct }}%</span>
         </div>
-        <button type="button" class="btn sm" @click="router.push('/hqla')">返回任务列表</button>
+        <button type="button" class="btn sm" @click="router.push(task.rwaTaskId ? `/tasks/${task.rwaTaskId}` : '/tasks')">返回主任务</button>
       </div>
     </div>
 

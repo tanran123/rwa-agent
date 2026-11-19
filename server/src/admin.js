@@ -21,10 +21,7 @@ export const MENUS = [
   {
     group: "任务运行",
     items: [
-      { id: "tasks", name: "任务工作台" },
-      { id: "wizard", name: "计量向导" },
-      { id: "engine", name: "底稿计算" },
-      { id: "results", name: "结果明细" }
+      { id: "tasks", name: "任务工作台" }
     ]
   },
   {

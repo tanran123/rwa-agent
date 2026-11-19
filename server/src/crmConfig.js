@@ -1,5 +1,7 @@
 import { pool, query } from "./db.js";
 import { configProducts } from "./productStandard.js";
+import { resolveVersionRef } from "./ruleVersion.js";
+import { assertRevision, assertVersionWritable, latestConfigRevision, recordRevision } from "./configAudit.js";
 
 /**
  * 信用风险缓释配置：按产品配置。
@@ -46,9 +48,6 @@ function fail(message, status = 400) {
   return error;
 }
 
-/** 产品清单和标准字段来自产品标准字段配置写入的产品注册。 */
-const productsWithFields = configProducts;
-
 const PLACEHOLDER = new Set(["", "—", "-", "－"]);
 
 /**
@@ -88,24 +87,48 @@ function emptySlots(maxSlots) {
   return slots;
 }
 
-export async function readCrmConfig() {
+export async function readCrmConfig({ version = "", jurisdiction = "" } = {}) {
+  const versionId = version ? await resolveVersionRef(version, jurisdiction) : "";
   const [products, configs, columns, types] = await Promise.all([
-    productsWithFields(),
-    query("SELECT product_code, needed, reason, max_slots FROM crm_product_config"),
-    query("SELECT product_code, attr, slot, column_name FROM crm_slot_column ORDER BY product_code, attr, slot"),
-    query("SELECT product_code, code, name, note, seq FROM crm_eligible_type ORDER BY product_code, seq, code")
+    configProducts(version),
+    query(
+      versionId
+        ? "SELECT product_code, needed, reason, max_slots, rule_version_id FROM crm_product_config WHERE rule_version_id = ? OR rule_version_id = ''"
+        : "SELECT product_code, needed, reason, max_slots, rule_version_id FROM crm_product_config",
+      versionId ? [versionId] : []
+    ),
+    query(
+      versionId
+        ? "SELECT product_code, attr, slot, column_name, target_fact_code, rule_version_id FROM crm_slot_column WHERE rule_version_id = ? OR rule_version_id = '' ORDER BY product_code, attr, slot"
+        : "SELECT product_code, attr, slot, column_name, target_fact_code, rule_version_id FROM crm_slot_column ORDER BY product_code, attr, slot",
+      versionId ? [versionId] : []
+    ),
+    query(
+      versionId
+        ? "SELECT product_code, code, name, note, seq, rule_version_id FROM crm_eligible_type WHERE rule_version_id = ? OR rule_version_id = '' ORDER BY product_code, seq, code"
+        : "SELECT product_code, code, name, note, seq, rule_version_id FROM crm_eligible_type ORDER BY product_code, seq, code",
+      versionId ? [versionId] : []
+    )
   ]);
-  const configOf = new Map(configs.map((row) => [row.product_code, row]));
+
+  function rowOf(list, code) {
+    return (versionId ? list.find((row) => row.product_code === code && row.rule_version_id === versionId) : null)
+      || list.find((row) => row.product_code === code && !row.rule_version_id)
+      || null;
+  }
 
   const list = products.map((product) => {
-    const row = configOf.get(product.code);
+    const row = rowOf(configs, product.code);
+    const ownVersion = row ? (row.rule_version_id || "") : "";
     const maxSlots = row ? Number(row.max_slots) : 1;
     const slotColumns = emptySlots(maxSlots);
+    const slotFactCodes = emptySlots(maxSlots);
     columns
-      .filter((column) => column.product_code === product.code)
+      .filter((column) => column.product_code === product.code && (column.rule_version_id || "") === ownVersion)
       .forEach((column) => {
         if (!CRM_ATTRS.includes(column.attr)) return;
         slotColumns[column.attr][Number(column.slot) - 1] = column.column_name;
+        slotFactCodes[column.attr][Number(column.slot) - 1] = column.target_fact_code || column.attr;
       });
 
     return {
@@ -120,13 +143,21 @@ export async function readCrmConfig() {
       reason: row ? row.reason || "" : "",
       maxSlots,
       slotColumns,
+      slotFactCodes,
       eligibleTypes: types
-        .filter((type) => type.product_code === product.code)
+        .filter((type) => type.product_code === product.code && (type.rule_version_id || "") === ownVersion)
         .map((type) => ({ code: type.code, name: type.name, note: type.note || "" }))
     };
   });
 
-  return { maxSlotsLimit: MAX_SLOTS, defaultTypes: DEFAULT_ELIGIBLE_TYPES, products: list };
+  return {
+    version: version || "",
+    ruleVersionId: versionId,
+    configRevision: versionId ? await latestConfigRevision(versionId, "crm_config") : 0,
+    maxSlotsLimit: MAX_SLOTS,
+    defaultTypes: DEFAULT_ELIGIBLE_TYPES,
+    products: list
+  };
 }
 
 /** 合格缓释物字典的校验。与「是否需要配置」无关，两种状态都保存。 */
@@ -174,6 +205,14 @@ function collect(name, product, item, push) {
     if (!CRM_ATTRS.includes(attr)) throw fail(name + "：不认识的缓释属性 " + attr);
   });
 
+  /** 页面绑定的源列 → 计算引擎读取的标准事实编码。缺省用属性名。 */
+  const rawFacts = item.slotFactCodes && typeof item.slotFactCodes === "object" ? item.slotFactCodes : {};
+  const factCodes = {};
+  CRM_ATTRS.forEach((attr) => {
+    const list = Array.isArray(rawFacts[attr]) ? rawFacts[attr] : [];
+    factCodes[attr] = Array.from({ length: maxSlots }, (_, index) => String(list[index] || "").trim() || attr);
+  });
+
   /** 三个属性、每一笔都取出来，按 maxSlots 对齐。 */
   const slots = {};
   CRM_ATTRS.forEach((attr) => {
@@ -208,7 +247,7 @@ function collect(name, product, item, push) {
       }
       if (used.has(column)) throw fail(name + "：「" + attr + "」的列名重复：" + column);
       used.add(column);
-      push.column([product.code, attr, slot, column.slice(0, 80)]);
+      push.column([product.code, attr, slot, column.slice(0, 80), (factCodes[attr][slot - 1] || attr).slice(0, 40)]);
     }
   });
 
@@ -234,54 +273,84 @@ function collect(name, product, item, push) {
   push.config([product.code, 1, reason, maxSlots]);
 }
 
-export async function saveCrmConfig(config) {
+function stamp() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + " " +
+    pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+}
+
+export async function saveCrmConfig(config, { version = "", jurisdiction = "", actor = "" } = {}) {
   if (!config || typeof config !== "object" || Array.isArray(config)) throw fail("config 必须是 JSON 对象");
   if (!Array.isArray(config.products)) throw fail("config 缺少 products 数组");
 
-  const products = await productsWithFields();
+  const configVersion = String(config.version || version || "").trim();
+  if (!configVersion) throw fail("缺少监管版本，不能保存缓释配置");
+  const versionId = await resolveVersionRef(configVersion, jurisdiction);
+  if (!versionId) throw fail("找不到监管版本 " + configVersion);
+
+  await assertVersionWritable(versionId);
+  const currentRevision = await latestConfigRevision(versionId, "crm_config");
+  assertRevision(currentRevision, config.baseRevision != null ? config.baseRevision : options.baseRevision, "缓释配置");
+  const products = await configProducts(configVersion);
+  if (!products.length) throw fail("当前监管版本没有产品注册，不能保存缓释配置");
   const known = new Map(products.map((product) => [product.code, product]));
 
   const configRows = [];
   const columnRows = [];
   const typeRows = [];
   const push = {
-    config: (row) => configRows.push(row),
-    column: (row) => columnRows.push(row),
-    type: (row) => typeRows.push(row)
+    config: (row) => configRows.push([versionId, ...row]),
+    column: (row) => columnRows.push([versionId, ...row]),
+    type: (row) => typeRows.push([versionId, ...row])
   };
 
-  config.products.forEach((item, index) => {
-    const at = "第 " + (index + 1) + " 个产品";
-    if (!item || typeof item !== "object") throw fail(at + "不是对象");
+  config.products.forEach((item) => {
+    if (!item || typeof item !== "object") return;
     const code = String(item.code || "");
     const product = known.get(code);
-    if (!product) throw fail(at + "：产品 " + code + " 不在产品标准字段配置里");
+    // 只保存当前监管版本的产品，其它版本的产品不动。
+    if (!product) return;
     collect(product.label, product, item, push);
   });
 
   const connection = await pool.getConnection();
   try {
     await connection.beginTransaction();
-    await connection.query("DELETE FROM crm_slot_column");
-    await connection.query("DELETE FROM crm_eligible_type");
-    await connection.query("DELETE FROM crm_product_config");
-    if (configRows.length) {
+    for (const row of configRows) {
+      const [, code, needed, reason, maxSlots] = row;
       await connection.query(
-        "INSERT INTO crm_product_config (product_code, needed, reason, max_slots) VALUES ?",
-        [configRows]
+        `INSERT INTO crm_product_config
+           (rule_version_id, product_code, needed, reason, max_slots, decision_status, revision, status, updated_by, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, 1, 'APPROVED', ?, ?)
+         ON DUPLICATE KEY UPDATE
+           needed = VALUES(needed), reason = VALUES(reason), max_slots = VALUES(max_slots),
+           decision_status = VALUES(decision_status), revision = revision + 1,
+           status = VALUES(status), updated_by = VALUES(updated_by), updated_at = VALUES(updated_at)`,
+        [versionId, code, needed, reason, maxSlots, needed ? "REQUIRED" : "NOT_REQUIRED", actor, stamp()]
       );
-    }
-    if (columnRows.length) {
       await connection.query(
-        "INSERT INTO crm_slot_column (product_code, attr, slot, column_name) VALUES ?",
-        [columnRows]
+        "DELETE FROM crm_slot_column WHERE rule_version_id = ? AND product_code = ?",
+        [versionId, code]
       );
-    }
-    if (typeRows.length) {
       await connection.query(
-        "INSERT INTO crm_eligible_type (product_code, code, name, note, seq) VALUES ?",
-        [typeRows]
+        "DELETE FROM crm_eligible_type WHERE rule_version_id = ? AND product_code = ?",
+        [versionId, code]
       );
+      const columns = columnRows.filter((item) => item[1] === code);
+      const types = typeRows.filter((item) => item[1] === code);
+      if (columns.length) {
+        await connection.query(
+          "INSERT INTO crm_slot_column (rule_version_id, product_code, attr, slot, column_name, target_fact_code) VALUES ?",
+          [columns]
+        );
+      }
+      if (types.length) {
+        await connection.query(
+          "INSERT INTO crm_eligible_type (rule_version_id, product_code, code, name, note, seq, clause_id, status) VALUES ?",
+          [types.map((item) => item.concat(["", "ACTIVE"]))]
+        );
+      }
     }
     await connection.commit();
   } catch (err) {
@@ -291,5 +360,11 @@ export async function saveCrmConfig(config) {
     connection.release();
   }
 
-  return readCrmConfig();
+  await recordRevision({
+    ruleVersionId: versionId, objectType: "crm_config", objectKey: "all", action: "UPDATE",
+    before: { revision: currentRevision },
+    after: { products: configRows.map((row) => ({ code: row[1], needed: row[2], maxSlots: row[4] })) },
+    actor
+  });
+  return readCrmConfig({ version: configVersion, jurisdiction });
 }

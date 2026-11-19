@@ -364,11 +364,11 @@ INSERT INTO assistant_turn (seq, role, body) VALUES
 
 INSERT INTO app_role (id, name, description, is_super, status, menus_json) VALUES
   ('R0', '超级管理员', '平台全部功能与配置权限', 1, 'on', '["*"]'),
-  ('R1', '验证主管', '全部项目读写、审批与配置查看', 0, 'on', '["home","versions","orgs","tasks","wizard","engine","results","sys-users","sys-roles","sys-perms","sys-logs","sys-llm","sys-tokens"]'),
-  ('R2', '验证经理', '所辖项目读写、执行与审计查看', 0, 'on', '["home","versions","orgs","tasks","wizard","engine","results","sys-logs","sys-llm"]'),
-  ('R3', '验证专员', '所辖项目编制与执行', 0, 'on', '["home","versions","tasks","wizard","engine","results","sys-llm"]'),
-  ('R4', '审批人', '方案与结论审批、只读项目', 0, 'on', '["home","versions","tasks","results","sys-llm"]'),
-  ('R5', '只读', '仅查看被授权项目', 0, 'on', '["home","versions","tasks","results"]');
+  ('R1', '验证主管', '全部项目读写、审批与配置查看', 0, 'on', '["home","versions","orgs","tasks","sys-users","sys-roles","sys-perms","sys-logs","sys-llm","sys-tokens"]'),
+  ('R2', '验证经理', '所辖项目读写、执行与审计查看', 0, 'on', '["home","versions","orgs","tasks","sys-logs","sys-llm"]'),
+  ('R3', '验证专员', '所辖项目编制与执行', 0, 'on', '["home","versions","tasks","sys-llm"]'),
+  ('R4', '审批人', '方案与结论审批、只读项目', 0, 'on', '["home","versions","tasks","sys-llm"]'),
+  ('R5', '只读', '仅查看被授权项目', 0, 'on', '["home","versions","tasks"]');
 
 INSERT INTO app_user (id, username, name, role_id, dept, email, phone, password_hash, status, orgs_json, last_login) VALUES
   ('U1', 'admin', '王静', 'R0', '模型验证部', 'wangjing@rwa-demo.cn', '138****1024', '240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9', 'on', '["*"]', '2026-11-09 09:12:00'),

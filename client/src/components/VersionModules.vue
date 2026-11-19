@@ -1,12 +1,53 @@
 <script setup>
+import { computed } from "vue";
 import { CAPITAL_LINKS, LIQUIDITY_LINKS } from "@/utils/ruleLinks";
 
-defineProps({
+const props = defineProps({
   disabled: { type: Boolean, default: false },
-  exposureCount: { type: Number, default: 1 }
+  exposureCount: { type: Number, default: 1 },
+  modules: { type: Array, default: () => [] },
+  published: { type: Boolean, default: false }
 });
 
 defineEmits(["open"]);
+
+const PATH = {
+  documents: "/exposure-config",
+  products: "/product-config",
+  ead: "/ead",
+  crm: "/crm-config",
+  clauses: "/clauses",
+  liquidity: "/liquidity-config"
+};
+
+const TONE = { ok: "green", warning: "amber", error: "red" };
+const LABEL = { ok: "已配置", warning: "待完善", error: "有阻断" };
+
+const capital = computed(() => {
+  if (!props.modules.length) return CAPITAL_LINKS;
+  return props.modules
+    .filter((item) => item.key !== "liquidity")
+    .map((item) => ({
+      key: item.key,
+      label: item.label,
+      path: PATH[item.key] || "/exposure-config",
+      desc: item.status === "ok" ? "已配置" : (item.errors[0] || item.warnings[0] || "待完善"),
+      module: item
+    }));
+});
+
+const liquidity = computed(() => {
+  if (!props.modules.length) return LIQUIDITY_LINKS;
+  return props.modules
+    .filter((item) => item.key === "liquidity")
+    .map((item) => ({
+      key: item.key,
+      label: item.label,
+      path: PATH[item.key] || "/liquidity-config",
+      desc: item.status === "ok" ? "已配置" : (item.errors[0] || item.warnings[0] || "待完善"),
+      module: item
+    }));
+});
 </script>
 
 <template>
@@ -15,11 +56,12 @@ defineEmits(["open"]);
       <div class="panel-head">
         <h3>资本充足率</h3>
         <span class="sub">配置参数</span>
+        <span v-if="published" class="tag muted">已发布只读</span>
       </div>
       <div class="panel-body">
         <div style="display: grid; gap: 8px">
           <button
-            v-for="(link, index) in CAPITAL_LINKS"
+            v-for="(link, index) in capital"
             :key="link.path"
             type="button"
             class="arch-item"
@@ -30,14 +72,20 @@ defineEmits(["open"]);
             <span>
               <strong>{{ link.label }}</strong>
               <span>{{ link.desc }}</span>
+              <span v-if="link.module" class="sub" style="display: block; margin-top: 4px">
+                对象 {{ link.module.count }} · 阻断 {{ link.module.errors.length }} · 提示 {{ link.module.warnings.length }}
+              </span>
             </span>
-            <span class="go">配置 →</span>
+            <span class="go">
+              <span v-if="link.module" class="tag" :class="TONE[link.module.status]">{{ LABEL[link.module.status] }}</span>
+              配置 →
+            </span>
           </button>
         </div>
         <p v-if="disabled" class="notice" style="margin: 12px 0 0">
           保存版本后即可进入这些配置。
         </p>
-        <p v-else-if="!exposureCount" class="notice warn" style="margin: 12px 0 0">
+        <p v-else-if="!exposureCount && !modules.length" class="notice warn" style="margin: 12px 0 0">
           这一版还没有风险暴露分类规则，点上面的「暴露分类规则」会先复制一份再进入。
         </p>
       </div>
@@ -46,12 +94,13 @@ defineEmits(["open"]);
     <div class="panel">
       <div class="panel-head">
         <h3>流动性</h3>
-        <span class="sub">配置与计算</span>
+        <span class="sub">配置</span>
+        <span v-if="published" class="tag muted">已发布只读</span>
       </div>
       <div class="panel-body">
         <div style="display: grid; gap: 8px">
           <button
-            v-for="(link, index) in LIQUIDITY_LINKS"
+            v-for="(link, index) in liquidity"
             :key="link.path"
             type="button"
             class="arch-item"
@@ -62,16 +111,21 @@ defineEmits(["open"]);
             <span>
               <strong>{{ link.label }}</strong>
               <span>{{ link.desc }}</span>
+              <span v-if="link.module" class="sub" style="display: block; margin-top: 4px">
+                对象 {{ link.module.count }} · 阻断 {{ link.module.errors.length }} · 提示 {{ link.module.warnings.length }}
+              </span>
             </span>
-            <span class="go">进入 →</span>
+            <span class="go">
+              <span v-if="link.module" class="tag" :class="TONE[link.module.status]">{{ LABEL[link.module.status] }}</span>
+              进入 →
+            </span>
           </button>
         </div>
         <p v-if="disabled" class="notice" style="margin: 12px 0 0">
           保存版本后即可进入这些配置。
         </p>
-        <p v-else class="notice" style="margin: 12px 0 0">
-          流动性产品、标准字段、参数表和监管名单都在「流动性产品管理」里按这一版维护；
-          HQLA 计算任务按七个步骤完成导入、识别、映射、检查、计算和复核。
+        <p v-else-if="!modules.length" class="notice" style="margin: 12px 0 0">
+          流动性产品、标准字段、参数表和监管名单都在「流动性产品管理」里按这一版维护。
         </p>
       </div>
     </div>

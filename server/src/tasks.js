@@ -8,6 +8,8 @@
 
 import { query } from "./db.js";
 import { configProducts, versionRuleDocuments } from "./productStandard.js";
+import { resolveVersionRef } from "./ruleVersion.js";
+import { latestPublishedSnapshot } from "./ruleGovernance.js";
 
 function pad(value) {
   return String(value).padStart(2, "0");
@@ -28,6 +30,14 @@ function fail(status, message) {
   return error;
 }
 
+function parseJson(value, fallback) {
+  if (value == null) return fallback;
+  if (typeof value === "string") {
+    try { return JSON.parse(value); } catch { return fallback; }
+  }
+  return value;
+}
+
 function dateText(value) {
   if (!value) return null;
   if (value instanceof Date) return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`;
@@ -41,6 +51,8 @@ function taskOut(row) {
     institution: row.institution || "",
     jurisdiction: row.jurisdiction || "",
     version: row.version || "",
+    ruleVersionId: row.rule_version_id || "",
+    snapshotId: row.snapshot_id || "",
     baseDate: dateText(row.base_date),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -48,6 +60,8 @@ function taskOut(row) {
 }
 
 function subOut(row) {
+  const summary = parseJson(row.result_summary, null) || parseJson(row.hqla_summary, null) || null;
+  const calculation = summary && summary.calculation ? summary.calculation : summary;
   return {
     id: row.id,
     taskId: row.task_id,
@@ -61,6 +75,14 @@ function subOut(row) {
     ead: row.batch_ead == null ? null : Number(row.batch_ead),
     rwa: row.batch_rwa == null ? null : Number(row.batch_rwa),
     batchStatus: row.batch_status || "",
+    hqlaTaskId: row.hqla_task_id || null,
+    hqlaStatus: row.hqla_status || "",
+    calcStatus: row.hqla_calc_status || "",
+    progress: row.hqla_progress == null ? Number(row.progress) || 0 : Number(row.hqla_progress),
+    reviewStatus: row.hqla_review_status || row.review_status || "",
+    lcr: calculation && calculation.lcr != null ? Number(calculation.lcr) : null,
+    exceptionCount: calculation && calculation.stats ? Number(calculation.stats.exceptions) || 0 : 0,
+    resultSummary: summary,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -96,9 +118,12 @@ async function taskRow(id) {
 
 async function subRows(taskId) {
   const rows = await query(
-    `SELECT s.*, b.name AS measure_name, b.ead AS batch_ead, b.rwa AS batch_rwa, b.status AS batch_status
+    `SELECT s.*, b.name AS measure_name, b.ead AS batch_ead, b.rwa AS batch_rwa, b.status AS batch_status,
+            h.status AS hqla_status, h.calc_status AS hqla_calc_status, h.progress AS hqla_progress,
+            h.review_status AS hqla_review_status, h.summary AS hqla_summary
        FROM rwa_task_sub s
        LEFT JOIN measure_batch b ON b.id = s.batch_id
+       LEFT JOIN hqla_task h ON h.id = s.hqla_task_id
       WHERE s.task_id = ?
       ORDER BY s.created_at ASC, s.id ASC`,
     [taskId]
@@ -163,10 +188,13 @@ export async function createRwaTask(body) {
   if (!readiness.ok) throw fail(400, "当前监管版本的规则配置不完整：" + readiness.issues.join("；"));
   const id = uid("RT");
   const now = nowText();
+  const ruleVersionId = await resolveVersionRef(version, jurisdiction);
+  const snapshot = ruleVersionId ? await latestPublishedSnapshot(ruleVersionId) : null;
+  if (!snapshot) throw fail(409, "当前监管版本尚未发布正式配置快照，不能创建正式计量任务");
   await query(
-    `INSERT INTO rwa_task (id, name, institution, jurisdiction, version, base_date, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [id, name.slice(0, 200), institution, jurisdiction, version, baseDate, now, now]
+    `INSERT INTO rwa_task (id, name, institution, jurisdiction, version, base_date, created_at, updated_at, rule_version_id, snapshot_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [id, name.slice(0, 200), institution, jurisdiction, version, baseDate, now, now, ruleVersionId, snapshot.id]
   );
   const subtasks = Array.isArray(body.subtasks) ? body.subtasks : [];
   for (const item of subtasks) {
@@ -263,6 +291,11 @@ export async function updateSubtask(taskId, subId, body) {
 
 export async function deleteSubtask(taskId, subId) {
   await taskRow(taskId);
+  const rows = await query("SELECT * FROM rwa_task_sub WHERE id = ? AND task_id = ?", [subId, taskId]);
+  if (!rows.length) throw fail(404, "子任务不存在");
+  if (rows[0].hqla_task_id) {
+    throw fail(400, "该流动性子任务已关联 LCR 任务，不能直接删除；请先在 LCR 任务中作废或解除关联");
+  }
   await query("DELETE FROM rwa_task_sub WHERE id = ? AND task_id = ?", [subId, taskId]);
   await query("UPDATE rwa_task SET updated_at = ? WHERE id = ?", [nowText(), taskId]);
   return getRwaTask(taskId);
@@ -280,6 +313,9 @@ export async function archiveSubtask(taskId, subId, body) {
   if (batch.version !== task.version) throw fail(400, "计量批次的监管规则版本和主任务不一致");
   if (batch.jurisdiction !== task.jurisdiction) throw fail(400, "计量批次的司法管辖区和主任务不一致");
   if (batch.institution !== task.institution) throw fail(400, "计量批次的机构和主任务不一致");
+  if (task.snapshot_id && batch.snapshot_id !== task.snapshot_id) {
+    throw fail(409, "计量批次没有使用主任务绑定的配置快照，不能归档");
+  }
   const now = nowText();
   await query(
     `UPDATE rwa_task_sub

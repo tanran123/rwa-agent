@@ -34,6 +34,7 @@ const originalSources = ref([]);
 const activeSource = ref("");
 const search = ref("");
 
+const snapshot = ref("");
 const form = ref({
   family: "LOAN",
   codesText: "",
@@ -48,6 +49,10 @@ const links = ref([]);
 const newField = ref({ name: "", label: "", type: "string", unit: "" });
 
 const familyMappingRef = (family) => family + "_DATA_MAPPING";
+const dirty = computed(() => {
+  if (!snapshot.value) return false;
+  return JSON.stringify({ form: form.value, fields: fields.value, links: links.value }) !== snapshot.value;
+});
 const isCopy = computed(() => !!(props.initial && props.initial.copy));
 const editIndex = computed(() => (props.initial && !props.initial.copy ? props.initial.index : -1));
 
@@ -289,6 +294,15 @@ async function load() {
   loading.value = true;
   error.value = "";
   try {
+    if (props.initial && props.initial.mapping) {
+      const mapping = props.initial.mapping;
+      form.value.family = mapping.product_family || form.value.family;
+      form.value.codesText = (mapping.product_codes || []).join("\n");
+      form.value.mappingRef = mapping.data_mapping_ref || familyMappingRef(form.value.family);
+      form.value.mappingVersion = mapping.data_mapping_version || form.value.mappingVersion;
+      form.value.exposureType = mapping.exposure_type || form.value.exposureType;
+      form.value.note = mapping.note || "";
+    }
     const classMeta = props.docs.find((item) => item.kind === "exposure_classification");
     const weightMeta = props.docs.find((item) => item.kind === "risk_weight");
     const pending = [];
@@ -345,7 +359,18 @@ async function load() {
     error.value = err.message || "加载失败";
   } finally {
     loading.value = false;
+    snapshot.value = JSON.stringify({ form: form.value, fields: fields.value, links: links.value });
   }
+}
+
+async function requestClose() {
+  if (dirty.value) {
+    const yes = await askConfirm("产品组向导还有未保存的修改，关闭后会丢失。", {
+      title: "未保存的修改", confirmText: "关闭向导", danger: true
+    });
+    if (!yes) return;
+  }
+  emit("close");
 }
 
 async function save() {
@@ -368,18 +393,21 @@ async function save() {
   try {
     const registryBody = JSON.parse(JSON.stringify(props.registry.body));
     registryBody.product_mappings = registryBody.product_mappings || [];
-    const entry = {
-      product_family: form.value.family,
-      product_codes: codes.value,
-      data_mapping_ref: form.value.mappingRef
-    };
-    if (form.value.mappingVersion) entry.data_mapping_version = form.value.mappingVersion;
-    if (form.value.exposureType) entry.exposure_type = form.value.exposureType;
-    if (form.value.note) entry.note = form.value.note;
     const index = editIndex.value;
+    // 只合并本次维护的产品组信息；标准字段、业务产品组、候选暴露类型和规则引用保持不动。
+    const base = index >= 0
+      ? registryBody.product_mappings[index]
+      : (props.initial && props.initial.copy ? props.initial.mapping : null);
+    const entry = JSON.parse(JSON.stringify(base || {}));
+    entry.product_family = form.value.family;
+    entry.product_codes = codes.value;
+    entry.data_mapping_ref = form.value.mappingRef;
+    if (form.value.mappingVersion) entry.data_mapping_version = form.value.mappingVersion;
+    entry.exposure_type = form.value.exposureType || "";
+    entry.note = form.value.note || "";
     if (index >= 0) registryBody.product_mappings[index] = entry;
     else registryBody.product_mappings.push(entry);
-    await saveRuleDocument(props.registry.id, { body: registryBody });
+    await saveRuleDocument(props.registry.id, { body: registryBody, baseRevision: props.registry.revision });
 
     const body = mappingDoc.value
       ? JSON.parse(JSON.stringify(mappingDoc.value))
@@ -436,7 +464,7 @@ async function save() {
       };
     });
     body.mappings = kept.concat(created);
-    if (mappingMeta.value) await saveRuleDocument(mappingMeta.value.id, { body: body });
+    if (mappingMeta.value) await saveRuleDocument(mappingMeta.value.id, { body: body, baseRevision: mappingMeta.value.revision });
     else {
       await createRuleDocument({
         jurisdiction: props.jurisdiction,
@@ -462,7 +490,7 @@ onMounted(load);
       <h3>{{ isCopy ? "复制产品组" : initial ? "修改产品组" : "新建产品组" }}向导</h3>
       <span class="sub">{{ form.family }} · {{ form.mappingRef }}</span>
       <span class="spacer"></span>
-      <button type="button" class="btn sm" @click="$emit('close')">关闭</button>
+      <button type="button" class="btn sm" @click="requestClose">关闭</button>
     </div>
 
     <div class="pw-steps">
@@ -654,7 +682,7 @@ onMounted(load);
       </div>
 
       <div class="pw-footer">
-        <button type="button" class="btn" @click="$emit('close')">取消</button>
+        <button type="button" class="btn" @click="requestClose">取消</button>
         <span class="spacer"></span>
         <button v-if="step > 1" type="button" class="btn" @click="back">上一步</button>
         <button v-if="step < 4" type="button" class="btn primary" @click="next">下一步</button>

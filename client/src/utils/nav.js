@@ -12,10 +12,7 @@ export const NAV = [
     id: "run",
     label: "任务运行",
     items: [
-      { id: "tasks", label: "任务工作台", path: "/tasks" },
-      { id: "wizard", label: "计量向导", path: "/wizard" },
-      { id: "engine", label: "底稿计算", path: "/engine" },
-      { id: "results", label: "结果明细", path: "/results" }
+      { id: "tasks", label: "任务工作台", path: "/tasks" }
     ]
   },
   {
@@ -53,8 +50,8 @@ const PARENT = {
   "/liquidity-config": "/versions",
   "/liquidity-products": "/versions",
   "/liquidity-params": "/versions",
-  "/batches": "/results",
-  "/export": "/results"
+  "/batches": "/tasks",
+  "/export": "/tasks"
 };
 
 export function menuPath(path) {
@@ -64,6 +61,8 @@ export function menuPath(path) {
   if (p.indexOf("/liquidity-products") === 0) return "/versions";
   if (p.indexOf("/tasks/") === 0) return "/tasks";
   if (p.indexOf("/hqla") === 0) return "/tasks";
+  if (p.indexOf("/wizard") === 0 || p.indexOf("/engine") === 0 || p.indexOf("/results") === 0) return "/tasks";
+  if (p.indexOf("/batches") === 0 || p.indexOf("/export") === 0) return "/tasks";
   if (p.indexOf("/versions") === 0) return "/versions";
   return PARENT[p] || p;
 }
@@ -74,9 +73,6 @@ export const MENU_BY_PATH = {
   "/versions": "versions",
   "/orgs": "orgs",
   "/tasks": "tasks",
-  "/wizard": "wizard",
-  "/engine": "engine",
-  "/results": "results",
   "/system/users": "sys-users",
   "/system/roles": "sys-roles",
   "/system/permissions": "sys-perms",

@@ -24,8 +24,11 @@ export const pool = mysql.createPool({
   charset: "utf8mb4",
   waitForConnections: true,
   connectionLimit: 8,
+  maxIdle: 4,
+  idleTimeout: 30000,
   connectTimeout: 10000,
   enableKeepAlive: true,
+  keepAliveInitialDelay: 10000,
   dateStrings: true,
   supportBigNumbers: true
 });
@@ -34,7 +37,22 @@ pool.on("error", (err) => {
   console.error(err);
 });
 
+/** 读查询遇到连接层瞬时错误时重试一次；写操作不重试，避免重复落库。 */
+const RETRYABLE = new Set(["PROTOCOL_CONNECTION_LOST", "ECONNRESET", "ETIMEDOUT", "EPIPE"]);
+const READ_SQL = /^\s*(select|show|describe|explain)\b/i;
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export async function query(sql, params) {
-  const [rows] = await pool.query(sql, params);
-  return rows;
+  try {
+    const [rows] = await pool.query(sql, params);
+    return rows;
+  } catch (err) {
+    if (!READ_SQL.test(sql) || !RETRYABLE.has(err && err.code)) throw err;
+    await wait(200);
+    const [rows] = await pool.query(sql, params);
+    return rows;
+  }
 }

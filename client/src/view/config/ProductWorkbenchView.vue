@@ -328,8 +328,8 @@ async function load() {
     const [classResult, weightResult, tableRows, listRows, groupMapResult] = await Promise.all([
       classMeta ? fetchRuleDocument(classMeta.id) : Promise.resolve(null),
       weightMeta ? fetchRuleDocument(weightMeta.id) : Promise.resolve(null),
-      fetchParameterTables(jurisdiction.value),
-      fetchReferenceLists(jurisdiction.value),
+      fetchParameterTables(jurisdiction.value, version.value),
+      fetchReferenceLists(jurisdiction.value, version.value),
       fetchProductGroupMappings(version.value)
     ]);
     classDoc.value = classResult ? classResult.body : null;
@@ -400,7 +400,7 @@ async function saveInfo() {
     if (infoForm.value.note) next.note = infoForm.value.note;
     else delete next.note;
     body.product_mappings[entryIndex.value] = next;
-    const saved = await saveRuleDocument(registry.value.id, { body: body });
+    const saved = await saveRuleDocument(registry.value.id, { body: body, baseRevision: registry.value.revision });
     registry.value = saved;
     say("产品组信息已保存", "ok");
   } catch (err) {
@@ -492,7 +492,7 @@ async function saveFields() {
         else delete next.unit;
         return next;
       });
-    const savedMapping = await saveRuleDocument(mappingMeta.value.id, { body: body });
+    const savedMapping = await saveRuleDocument(mappingMeta.value.id, { body: body, baseRevision: mappingMeta.value.revision });
 
     const registryBody = clone(registry.value.body);
     const registryEntry = registryBody.product_mappings[entryIndex.value];
@@ -516,7 +516,7 @@ async function saveFields() {
         field_count: fields.value.filter((field) => field.group === group.id).length
       })).filter((group) => group.field_count > 0)
     });
-    const savedRegistry = await saveRuleDocument(registry.value.id, { body: registryBody });
+    const savedRegistry = await saveRuleDocument(registry.value.id, { body: registryBody, baseRevision: registry.value.revision });
     registry.value = savedRegistry;
     mappingDoc.value = savedMapping;
     syncFieldsFromMapping();
@@ -608,7 +608,7 @@ async function saveMapping(body) {
   if (!mappingMeta.value) return;
   saving.value = true;
   try {
-    const saved = await saveRuleDocument(mappingMeta.value.id, { body: body });
+    const saved = await saveRuleDocument(mappingMeta.value.id, { body: body, baseRevision: mappingMeta.value.revision });
     mappingDoc.value = saved;
     syncFieldsFromMapping();
     say("字段映射已保存", "ok");

@@ -1,6 +1,6 @@
 <script setup>
-import { ref } from "vue";
-import { createClause, deleteClause, deleteClauses, fetchClauses, saveClause } from "@/api/rule";
+import { ref, watch } from "vue";
+import { createClause, deleteClause, deleteClauses, fetchClauseImpact, fetchClauses, saveClause, saveClauseRelations } from "@/api/rule";
 import { useContext } from "@/composables/useContext";
 import { runBatch, useBatchNote, usePick } from "@/composables/usePick";
 import AsyncView from "@/components/AsyncView.vue";
@@ -8,7 +8,7 @@ import RuleForm from "@/components/RuleForm.vue";
 import { fillForm, finishSave, useAgentForm } from "@/composables/useAgentForm";
 import { askConfirm } from "@/utils/confirm";
 
-const { session } = useContext();
+const { session, scopeVersion } = useContext();
 const q = ref("");
 const form = ref(null);
 const error = ref("");
@@ -16,7 +16,9 @@ const saving = ref(false);
 const view = ref(null);
 const pick = usePick();
 const batch = useBatchNote();
-const load = () => fetchClauses({ jurisdiction: session.jurisdiction, q: q.value });
+const impact = ref(null);
+const load = () => fetchClauses({ jurisdiction: session.jurisdiction, q: q.value, version: scopeVersion.value });
+watch(scopeVersion, () => { if (view.value) view.value.reload(); });
 
 function lines(value) {
   return String(value || "").split("\n").map((item) => item.trim()).filter(Boolean);
@@ -35,7 +37,9 @@ function blank() {
     scope: "",
     effectiveFrom: "",
     source: "",
-    refsText: ""
+    refsText: "",
+    relationsText: "",
+    revision: 0
   };
 }
 
@@ -50,8 +54,18 @@ function edit(row) {
     ...row,
     effectiveFrom: row.effectiveFrom || "",
     refsText: (row.referencedBy || []).join("\n"),
+    relationsText: (row.relations || []).map((item) => item.rule_node_id + "|" + item.relation_type).join("\n"),
     creating: false
   };
+  impact.value = null;
+  fetchClauseImpact(row.id).then((data) => { impact.value = data; }).catch(() => { impact.value = null; });
+}
+
+function parseRelations(text) {
+  return lines(text).map((line) => {
+    const [node, type] = line.split("|").map((item) => item.trim());
+    return { rule_node_id: node, relation_type: type || "REFERENCE" };
+  }).filter((item) => item.rule_node_id);
 }
 
 useAgentForm(() => ({
@@ -91,7 +105,8 @@ function payload(row) {
     scope: row.scope,
     effectiveFrom: row.effectiveFrom || null,
     source: row.source,
-    referencedBy: lines(row.refsText)
+    referencedBy: lines(row.refsText),
+    baseRevision: row.revision
   };
 }
 
@@ -104,9 +119,12 @@ async function save() {
   saving.value = true;
   try {
     const body = payload(form.value);
-    if (form.value.creating) await createClause(body);
-    else await saveClause(form.value.id, body);
+    const saved = form.value.creating ? await createClause(body) : await saveClause(form.value.id, body);
+    if (form.value.relationsText != null) {
+      await saveClauseRelations(saved.id, parseRelations(form.value.relationsText));
+    }
     form.value = null;
+    impact.value = null;
     await refresh();
   } catch (err) {
     error.value = err.message;
@@ -161,7 +179,7 @@ async function removeSelected(rows) {
             <thead>
               <tr>
                 <th class="pick" @click.stop><input type="checkbox" :checked="pick.allOn(data)" @change="pick.toggleAll(data)" /></th>
-                <th>条款</th><th>标题</th><th>制度版本</th><th>地区</th><th>被引用</th>
+                <th>条款</th><th>标题</th><th>制度版本</th><th>地区</th><th>被引用</th><th>结构化引用</th>
               </tr>
             </thead>
             <tbody>
@@ -172,6 +190,7 @@ async function removeSelected(rows) {
                 <td>{{ row.docVersion }}</td>
                 <td>{{ row.jurisdiction }}</td>
                 <td>{{ row.referencedBy.length }}</td>
+                <td>{{ (row.relations || []).length }}</td>
               </tr>
             </tbody>
           </table>
@@ -226,6 +245,20 @@ async function removeSelected(rows) {
         <textarea v-model="form.refsText"></textarea>
         <span class="hint">一行一个规则名。保存时替换这一条条款下的引用。</span>
       </label>
+      <label class="field full">结构化规则节点引用
+        <textarea v-model="form.relationsText"></textarea>
+        <span class="hint">一行一个「规则节点编码 | 引用类型」，例如 LOAN_CORP | REFERENCE。</span>
+      </label>
+      <div v-if="impact" class="field full">
+        <label>影响分析</label>
+        <div class="small">
+          结构化引用 {{ impact.relations.length }} 条，文本引用 {{ impact.referencedBy.length }} 条，
+          EAD 规则 {{ impact.eadRules.length }} 条，产品专属规则 {{ impact.productRules.length }} 条。
+        </div>
+        <div v-if="impact.eadRules.length || impact.productRules.length" class="mono small" style="margin-top: 4px">
+          {{ impact.eadRules.map((item) => item.id).concat(impact.productRules.map((item) => item.id)).join("、") }}
+        </div>
+      </div>
     </template>
   </RuleForm>
 </template>

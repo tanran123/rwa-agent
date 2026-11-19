@@ -51,7 +51,7 @@ export async function trialEad(body) {
   // 传了规则就按编辑中的规则试算，否则按库里已保存的配置试算。
   const eadConfig = given
     ? { [product]: { needed: true, reason: "", side, rules: [{ ...given, status: "published", seq: 1 }] } }
-    : await eadConfigMap();
+    : await eadConfigMap(String(body.version || ""), String(body.jurisdiction || ""));
 
   const loans = (mock.MOCK_LOANS || []).filter((loan) => {
     if (loan.product !== product) return false;

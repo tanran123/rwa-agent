@@ -1,5 +1,5 @@
 <script setup>
-import { computed, reactive, ref } from "vue";
+import { computed, reactive, ref, watch } from "vue";
 import { fetchCrmConfig, saveCrmConfig } from "@/api/crm";
 import { useContext } from "@/composables/useContext";
 import AsyncView from "@/components/AsyncView.vue";
@@ -16,7 +16,7 @@ const ATTRS = [
     hint: "覆盖部分直接采用该权重" }
 ];
 
-const { scopeVersion } = useContext();
+const { session, scopeVersion } = useContext();
 const view = ref(null);
 const data = ref(null);
 const active = ref("");
@@ -80,8 +80,10 @@ function scopedProducts(cfg) {
   return ((cfg && cfg.products) || []).filter((item) => item.ruleVersion === version);
 }
 
+watch(scopeVersion, () => { load().catch((err) => { pageError.value = err.message; }); });
+
 async function load() {
-  const cfg = hydrate(await fetchCrmConfig());
+  const cfg = hydrate(await fetchCrmConfig({ version: scopeVersion.value, jurisdiction: session.jurisdiction }));
   data.value = cfg;
   const visible = scopedProducts(cfg);
   if (!active.value || !visible.some((item) => item.code === active.value)) {
@@ -447,6 +449,8 @@ const check = computed(() => {
 /* ---------------- 保存 ---------------- */
 function payload() {
   return {
+    version: data.value.version,
+    baseRevision: data.value.configRevision,
     products: data.value.products.map((item) => ({
       code: item.code,
       needed: item.needed,
@@ -477,7 +481,7 @@ async function persist(message) {
   pageError.value = "";
   pageMessage.value = "";
   try {
-    data.value = hydrate(await saveCrmConfig(payload()));
+    data.value = hydrate(await saveCrmConfig(payload(), { version: scopeVersion.value, jurisdiction: session.jurisdiction }));
     resetDraft(product.value);
     pageMessage.value = message;
     return true;

@@ -1,7 +1,7 @@
 <script setup>
 import { ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { createSubtask, deleteSubtask, fetchTask, updateSubtask } from "@/api/tasks";
+import { createSubtask, deleteSubtask, fetchTask, openLiquidityTask, updateSubtask } from "@/api/tasks";
 import AsyncView from "@/components/AsyncView.vue";
 import { askConfirm } from "@/utils/confirm";
 
@@ -13,6 +13,7 @@ const addingModule = ref("");
 const subForm = ref({ name: "" });
 const editingSub = ref("");
 const subEdit = ref({ name: "" });
+const busySub = ref("");
 
 const MODULES = [
   { key: "capital", label: "资本充足率" },
@@ -23,6 +24,14 @@ const TASK_STATUS = {
   draft: { label: "待开始", tone: "muted" },
   doing: { label: "进行中", tone: "warn" },
   done: { label: "已完成", tone: "ok" }
+};
+const HQ_STATUS = {
+  draft: { label: "待开始", tone: "muted" },
+  doing: { label: "进行中", tone: "warn" },
+  review_pending: { label: "待复核", tone: "warn" },
+  reviewed: { label: "已复核", tone: "ok" },
+  done: { label: "已完成", tone: "ok" },
+  archived: { label: "已归档", tone: "muted" }
 };
 
 async function load() {
@@ -106,8 +115,26 @@ function openResults(sub) {
   router.push({ path: "/results", query: { batch: sub.batchId } });
 }
 
-function openHqla() {
-  router.push("/hqla");
+function hqlaStatus(sub) {
+  return HQ_STATUS[sub.hqlaStatus || sub.status] || { label: sub.hqlaStatus || sub.status || "待开始", tone: "muted" };
+}
+
+async function openHqla(data, sub) {
+  if (sub.hqlaTaskId) {
+    router.push(`/hqla/${sub.hqlaTaskId}`);
+    return;
+  }
+  busySub.value = sub.id;
+  error.value = "";
+  try {
+    const task = await openLiquidityTask(data.id, sub.id);
+    await refresh();
+    router.push(`/hqla/${task.id}`);
+  } catch (err) {
+    error.value = err.message;
+  } finally {
+    busySub.value = "";
+  }
 }
 </script>
 
@@ -175,7 +202,10 @@ function openHqla() {
           </div>
           <table v-else class="tbl compact">
             <thead>
-              <tr><th>子任务</th><th>状态</th><th class="num">EAD</th><th class="num">RWA</th><th>操作</th></tr>
+              <tr v-if="module.key === 'liquidity'">
+                <th>子任务</th><th>状态</th><th>进度</th><th class="num">异常数</th><th>结果摘要</th><th>操作</th>
+              </tr>
+              <tr v-else><th>子任务</th><th>状态</th><th class="num">EAD</th><th class="num">RWA</th><th>操作</th></tr>
             </thead>
             <tbody>
               <template v-for="sub in moduleSubs(data, module.key)" :key="sub.id">
@@ -183,21 +213,39 @@ function openHqla() {
                   <td>
                     {{ sub.name }}
                     <div class="dim" style="font-size: 10.5px">
-                      {{ sub.module === "liquidity" ? "在流动性页签执行" : (sub.batchName || "尚未归档计量批次") }}
+                      {{ sub.module === "liquidity"
+                        ? (sub.hqlaTaskId || "尚未创建 LCR 任务")
+                        : (sub.batchName || "尚未归档计量批次") }}
                     </div>
                   </td>
-                  <td>
-                    <span v-if="sub.module === 'liquidity'" class="tag accent">流动性</span>
-                    <span v-else class="tag" :class="sub.status === 'archived' ? 'ok' : 'muted'">
+                  <td v-if="module.key === 'liquidity'">
+                    <span class="tag" :class="hqlaStatus(sub).tone">{{ hqlaStatus(sub).label }}</span>
+                  </td>
+                  <td v-else>
+                    <span class="tag" :class="sub.status === 'archived' ? 'ok' : 'muted'">
                       {{ sub.status === "archived" ? "已归档" : "未计算" }}
                     </span>
                   </td>
-                  <td class="num">{{ sub.ead == null ? "—" : shortMoney(sub.ead) }}</td>
-                  <td class="num">{{ sub.rwa == null ? "—" : shortMoney(sub.rwa) }}</td>
+                  <template v-if="module.key === 'liquidity'">
+                    <td style="min-width: 130px">
+                      <div class="lq-progress">
+                        <div class="lq-progress-bar"><i :style="{ width: (sub.progress || 0) + '%' }"></i></div>
+                        <span>{{ sub.progress || 0 }}%</span>
+                      </div>
+                    </td>
+                    <td class="num">{{ sub.exceptionCount || 0 }}</td>
+                    <td class="small">{{ sub.lcr == null ? "—" : "LCR " + Number(sub.lcr).toFixed(2) + "%" }}</td>
+                  </template>
+                  <template v-else>
+                    <td class="num">{{ sub.ead == null ? "—" : shortMoney(sub.ead) }}</td>
+                    <td class="num">{{ sub.rwa == null ? "—" : shortMoney(sub.rwa) }}</td>
+                  </template>
                   <td>
                     <div style="display: flex; gap: 4px; flex-wrap: wrap">
                       <template v-if="sub.module === 'liquidity'">
-                        <button type="button" class="btn sm primary" @click="openHqla">打开流动性任务</button>
+                        <button type="button" class="btn sm primary" :disabled="busySub === sub.id" @click="openHqla(data, sub)">
+                          {{ busySub === sub.id ? "正在创建…" : sub.hqlaTaskId ? "打开 LCR 任务" : "打开/创建 LCR 任务" }}
+                        </button>
                       </template>
                       <template v-else>
                         <button type="button" class="btn sm primary" @click="openWizard(data, sub)">
@@ -211,7 +259,7 @@ function openHqla() {
                   </td>
                 </tr>
                 <tr v-else>
-                  <td colspan="5">
+                  <td :colspan="module.key === 'liquidity' ? 6 : 5">
                     <div class="inline-fields" style="padding: 0">
                       <div class="field">
                         <label>子任务名称</label>
@@ -225,7 +273,7 @@ function openHqla() {
               </template>
 
               <tr v-if="addingModule === module.key">
-                <td colspan="5">
+                <td :colspan="module.key === 'liquidity' ? 6 : 5">
                   <div class="inline-fields" style="padding: 0">
                     <div class="field">
                       <label>子任务名称</label>
@@ -247,3 +295,10 @@ function openHqla() {
     </template>
   </AsyncView>
 </template>
+
+<style scoped>
+.lq-progress { display: flex; align-items: center; gap: 6px; }
+.lq-progress-bar { flex: 1; min-width: 70px; height: 6px; background: #eef2ff; border-radius: 5px; overflow: hidden; }
+.lq-progress-bar i { display: block; height: 100%; background: #f59e0b; }
+.lq-progress span { font-size: 10.5px; color: #b45309; min-width: 30px; text-align: right; }
+</style>

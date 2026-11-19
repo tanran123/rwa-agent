@@ -27,7 +27,6 @@ import TasksView from '../view/measure/TasksView.vue'
 import TaskDetailView from '../view/measure/TaskDetailView.vue'
 import TaskCreateView from '../view/measure/TaskCreateView.vue'
 import ExportView from '../view/measure/ExportView.vue'
-import HqlaTasksView from '../view/hqla/HqlaTasksView.vue'
 import HqlaWizardView from '../view/hqla/HqlaWizardView.vue'
 import LiquidityConfigView from '../view/liquidity/LiquidityConfigView.vue'
 import LiquidityProductView from '../view/liquidity/LiquidityProductView.vue'
@@ -54,7 +53,7 @@ const classTabs = [
 const routes = [
   { path: '/login', name: 'login', component: LoginView, meta: { public: true, title: '登录', full: true } },
   { path: '/', name: 'dashboard', component: DashboardView, meta: { group: '总览', title: '首页 / 计量工作台', blurb: '按菜单顺序走：规则配置，然后计量。' } },
-  { path: '/versions', name: 'versions', component: VersionsView, meta: { group: '规则配置', title: '监管规则版本管理', blurb: '三地规则分开维护。在已有版本上复制后再改，避免互相覆盖。' } },
+  { path: '/versions', name: 'versions', component: VersionsView, meta: { group: '规则配置', title: '监管规则版本管理', blurb: '香港监管规则集中维护。在已有版本上复制后再改，避免互相覆盖。' } },
   { path: '/versions/new/workbench', name: 'version-new-workbench', component: RuleWorkbenchView, meta: { group: '规则配置', title: '监管规则维护工作台', blurb: '先填写版本信息，创建后进入这一版的配置。' } },
   { path: '/versions/:id/workbench', name: 'version-workbench', component: RuleWorkbenchView, meta: { group: '规则配置', title: '监管规则维护工作台', blurb: '资本充足率和流动性两大模块，各自链接到这一版的具体配置。' } },
   { path: '/orgs', name: 'orgs', component: OrgsView, meta: { group: '规则配置', title: '机构', blurb: '左上角机构和版本的适用机构都用这份名单。按当前地区列出。' } },
@@ -85,11 +84,11 @@ const routes = [
   { path: '/results', name: 'results', component: ResultsView, meta: { group: '任务运行', title: '计量结果明细', blurb: '逐笔债项计量结果与审计证据；点击任意债项进入该笔的完整计量详情页' } },
   { path: '/batches', name: 'batches', component: BatchesView, meta: { group: '任务运行', title: '计量批次管理', blurb: '每个批次固定当时的规则版本。规则更新后，历史批次不改。' } },
   { path: '/export', name: 'export', component: ExportView, meta: { group: '任务运行', title: 'Excel 审计底稿导出', blurb: '导出真实的 xlsx。底稿里的业务数据是模拟数据。' } },
-  { path: '/liquidity-config', name: 'liquidity-config', component: LiquidityConfigView, meta: { group: '规则配置', title: '流动性产品管理', blurb: '按规则版本维护 LCR 产品、侧别、标准字段与规则范围。', versionContext: true } },
+  { path: '/liquidity-config', name: 'liquidity-config', component: LiquidityConfigView, meta: { group: '规则配置', title: '流动性产品管理', blurb: '管理当前 LCR 规则版本下的产品：查找、新建、复制、启停和查看配置状态，再进入产品配置工作台。', versionContext: true } },
   { path: '/liquidity-products/:code/:tab?', name: 'liquidity-product', component: LiquidityProductView, meta: { group: '规则配置', title: '流动性产品配置工作台', blurb: '单个产品的产品组、标准字段、规则配置和规则预览。', versionContext: true } },
   { path: '/liquidity-params', name: 'liquidity-params', component: LiquidityParamsView, meta: { group: '规则配置', title: '清单与参数', blurb: '跨产品共享的参数表、系数表和监管名单。', versionContext: true } },
-  { path: '/hqla', name: 'hqla', component: HqlaTasksView, meta: { group: '任务运行', title: 'LCR 计量任务', blurb: '按任务组织：规则版本 → 数据导入 → 产品识别 → 字段 Mapping → 质量检查 → 计算 → 复核输出。', versionContext: true } },
-  { path: '/hqla/:id', name: 'hqla-wizard', component: HqlaWizardView, meta: { group: '任务运行', title: 'LCR 计量任务向导', blurb: '七步：基本信息与规则版本 → Excel 数据导入 → 产品自动识别 → 标准字段 Mapping → 数据质量检查 → 自动计量计算 → 结果复核与输出。', versionContext: true } },
+  { path: '/hqla', redirect: '/tasks' },
+  { path: '/hqla/:id', name: 'hqla-wizard', component: HqlaWizardView, meta: { group: '任务运行', title: 'LCR 计量任务向导', blurb: '从流动性子任务进入：基本信息 → Excel 数据导入 → 产品自动识别 → 标准字段 Mapping → 数据质量检查 → 自动计量计算 → 结果复核与输出。', versionContext: true } },
   { path: '/system/users', name: 'sys-users', component: UsersView, meta: { group: '系统管理', title: '用户管理', blurb: '管理平台账号、角色与授权机构。账号停用后立即失去访问权限；当前登录账号不可停用。', menu: 'sys-users' } },
   { path: '/system/roles', name: 'sys-roles', component: RolesView, meta: { group: '系统管理', title: '角色管理', blurb: '角色是菜单权限与授权机构的模板。角色停用后，其下账号保留数据但无法登录。', menu: 'sys-roles' } },
   { path: '/system/permissions', name: 'sys-perms', component: PermissionsView, meta: { group: '系统管理', title: '权限管理', blurb: '按角色配置可见菜单。这里控制的是「能否看到入口」，机构级数据权限仍由用户授权机构控制。', menu: 'sys-perms' } },

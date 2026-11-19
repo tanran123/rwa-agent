@@ -107,6 +107,8 @@
 | `llm/skills/calculation-order/SKILL.md` | 计算顺序。右下角对话按需读取。 |
 | `llm/skills/page-actions/SKILL.md` | 当前页面的填写和保存。右下角对话按需读取。改表单步骤、字段取值和是否保存，改这一份。 |
 | `llm/skills/measure-*/SKILL.md` | 计量里交给模型的一步一份。识别产品、标准字段映射、分类字段映射、抽取、选表、确认数据、补权重条件、分类流程、公式字段映射。调用时读取正文，不放进 `DIALOGUE`。识别产品对应工具 `identify_products`，标准字段映射对应工具 `map_fields`。底稿页选表是 `measure-sheets-paper`，流水线选表是 `measure-sheets`。 |
+| `llm/skills/liquidity-product-identifier/SKILL.md` | LCR 产品识别策略。输入数据集表头、样本、特征和快照产品目录，输出可批量执行的识别规则，不逐条输出记录。对应 `llm/capabilities/liquidity_product.py`。 |
+| `llm/skills/liquidity-standard-field-matcher/SKILL.md` | LCR 原始列到已确认产品标准字段的一对一建议。输入数据集特征、产品字段和字典，只输出建议，不确认。对应 `llm/capabilities/liquidity_field.py`。 |
 | `llm/skills/decision-tree/SKILL.md` | 决策树助手。只在暴露分类页那一次模型调用里作为系统提示。 |
 | `llm/skills/credit-weight/SKILL.md` | 权重法判定。weight 子智能体按需读取：前置检查、调用 `run_weight_decision`、只转述结果、禁止重算。 |
 | `llm/skills/hqla-review/SKILL.md` | HQLA 七步、第 5 步参考库匹配口径、摘要工具和禁止事项。 |

@@ -1,54 +1,71 @@
 <script setup>
-import { computed, ref } from "vue";
-import { computeLcr, updateTask } from "@/api/hqla";
+import { computed, onMounted, ref } from "vue";
+import { computeRun, getPreflight, listRuns } from "@/api/hqla";
 
 const props = defineProps({ task: Object, reload: Function });
+
 const busy = ref(false);
 const error = ref("");
+const preflight = ref(null);
+const runs = ref([]);
+const allowPartial = ref(false);
 
 const result = computed(() => {
   const summary = (props.task && props.task.summary) || null;
   return summary && summary.calculation ? summary.calculation : null;
 });
+const currentRun = computed(() => (props.task && props.task.currentRun) || runs.value[0] || null);
 const datasets = computed(() => (props.task && props.task.datasets) || []);
+const gate = computed(() => preflight.value || { ok: false, checks: [], blocking: [], warnings: [] });
 
 function money(value) {
   if (value == null || Number.isNaN(Number(value))) return "—";
   return Number(value).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
-
 function pct(value) {
-  if (value == null) return "—";
-  return Number(value).toFixed(2) + "%";
+  return value == null ? "—" : Number(value).toFixed(2) + "%";
+}
+function runStatus(run) {
+  if (!run) return { label: "待执行", tone: "muted" };
+  if (run.status === "succeeded") return { label: "已完成", tone: "green" };
+  if (run.status === "partial_failed") return { label: "部分完成", tone: "amber" };
+  if (run.status === "failed") return { label: "失败", tone: "red" };
+  return { label: run.status, tone: "muted" };
 }
 
-async function run() {
+async function load() {
   busy.value = true;
   error.value = "";
   try {
-    const computed = await computeLcr(props.task.id);
-    const summary = {
-      ...((props.task && props.task.summary) || {}),
-      stats: computed.stats,
-      metrics: computed.metrics,
-      lcr: computed.lcr,
-      calculation: computed,
-      calculatedAt: computed.runAt
-    };
-    await updateTask(props.task.id, {
-      status: "doing",
-      step: Math.max(6, Number(props.task.step) || 6),
-      summary,
-      runAt: computed.runAt,
-      config: { ...((props.task && props.task.cfg) || {}), review: { status: "pending", readyAt: computed.runAt } }
-    });
-    await props.reload();
+    preflight.value = await getPreflight(props.task.id, allowPartial.value);
+    runs.value = await listRuns(props.task.id);
   } catch (err) {
     error.value = err.message;
   } finally {
     busy.value = false;
   }
 }
+
+async function run() {
+  busy.value = true;
+  error.value = "";
+  try {
+    await computeRun(props.task.id, { allowPartial: allowPartial.value });
+    await load();
+    if (props.reload) await props.reload();
+  } catch (err) {
+    error.value = err.message;
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function togglePartial(value) {
+  allowPartial.value = value;
+  await load();
+}
+
+onMounted(load);
 </script>
 
 <template>
@@ -56,61 +73,72 @@ async function run() {
 
   <div class="panel">
     <div class="panel-head">
-      <h3>自动计量计算</h3>
-      <span class="tag" :class="result ? 'green' : 'muted'">{{ result ? "计算完成" : "待执行" }}</span>
+      <h3>计算前检查</h3>
+      <span class="tag" :class="gate.ok ? 'green' : 'red'">{{ gate.ok ? "可以计算" : "存在阻断" }}</span>
       <span class="spacer"></span>
-      <button type="button" class="btn sm primary" :disabled="busy || !datasets.length" @click="run">
-        {{ busy ? "计算中…" : result ? "重新计算" : "执行计算" }}
+      <label class="inline-fields" style="font-size: 12px; gap: 6px">
+        <input type="checkbox" :checked="allowPartial" @change="togglePartial($event.target.checked)" />
+        允许部分计算（排除 BLOCK 记录）
+      </label>
+      <button type="button" class="btn sm" :disabled="busy" @click="load">重新检查</button>
+    </div>
+    <div class="panel-body tight">
+      <table class="tbl">
+        <thead><tr><th>检查项</th><th>结果</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr v-for="check in gate.checks" :key="check.key">
+            <td>{{ check.label }}</td>
+            <td>
+              <span class="tag" :class="check.status === 'PASS' ? 'green' : check.status === 'WARN' ? 'amber' : 'red'">
+                {{ check.status === "PASS" ? "通过" : check.status === "WARN" ? "警告" : "阻断" }}
+              </span>
+            </td>
+            <td class="small dim">{{ check.detail }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p v-if="gate.blocking.length" class="notice danger" style="margin-top: 8px">
+        {{ gate.blocking.join("；") }}
+      </p>
+      <p v-if="gate.excludedRecordIds && gate.excludedRecordIds.length" class="notice warn" style="margin-top: 8px">
+        按部分计算将排除 {{ gate.excludedRecordIds.length }} 条记录，并在计算统计和异常清单中披露。
+      </p>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h3>自动计量计算</h3>
+      <span class="tag" :class="runStatus(currentRun).tone">{{ runStatus(currentRun).label }}</span>
+      <span class="spacer"></span>
+      <button type="button" class="btn sm primary" :disabled="busy || !gate.ok" @click="run">
+        {{ busy ? "计算中…" : currentRun ? "重新计算" : "执行计算" }}
       </button>
     </div>
     <div class="panel-body">
       <p class="dim" style="font-size: 12px; margin: 0 0 10px">
-        规则路由与执行顺序由前序步骤自动确定：数据集 → 产品规则 → 明细计算 → 监管指标汇总。
+        计算只读取任务配置快照、逐笔产品确认和字段对应；每次计算形成独立批次，保存快照、输入版本和引擎版本。
       </p>
       <div class="lq-chain">
         <div v-for="(item, index) in [
-          ['原始业务明细', 'Excel 数据按数据集标准化'],
-          ['产品识别与字段 Mapping', '按产品字段契约校验'],
-          ['产品规则路由', '按产品与监管领域匹配规则包'],
-          ['规则引擎执行', '条件判断 / 名单匹配 / 分类路由 / 参数查表 / 数值计算'],
-          ['监管指标汇总', 'HQLA → 现金流入流出 → LCR']
+          ['数据标准化', 'Excel 原始列 → 标准字段'],
+          ['产品确认与字段对应', '逐笔产品和字段准备'],
+          ['规则路由', '按产品和侧别匹配参数'],
+          ['监管计算', '折扣率 / 流入率 / 流出率'],
+          ['指标汇总', 'HQLA → 现金流入流出 → LCR']
         ]" :key="item[0]" class="lq-chain-node">
           <b>{{ index + 1 }}. {{ item[0] }}</b>
           <span>{{ item[1] }}</span>
         </div>
       </div>
 
-      <div v-if="!datasets.length" class="empty">请先完成数据导入、产品识别和字段 Mapping。</div>
-      <table v-else class="tbl" style="margin-top: 12px">
-        <thead><tr><th>数据集</th><th>产品</th><th class="num">记录数</th><th class="num">成功</th><th class="num">异常</th><th>状态</th></tr></thead>
-        <tbody>
-          <tr v-for="dataset in datasets" :key="dataset.id">
-            <td>{{ dataset.sheet }}</td>
-            <td>{{ dataset.productName || dataset.productCode || "—" }}</td>
-            <td class="num mono">{{ (dataset.rows || []).length.toLocaleString("zh-CN") }}</td>
-            <td class="num mono">{{ result && result.datasets ? ((result.datasets.find((item) => item.id === dataset.id) || {}).success || 0) : "—" }}</td>
-            <td class="num mono">{{ result && result.datasets ? ((result.datasets.find((item) => item.id === dataset.id) || {}).exceptions || 0) : "—" }}</td>
-            <td>
-              <span class="tag" :class="dataset.quality && dataset.quality.status === 'BLOCK' ? 'red' : 'green'">
-                {{ dataset.quality ? (dataset.quality.status === "BLOCK" ? "阻断" : "可计算") : "未检查" }}
-              </span>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <div v-if="result" class="panel">
-    <div class="panel-head"><h3>计算结果</h3><span class="sub">执行时间 {{ result.runAt }}</span></div>
-    <div class="panel-body">
-      <div class="lq-result-grid">
+      <div v-if="result" class="lq-result-grid" style="margin-top: 12px">
         <div class="lq-result-card"><span>流动性覆盖率（LCR）</span><b>{{ pct(result.lcr) }}</b><em>监管下限 {{ pct((result.metrics.lcrMin || 1) * 100) }}</em></div>
-        <div class="lq-result-card"><span>HQLA</span><b>{{ money(result.metrics.hqla) }}</b><em>上限调整前 {{ money(result.metrics.hqlaBeforeCaps) }}</em></div>
+        <div class="lq-result-card"><span>HQLA</span><b>{{ money(result.metrics.hqla) }}</b><em>调整前 {{ money(result.metrics.hqlaBeforeCaps) }}</em></div>
         <div class="lq-result-card"><span>现金流入</span><b>{{ money(result.metrics.inflow) }}</b><em>认可 {{ money(result.metrics.recognizedInflow) }}</em></div>
         <div class="lq-result-card"><span>现金流出</span><b>{{ money(result.metrics.outflow) }}</b><em>净流出 {{ money(result.metrics.netOutflow) }}</em></div>
       </div>
-      <table class="tbl" style="margin-top: 12px">
+      <table v-if="result" class="tbl" style="margin-top: 12px">
         <thead><tr><th>产品</th><th>侧别</th><th class="num">记录数</th><th class="num">成功</th><th class="num">异常</th><th class="num">金额</th><th class="num">计量贡献</th><th>参数键</th></tr></thead>
         <tbody>
           <tr v-for="product in result.products" :key="product.productCode">
@@ -122,6 +150,29 @@ async function run() {
             <td class="num mono">{{ money(product.amount) }}</td>
             <td class="num mono">{{ money(product.contribution) }}</td>
             <td class="mono small">{{ product.rateKey }}<span v-if="product.rate != null" class="dim"> · {{ product.rate }}</span></td>
+          </tr>
+        </tbody>
+      </table>
+      <div v-if="!datasets.length" class="empty">请先完成数据导入、产品识别和字段对应。</div>
+    </div>
+  </div>
+
+  <div v-if="runs.length" class="panel">
+    <div class="panel-head"><h3>计算批次</h3><span class="sub">{{ runs.length }} 次计算</span></div>
+    <div class="panel-body tight">
+      <table class="tbl">
+        <thead><tr><th>批次</th><th>输入版本</th><th>快照</th><th>引擎</th><th>状态</th><th class="num">记录</th><th class="num">异常</th><th>开始</th><th>完成</th></tr></thead>
+        <tbody>
+          <tr v-for="item in runs" :key="item.id">
+            <td class="mono small">{{ item.id }}<div class="dim">#{{ item.runNo }}</div></td>
+            <td class="mono">v{{ item.inputVersion }}</td>
+            <td class="mono small">{{ item.snapshotId || "—" }}</td>
+            <td class="mono small">{{ item.engineVersion }}</td>
+            <td><span class="tag" :class="runStatus(item).tone">{{ runStatus(item).label }}</span></td>
+            <td class="num mono">{{ (item.stats && item.stats.records) || 0 }}</td>
+            <td class="num mono" :class="{ danger: item.exceptionCount }">{{ item.exceptionCount }}</td>
+            <td class="small dim">{{ item.startedAt }}</td>
+            <td class="small dim">{{ item.finishedAt || "—" }}</td>
           </tr>
         </tbody>
       </table>

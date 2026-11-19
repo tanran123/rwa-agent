@@ -1073,6 +1073,56 @@ def hqla_parse_workbook():
         return jsonify({"error": f"解析失败：{exc}"}), 500
 
 
+def _hqla_agent_meta(skill: str) -> dict:
+    model = ""
+    try:
+        from agent.llm.settings import settings
+
+        model = settings().chat_model
+    except Exception:
+        model = ""
+    return {"skill_version": skill + "@1", "prompt_version": "2026-11-19", "model": model}
+
+
+@app.post("/api/hqla/recognize-products")
+def hqla_recognize_products():
+    """根据数据集特征生成产品识别策略；只给建议，不写入任务。"""
+    from agent.llm.capabilities.liquidity_product import suggest_strategy
+
+    data = _hqla_payload()
+    dataset = data.get("dataset") if isinstance(data.get("dataset"), dict) else {}
+    products = data.get("products") if isinstance(data.get("products"), list) else []
+    if not dataset.get("headers"):
+        return jsonify({"error": "缺少数据集表头"}), 400
+    if not products:
+        return jsonify({"error": "缺少产品目录"}), 400
+    try:
+        strategy = suggest_strategy(dataset, products)
+    except Exception as exc:
+        return jsonify({"error": f"产品识别建议失败：{exc}"}), 500
+    return jsonify({"strategy": strategy, **_hqla_agent_meta("liquidity-product-identifier")})
+
+
+@app.post("/api/hqla/recognize-fields")
+def hqla_recognize_fields():
+    """根据已确认产品生成原始列到标准字段的匹配建议；只给建议，不确认。"""
+    from agent.llm.capabilities.liquidity_field import suggest_fields
+
+    data = _hqla_payload()
+    dataset = data.get("dataset") if isinstance(data.get("dataset"), dict) else {}
+    product = data.get("product") if isinstance(data.get("product"), dict) else {}
+    dictionaries = data.get("dictionaries") if isinstance(data.get("dictionaries"), list) else []
+    if not dataset.get("headers"):
+        return jsonify({"error": "缺少数据集表头"}), 400
+    if not product.get("fields"):
+        return jsonify({"error": "缺少产品标准字段"}), 400
+    try:
+        mapping = suggest_fields(dataset, product, dictionaries)
+    except Exception as exc:
+        return jsonify({"error": f"字段识别建议失败：{exc}"}), 500
+    return jsonify({"mapping": mapping.get("mapping", {}), **_hqla_agent_meta("liquidity-standard-field-matcher")})
+
+
 @app.post("/api/hqla/compute")
 def hqla_compute():
     from agent.core.hqla import compute

@@ -7,6 +7,8 @@ import { pool, query } from "./db.js";
 import { activeLlm } from "./admin.js";
 import { requestContext } from "./requestContext.js";
 import { eadConfigMap } from "./eadConfig.js";
+import { resolveVersionRef } from "./ruleVersion.js";
+import { latestPublishedSnapshot, loadRwaConfig } from "./ruleGovernance.js";
 import { cellText, productGroups } from "./measureSampling.js";
 import { configProducts, versionRuleDocuments } from "./productStandard.js";
 import { buildV35Pack, classifyV35Pack, weightV35Pack, finalizeV35Pack, suggestionsFor } from "./measureV35.js";
@@ -134,31 +136,58 @@ function documentForProduct(label, tabs, general) {
   return documentMatchForProduct(label, tabs, general).item;
 }
 
-async function crmSnapshot() {
-  const [configs, columns, types] = await Promise.all([
-    query("SELECT product_code, needed, reason, max_slots FROM crm_product_config"),
-    query("SELECT product_code, attr, slot, column_name FROM crm_slot_column ORDER BY product_code, attr, slot"),
-    query("SELECT product_code, code, name, note, seq FROM crm_eligible_type ORDER BY product_code, seq, code")
+async function crmSnapshot(version = "") {
+  const versionId = version ? await resolveVersionRef(version) : "";
+  const load = (scoped) => Promise.all([
+    query(
+      scoped
+        ? "SELECT product_code, needed, reason, max_slots, rule_version_id FROM crm_product_config WHERE rule_version_id = ? OR rule_version_id = ''"
+        : "SELECT product_code, needed, reason, max_slots, rule_version_id FROM crm_product_config",
+      scoped ? [versionId] : []
+    ),
+    query(
+      scoped
+        ? "SELECT product_code, attr, slot, column_name, target_fact_code, rule_version_id FROM crm_slot_column WHERE rule_version_id = ? OR rule_version_id = '' ORDER BY product_code, attr, slot"
+        : "SELECT product_code, attr, slot, column_name, target_fact_code, rule_version_id FROM crm_slot_column ORDER BY product_code, attr, slot",
+      scoped ? [versionId] : []
+    ),
+    query(
+      scoped
+        ? "SELECT product_code, code, name, note, seq, rule_version_id FROM crm_eligible_type WHERE rule_version_id = ? OR rule_version_id = '' ORDER BY product_code, seq, code"
+        : "SELECT product_code, code, name, note, seq, rule_version_id FROM crm_eligible_type ORDER BY product_code, seq, code",
+      scoped ? [versionId] : []
+    )
   ]);
+  let [configs, columns, types] = await load(!!versionId);
+  if (versionId && !configs.length) [configs, columns, types] = await load(false);
   const byProduct = {};
   configs.forEach((row) => {
+    if (!versionId && byProduct[row.product_code]) return;
+    const own = versionId ? configs.find((item) => item.product_code === row.product_code && item.rule_version_id === versionId) : null;
+    const picked = own || row;
+    if (picked !== row) return;
     byProduct[row.product_code] = {
       code: row.product_code,
-      needed: !!Number(row.needed),
-      reason: row.reason || "",
-      maxSlots: Number(row.max_slots) || 1,
+      needed: !!Number(picked.needed),
+      reason: picked.reason || "",
+      maxSlots: Number(picked.max_slots) || 1,
       columns: { crm_type: [], crm_value: [], crm_weight: [] },
-      types: []
+      facts: { crm_type: [], crm_value: [], crm_weight: [] },
+      types: [],
+      ruleVersionId: picked.rule_version_id || ""
     };
   });
   columns.forEach((row) => {
     const item = byProduct[row.product_code];
     if (!item || !item.columns[row.attr]) return;
+    if ((row.rule_version_id || "") !== item.ruleVersionId) return;
     item.columns[row.attr][Number(row.slot) - 1] = row.column_name;
+    item.facts[row.attr][Number(row.slot) - 1] = row.target_fact_code || row.attr;
   });
   types.forEach((row) => {
     const item = byProduct[row.product_code];
     if (!item) return;
+    if ((row.rule_version_id || "") !== item.ruleVersionId) return;
     item.types.push({ code: row.code, name: row.name, note: row.note || "" });
   });
   return byProduct;
@@ -177,14 +206,18 @@ function assessCrm(row, byProduct) {
     };
   }
   const slots = [];
+  const stdFacts = row.std || {};
   for (let i = 0; i < cfg.maxSlots; i += 1) {
     const typeColumn = cfg.columns.crm_type[i] || "";
     const valueColumn = cfg.columns.crm_value[i] || "";
     const weightColumn = cfg.columns.crm_weight[i] || "";
+    const typeFact = (cfg.facts && cfg.facts.crm_type[i]) || "crm_type";
+    const valueFact = (cfg.facts && cfg.facts.crm_value[i]) || "crm_value";
+    const weightFact = (cfg.facts && cfg.facts.crm_weight[i]) || "crm_weight";
     if (!typeColumn && !valueColumn && !weightColumn) continue;
-    const type = cell(row, typeColumn);
-    const value = cell(row, valueColumn);
-    const weight = cell(row, weightColumn);
+    const type = stdFacts[typeFact] == null ? cell(row, typeColumn) : stdFacts[typeFact];
+    const value = stdFacts[valueFact] == null ? cell(row, valueColumn) : stdFacts[valueFact];
+    const weight = stdFacts[weightFact] == null ? cell(row, weightColumn) : stdFacts[weightFact];
     const typeText = type == null ? "" : String(type);
     const eligible = cfg.types.find((item) => item.code === typeText || item.name === typeText);
     slots.push({
@@ -862,7 +895,9 @@ async function detectWithModel(groups, products) {
 
 export async function detectMeasureProducts(body) {
   const version = body && body.version ? String(body.version) : "";
-  const standard = version ? await configProducts(version) : [];
+  const snapshotId = body && body.snapshotId ? String(body.snapshotId) : "";
+  const config = snapshotId ? await loadRwaConfig({ snapshotId, mode: "formal" }) : null;
+  const standard = config ? (config.products || []) : (version ? await configProducts(version) : []);
   let catalog;
   if (standard.length) {
     catalog = standard.map((item) => ({
@@ -940,10 +975,12 @@ export async function mapMeasureFields(body) {
   const columnValues = drawn.columnValues;
   if (!codes.length) return { mappings: {}, modelError: "" };
   const version = body && body.version ? String(body.version) : "";
-  const standard = version ? await configProducts(version) : [];
+  const snapshotId = body && body.snapshotId ? String(body.snapshotId) : "";
+  const config = snapshotId ? await loadRwaConfig({ snapshotId, mode: "formal" }) : null;
+  const standard = config ? (config.products || []) : (version ? await configProducts(version) : []);
   if (standard.length) {
     const productByCode = new Map(standard.map((item) => [item.code, item]));
-    const docs = await versionRuleDocuments(version);
+    const docs = config ? (config.docs || {}) : await versionRuleDocuments(version);
     const mappingByName = new Map((docs.mappings || []).map((item) => [item.name, item.doc]));
     const mappings = {};
     const pending = [];
@@ -1212,8 +1249,8 @@ async function measureLoans(loans, intakeMeta, choices) {
     seedSheetFacts(loan, chosen.doc, engine);
   });
   const doc = catalog.general.doc;
-  const eadConfig = await eadConfigMap();
-  const crm = await crmSnapshot();
+  const eadConfig = await eadConfigMap(picked.version);
+  const crm = await crmSnapshot(picked.version);
   const out = pipeline.measureBatch(prepared, {
     ruleset: doc,
     rulesetByProduct,
@@ -1385,8 +1422,10 @@ export async function readUploadedWorkbook(body) {
   const mock = require(path.join(root, "server/data/mock_loans.cjs"));
   const pipeline = require(path.join(root, "server/lib/pipeline.cjs"));
   const loans = loansFromRows(parsed.headers, parsed.rows, master, pipeline, mock.PRODUCT_DETECT_RULES);
-  const version = String((body && body.version) || "");
-  const docs = version ? await versionRuleDocuments(version) : null;
+  const snapshotId = String((body && body.snapshotId) || "");
+  const config = snapshotId ? await loadRwaConfig({ snapshotId, mode: "formal" }) : null;
+  const version = String((body && body.version) || (config && config.version) || "");
+  const docs = config ? config.docs : (version ? await versionRuleDocuments(version) : null);
   let pack;
   if (docs && docs.registry && docs.classification) {
     pack = await buildV35Pack({
@@ -1397,7 +1436,8 @@ export async function readUploadedWorkbook(body) {
       sourceFile: filename,
       version,
       jurisdiction: String((body && body.jurisdiction) || ""),
-      choices: choicesOf(body)
+      choices: choicesOf(body),
+      config
     });
   } else {
     pack = await measureLoans(loans, {
@@ -1814,16 +1854,17 @@ function applyWeightRows(pack, rows) {
   return matched;
 }
 
-export async function classifyUpload(uploadId, version = "") {
+export async function classifyUpload(uploadId, version = "", snapshotId = "") {
   const stored = uploads.get(String(uploadId || ""));
   if (!stored || !stored.buffer || !stored.pack) {
     const error = new Error("上传的工作簿已经不在，请重新导入后再执行分类");
     error.status = 400;
     throw error;
   }
-  const versionDocs = version ? await versionRuleDocuments(version) : null;
+  const config = snapshotId ? await loadRwaConfig({ snapshotId, mode: "formal" }) : null;
+  const versionDocs = config ? config.docs : (version ? await versionRuleDocuments(version) : null);
   if (versionDocs && versionDocs.registry && versionDocs.classification) {
-    const pack = await classifyV35Pack(stored.pack, version, stored.pack.jurisdiction || "");
+    const pack = await classifyV35Pack(stored.pack, version, stored.pack.jurisdiction || "", config);
     stored.pack = pack;
     try {
       stored.annotated = await annotateWorkbook(stored.buffer, stored.pack);
@@ -1955,22 +1996,23 @@ export async function classifyUpload(uploadId, version = "") {
   };
 }
 
-export async function weightUpload(uploadId, version = "") {
+export async function weightUpload(uploadId, version = "", snapshotId = "") {
   const stored = uploads.get(String(uploadId || ""));
   if (!stored || !stored.pack) {
     const error = new Error("上传的工作簿已经不在，请重新导入后再计算风险权重");
     error.status = 400;
     throw error;
   }
-  const ruleVersion = version || stored.pack.version || "";
-  const docs = ruleVersion ? await versionRuleDocuments(ruleVersion) : null;
+  const config = snapshotId ? await loadRwaConfig({ snapshotId, mode: "formal" }) : null;
+  const ruleVersion = version || (config && config.version) || stored.pack.version || "";
+  const docs = config ? config.docs : (ruleVersion ? await versionRuleDocuments(ruleVersion) : null);
   if (!docs || !docs.registry || !docs.weight) {
     const error = new Error("当前监管版本没有 V3.5 风险权重规则文档");
     error.status = 400;
     throw error;
   }
-  stored.pack = await weightV35Pack(stored.pack, ruleVersion, stored.pack.jurisdiction || "");
-  stored.pack = await finalizeV35Pack(stored.pack, ruleVersion);
+  stored.pack = await weightV35Pack(stored.pack, ruleVersion, stored.pack.jurisdiction || "", config);
+  stored.pack = await finalizeV35Pack(stored.pack, ruleVersion, config);
   try {
     stored.annotated = await annotateWorkbook(stored.buffer, stored.pack);
     stored.workbookError = "";
@@ -2077,18 +2119,56 @@ export async function saveMeasureRun(body) {
     createdAt,
     status: "completed"
   };
+  const ruleVersionId = await resolveVersionRef(header.version, header.jurisdiction);
+  let snapshotId = String((body && body.snapshotId) || "");
+  if (body && body.taskId) {
+    const taskRows = await query("SELECT snapshot_id, rule_version_id FROM rwa_task WHERE id = ?", [String(body.taskId)]);
+    if (taskRows[0] && taskRows[0].snapshot_id) snapshotId = taskRows[0].snapshot_id;
+    if (taskRows[0] && taskRows[0].rule_version_id && ruleVersionId && taskRows[0].rule_version_id !== ruleVersionId) {
+      const error = new Error("任务绑定的监管版本与本次计量版本不一致");
+      error.status = 409;
+      throw error;
+    }
+  }
+  if (!snapshotId && ruleVersionId) {
+    const snapshot = await latestPublishedSnapshot(ruleVersionId);
+    if (snapshot) snapshotId = snapshot.id;
+  }
+  if (!snapshotId) {
+    const error = new Error("当前监管版本尚未发布正式配置快照，不能写入正式计量批次");
+    error.status = 409;
+    throw error;
+  }
+  const snapshotRows = await query("SELECT * FROM rule_config_snapshot WHERE id = ?", [snapshotId]);
+  if (!snapshotRows[0]) {
+    const error = new Error("配置快照不存在");
+    error.status = 404;
+    throw error;
+  }
+  if (snapshotRows[0].rule_version_id !== ruleVersionId) {
+    const error = new Error("配置快照不属于本次计量的监管版本");
+    error.status = 409;
+    throw error;
+  }
+  if (snapshotRows[0].status !== "PUBLISHED") {
+    const error = new Error("正式计量只能使用已发布的配置快照");
+    error.status = 409;
+    throw error;
+  }
+  rules.snapshotId = snapshotId;
+  rules.snapshotNo = snapshotRows[0].snapshot_no;
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
     await conn.query(
       `INSERT INTO measure_batch
         (id, name, institution, jurisdiction, version, base_date, imported, success_count, exception_count,
-         on_ead, off_ead, ead, rwa, created_at, status, rules_json)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         on_ead, off_ead, ead, rwa, created_at, status, rules_json, rule_version_id, snapshot_id, engine_version)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         header.id, header.name, header.institution, header.jurisdiction, header.version, header.baseDate,
         header.imported, header.success, header.exception, header.onEad, header.offEad, header.ead, header.rwa,
-        header.createdAt, header.status, JSON.stringify(rules)
+        header.createdAt, header.status, JSON.stringify(rules), ruleVersionId, snapshotId, "rwa-v3.5"
       ]
     );
     for (const row of data.results) {
@@ -2117,7 +2197,7 @@ export async function saveMeasureRun(body) {
   } finally {
     conn.release();
   }
-  return { ...header, summary: data.summary, ruleset: data.ruleset, rulesetTitle: data.rulesetTitle };
+  return { ...header, summary: data.summary, ruleset: data.ruleset, rulesetTitle: data.rulesetTitle, snapshotId, engineVersion: "rwa-v3.5" };
 }
 
 function jsonNum(value) {

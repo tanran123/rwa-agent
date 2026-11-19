@@ -15,9 +15,6 @@ export const AGENT_PAGES = [
   { path: "/ead", title: "EAD 计算规则配置" },
   { path: "/ccf", title: "信用转换系数" },
   { path: "/crm-config", title: "信用风险缓释配置" },
-  { path: "/wizard", title: "信用风险 RWA 计量向导" },
-  { path: "/engine", title: "底稿计算" },
-  { path: "/results", title: "计量结果明细" },
   { path: "/batches", title: "计量批次管理" },
   { path: "/export", title: "Excel 审计底稿导出" }
 ];

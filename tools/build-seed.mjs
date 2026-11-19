@@ -87,15 +87,15 @@ function hashPassword(value) {
   return createHash("sha256").update(String(value)).digest("hex");
 }
 
-const ADMIN_MENUS = ["home", "versions", "orgs", "tasks", "wizard", "engine", "results", "sys-users", "sys-roles", "sys-perms", "sys-logs", "sys-llm", "sys-tokens"];
+const ADMIN_MENUS = ["home", "versions", "orgs", "tasks", "sys-users", "sys-roles", "sys-perms", "sys-logs", "sys-llm", "sys-tokens"];
 
 const ROLES = [
   ["R0", "超级管理员", "平台全部功能与配置权限", 1, "on", ["*"]],
   ["R1", "验证主管", "全部项目读写、审批与配置查看", 0, "on", ADMIN_MENUS],
-  ["R2", "验证经理", "所辖项目读写、执行与审计查看", 0, "on", ["home", "versions", "orgs", "tasks", "wizard", "engine", "results", "sys-logs", "sys-llm"]],
-  ["R3", "验证专员", "所辖项目编制与执行", 0, "on", ["home", "versions", "tasks", "wizard", "engine", "results", "sys-llm"]],
-  ["R4", "审批人", "方案与结论审批、只读项目", 0, "on", ["home", "versions", "tasks", "results", "sys-llm"]],
-  ["R5", "只读", "仅查看被授权项目", 0, "on", ["home", "versions", "tasks", "results"]]
+  ["R2", "验证经理", "所辖项目读写、执行与审计查看", 0, "on", ["home", "versions", "orgs", "tasks", "sys-logs", "sys-llm"]],
+  ["R3", "验证专员", "所辖项目编制与执行", 0, "on", ["home", "versions", "tasks", "sys-llm"]],
+  ["R4", "审批人", "方案与结论审批、只读项目", 0, "on", ["home", "versions", "tasks", "sys-llm"]],
+  ["R5", "只读", "仅查看被授权项目", 0, "on", ["home", "versions", "tasks"]]
 ];
 
 const USERS = [

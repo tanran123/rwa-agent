@@ -1,209 +1,215 @@
 <script setup>
-import { computed, ref, watch } from "vue";
-import { autoMapDatasets, saveDatasetMeta } from "@/api/hqla";
+import { computed, onMounted, ref, watch } from "vue";
+import { confirmFields, getTaskSnapshot, listFields, suggestFields } from "@/api/hqla";
 
 const props = defineProps({ task: Object, meta: Object, reload: Function });
+
 const busy = ref(false);
 const error = ref("");
-const selectedId = ref("");
+const note = ref("");
+const catalog = ref([]);
+const datasetId = ref("");
+const productCode = ref("");
+const productOptions = ref([]);
 const rows = ref([]);
-const stats = ref(null);
+const stats = ref({ headers: 0, suggested: 0, confirmed: 0, missingRequired: 0 });
 const missingRequired = ref([]);
+const edits = ref({});
 
-const datasets = computed(() => ((props.task && props.task.datasets) || []).filter((item) => item.productCode));
-const allDatasets = computed(() => (props.task && props.task.datasets) || []);
-const selected = computed(() => allDatasets.value.find((item) => item.id === selectedId.value) || null);
-const product = computed(() => {
-  if (!selected.value || !props.meta) return null;
-  return (props.meta.products || []).find((item) => item.code === selected.value.productCode) || null;
-});
-const fieldOptions = computed(() => (product.value ? product.value.fields : []));
-const amountMapped = computed(() => {
-  const codes = ["amount", "book_value", "fair_value", "undrawn_amount"];
-  return rows.value.some((row) => codes.includes(row.standard));
-});
+const datasets = computed(() => (props.task && props.task.datasets) || []);
+const products = computed(() => catalog.value.length ? catalog.value : ((props.meta && props.meta.products) || []));
+const product = computed(() => products.value.find((item) => item.code === productCode.value) || null);
+const fieldOptions = computed(() => (product.value ? (product.value.fields || []).filter((field) => field.status !== "DISABLED") : []));
+const dataset = computed(() => datasets.value.find((item) => item.id === datasetId.value) || null);
 
-function loadRows(dataset) {
-  if (!dataset) { rows.value = []; stats.value = null; missingRequired.value = []; return; }
-  const meta = dataset.mappingMeta;
-  if (meta && Array.isArray(meta.mappings)) {
-    rows.value = meta.mappings.map((item) => ({ ...item }));
-    stats.value = meta.stats;
-    missingRequired.value = meta.missingRequired || [];
-    return;
-  }
-  const plain = dataset.mapping || {};
-  rows.value = (dataset.headers || []).map((header) => {
-    const found = Object.entries(plain).find(([, excel]) => excel === header);
-    const field = found ? fieldOptions.value.find((item) => item.code === found[0]) : null;
-    return {
-      excel: header,
-      standard: found ? found[0] : "",
-      standardName: field ? field.name : "",
-      method: found ? "手工映射" : "未匹配",
-      confidence: found ? 100 : 0,
-      required: field ? !!(field.required || field.requiredByRule) : false,
-      status: found ? "已确认" : "不适用"
-    };
-  });
-  stats.value = {
-    headers: rows.value.length,
-    mapped: rows.value.filter((item) => item.standard).length,
-    confirmed: rows.value.filter((item) => item.status === "已确认").length,
-    pending: 0,
-    missingRequired: 0,
-    notApplicable: rows.value.filter((item) => item.status === "不适用").length
-  };
-  missingRequired.value = [];
+function selectedCode(row) {
+  if (edits.value[row.sourceColumn] != null) return edits.value[row.sourceColumn];
+  return row.fieldCode || row.suggestedFieldCode || "";
 }
 
-watch(datasets, (list) => {
-  if (!list.length) { selectedId.value = ""; return; }
-  if (!list.some((item) => item.id === selectedId.value)) selectedId.value = list[0].id;
-}, { immediate: true });
-
-watch(selectedId, () => loadRows(selected.value));
-watch(selected, (value) => loadRows(value), { deep: false });
-
-async function autoMap() {
-  busy.value = true;
-  error.value = "";
-  try {
-    await autoMapDatasets(props.task.id);
-    await props.reload();
-    loadRows(selected.value);
-  } catch (err) {
-    error.value = err.message;
-  } finally {
-    busy.value = false;
-  }
+function setCode(row, value) {
+  edits.value = { ...edits.value, [row.sourceColumn]: value };
 }
 
-function changeStandard(row, code) {
-  row.standard = code;
+function fieldName(code) {
   const field = fieldOptions.value.find((item) => item.code === code);
-  row.standardName = field ? field.name : "";
-  row.method = code ? "手工映射" : "未匹配";
-  row.confidence = code ? 100 : 0;
-  row.required = field ? !!(field.required || field.requiredByRule) : false;
-  row.status = code ? "已确认" : "不适用";
+  return field ? field.name : "";
 }
 
-async function saveMapping() {
-  if (!selected.value) return;
-  const plain = {};
-  rows.value.forEach((row) => {
-    if (row.standard) plain[row.standard] = row.excel;
-  });
-  const mapped = new Set(Object.keys(plain));
-  const missing = (product.value ? product.value.requiredFields : []).filter((code) => !mapped.has(code));
-  const payloadRows = rows.value.map((row) => ({ ...row }));
-  const nextStats = {
-    headers: payloadRows.length,
-    mapped: mapped.size,
-    confirmed: payloadRows.filter((item) => item.status === "已确认").length,
-    pending: payloadRows.filter((item) => item.status === "待确认").length,
-    missingRequired: missing.length,
-    notApplicable: payloadRows.filter((item) => item.status === "不适用").length
-  };
+async function loadSnapshot() {
+  try {
+    const snapshot = await getTaskSnapshot(props.task.id);
+    catalog.value = (snapshot.config && snapshot.config.products) || [];
+  } catch (err) {
+    catalog.value = [];
+  }
+}
+
+async function loadProductOptions() {
+  if (!datasetId.value) { productOptions.value = []; return; }
+  try {
+    const result = await listFields(props.task.id, { datasetId: datasetId.value });
+    const list = Array.isArray(result.products) ? result.products : [];
+    if (!list.length && dataset.value && dataset.value.productCode) list.push(dataset.value.productCode);
+    productOptions.value = [...new Set(list)];
+    if (!productOptions.value.includes(productCode.value)) productCode.value = productOptions.value[0] || "";
+  } catch (err) {
+    error.value = err.message;
+  }
+}
+
+async function loadRows() {
+  if (!datasetId.value || !productCode.value) { rows.value = []; return; }
   busy.value = true;
   error.value = "";
   try {
-    await saveDatasetMeta(props.task.id, selected.value.id, {
-      mapping: plain,
-      mappingMeta: { mappings: payloadRows, stats: nextStats, missingRequired: missing },
-      quality: null
-    });
-    await props.reload();
+    const result = await listFields(props.task.id, { datasetId: datasetId.value, productCode: productCode.value });
+    rows.value = result.rows || [];
+    stats.value = result.stats || stats.value;
+    missingRequired.value = result.missingRequired || [];
+    edits.value = {};
   } catch (err) {
     error.value = err.message;
   } finally {
     busy.value = false;
   }
 }
+
+async function load() {
+  await loadProductOptions();
+  await loadRows();
+}
+
+async function suggest() {
+  if (!datasetId.value || !productCode.value) return;
+  busy.value = true;
+  error.value = "";
+  note.value = "";
+  try {
+    const result = await suggestFields(props.task.id, { datasetId: datasetId.value, productCode: productCode.value });
+    const target = (result.datasets || [])[0];
+    note.value = target && target.modelError
+      ? "模型字段识别失败，已使用确定性兜底：" + target.modelError
+      : "字段识别建议已更新。";
+    await loadRows();
+    if (props.reload) await props.reload();
+  } catch (err) {
+    error.value = err.message;
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function save() {
+  if (!datasetId.value || !productCode.value) return;
+  busy.value = true;
+  error.value = "";
+  note.value = "";
+  try {
+    const mappings = rows.value
+      .map((row) => ({ sourceColumn: row.sourceColumn, fieldCode: selectedCode(row) }))
+      .filter((item) => item.fieldCode);
+    const result = await confirmFields(props.task.id, {
+      datasetId: datasetId.value,
+      productCode: productCode.value,
+      mappings
+    });
+    rows.value = result.rows || rows.value;
+    stats.value = result.stats || stats.value;
+    missingRequired.value = result.missingRequired || [];
+    edits.value = {};
+    note.value = "字段对应已保存。";
+    if (props.reload) await props.reload();
+  } catch (err) {
+    error.value = err.message;
+  } finally {
+    busy.value = false;
+  }
+}
+
+watch(datasetId, async () => {
+  await loadProductOptions();
+  await loadRows();
+});
+watch(productCode, loadRows);
+
+onMounted(async () => {
+  await loadSnapshot();
+  datasetId.value = datasets.value.length ? datasets.value[0].id : "";
+  await load();
+  if (!productCode.value && datasets.value.length) await loadRows();
+});
 </script>
 
 <template>
   <p v-if="error" class="notice danger">{{ error }}</p>
+  <p v-if="note" class="notice ok">{{ note }}</p>
 
   <div class="panel">
     <div class="panel-head">
-      <h3>标准字段 Mapping</h3>
-      <span class="sub">必需字段由本次适用规则引用反推，不是产品全部字段；未被规则引用的字段允许不映射。</span>
+      <h3>标准字段识别</h3>
+      <span class="sub">按「数据集 + 产品 + 原始列」维护；模型只给建议，人工确认后保存。</span>
       <span class="spacer"></span>
-      <button type="button" class="btn sm" :disabled="busy || !datasets.length" @click="autoMap">
-        {{ busy ? "处理中…" : "自动映射全部数据集" }}
+      <button type="button" class="btn sm" :disabled="busy || !productCode" @click="suggest">
+        {{ busy ? "处理中…" : "自动识别字段" }}
       </button>
     </div>
     <div class="panel-body">
-      <div v-if="!allDatasets.length" class="empty">请先在第二步导入 Excel 数据。</div>
-      <div v-else-if="!datasets.length" class="empty">请先在第三步确认数据集对应的产品。</div>
+      <div class="inline-fields" style="margin-bottom: 10px">
+        <select v-model="datasetId" style="min-width: 220px">
+          <option v-for="item in datasets" :key="item.id" :value="item.id">
+            {{ item.sheet }}（{{ item.rowCount || (item.rows || []).length }} 行）
+          </option>
+        </select>
+        <select v-model="productCode" style="min-width: 240px">
+          <option v-for="code in productOptions" :key="code" :value="code">
+            {{ (products.find((item) => item.code === code) || {}).name || code }}（{{ code }}）
+          </option>
+        </select>
+        <span class="spacer"></span>
+        <span class="dim">{{ rows.length }} 个原始列 · 已确认 {{ stats.confirmed || 0 }} · 缺失必需 {{ missingRequired.length }}</span>
+      </div>
+
+      <div v-if="!datasets.length" class="empty">请先在第二步导入 Excel 数据。</div>
+      <div v-else-if="!productOptions.length" class="empty">请先在第三步确认这个数据集的产品。</div>
+      <div v-else-if="!productCode" class="empty">请选择产品。</div>
       <template v-else>
-        <div class="lq-tabs" style="margin-bottom: 10px">
-          <button v-for="dataset in datasets" :key="dataset.id" type="button" :class="{ on: dataset.id === selectedId }" @click="selectedId = dataset.id">
-            {{ dataset.sheet }}
-            <span class="dim" style="font-size: 10.5px">{{ dataset.productCode }}</span>
-          </button>
+        <p v-if="missingRequired.length" class="notice warn">
+          还有 {{ missingRequired.length }} 个规则必需字段没有对应原始列：{{ missingRequired.join("、") }}。
+        </p>
+        <table class="tbl">
+          <thead>
+            <tr><th>Excel 原始列</th><th>建议标准字段</th><th class="num">置信度</th><th>匹配说明</th><th>确认标准字段</th><th>必需</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in rows" :key="row.sourceColumn">
+              <td>{{ row.sourceColumn }}</td>
+              <td>
+                {{ row.suggestedFieldCode ? (row.suggestedFieldName || fieldName(row.suggestedFieldCode)) : "—" }}
+                <div v-if="row.suggestedFieldCode" class="mono dim" style="font-size: 10.5px">{{ row.suggestedFieldCode }}</div>
+              </td>
+              <td class="num mono">{{ row.confidence == null ? "—" : row.confidence + "%" }}</td>
+              <td class="small dim" style="max-width: 300px">{{ row.reason || "—" }}</td>
+              <td>
+                <select :value="selectedCode(row)" @change="setCode(row, $event.target.value)">
+                  <option value="">不映射</option>
+                  <option v-for="field in fieldOptions" :key="field.code" :value="field.code">
+                    {{ field.name }}（{{ field.code }}）
+                  </option>
+                </select>
+              </td>
+              <td>
+                <span v-if="row.required" class="tag amber">必需</span>
+                <span v-else class="dim">—</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <div style="margin-top: 10px; display: flex; gap: 8px; align-items: center">
+          <button type="button" class="btn primary" :disabled="busy" @click="save">保存字段对应</button>
+          <span class="dim" style="font-size: 11.5px">字段对应保存为人工确认结果；自动建议保留在建议表，不会自动确认。</span>
         </div>
-
-        <template v-if="selected">
-          <div class="lq-statrow">
-            <div class="lq-mini"><span>Excel 字段</span><b>{{ rows.length }}</b></div>
-            <div class="lq-mini"><span>已映射</span><b>{{ rows.filter((row) => row.standard).length }}</b></div>
-            <div class="lq-mini"><span>必需字段</span><b>{{ (product && product.requiredFields || []).length }}</b></div>
-            <div class="lq-mini"><span>缺失必需</span><b :class="{ danger: missingRequired.length }">{{ missingRequired.length }}</b></div>
-          </div>
-
-          <p v-if="!amountMapped" class="notice warn" style="margin: 8px 0">
-            还没有映射金额字段（amount / book_value / fair_value / undrawn_amount），计算步骤会报金额缺失。
-          </p>
-
-          <table class="tbl">
-            <thead>
-              <tr><th>Excel 原始字段</th><th>产品标准字段</th><th>匹配方式</th><th class="num">置信度</th><th>必需</th><th>状态</th></tr>
-            </thead>
-            <tbody>
-              <tr v-for="row in rows" :key="row.excel">
-                <td>{{ row.excel }}</td>
-                <td>
-                  <select :value="row.standard" @change="changeStandard(row, $event.target.value)">
-                    <option value="">不映射</option>
-                    <option v-for="field in fieldOptions" :key="field.code" :value="field.code">
-                      {{ field.name }}（{{ field.code }}）
-                    </option>
-                  </select>
-                </td>
-                <td class="small">{{ row.method }}</td>
-                <td class="num mono">{{ row.confidence == null ? "—" : row.confidence + "%" }}</td>
-                <td>
-                  <span v-if="row.required" class="tag amber">必需</span>
-                  <span v-else class="dim">—</span>
-                </td>
-                <td>
-                  <span class="tag" :class="row.status === '已确认' ? 'green' : row.status === '待确认' ? 'amber' : 'muted'">
-                    {{ row.status }}
-                  </span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-          <div style="display: flex; gap: 8px; align-items: center; margin-top: 10px">
-            <button type="button" class="btn primary" :disabled="busy" @click="saveMapping">保存 Mapping</button>
-            <span class="dim" style="font-size: 11.5px">Mapping 会保存为知识：同格式 Excel 下次优先复用；表头变化时重新识别并提示确认。</span>
-          </div>
-        </template>
       </template>
     </div>
   </div>
 </template>
-
-<style scoped>
-.lq-tabs { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-.lq-tabs button { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 5px 12px; font-size: 12px; color: #475569; }
-.lq-tabs button.on { background: #eef2ff; border-color: #a5b4fc; color: #3730a3; font-weight: 600; }
-.lq-statrow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 4px 0 10px; }
-.lq-mini { background: #f8fafc; border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; }
-.lq-mini span { display: block; font-size: 11px; color: var(--muted); }
-.lq-mini b { font-size: 17px; }
-.lq-mini b.danger { color: #b42318; }
-</style>

@@ -16,6 +16,10 @@ DROP TABLE IF EXISTS rwa_task_sub;
 DROP TABLE IF EXISTS rwa_task;
 DROP TABLE IF EXISTS measure_line;
 DROP TABLE IF EXISTS measure_batch;
+DROP TABLE IF EXISTS rule_config_snapshot_item;
+DROP TABLE IF EXISTS rule_config_snapshot;
+DROP TABLE IF EXISTS config_revision;
+DROP TABLE IF EXISTS rule_clause_relation;
 DROP TABLE IF EXISTS product_exposure_rule;
 DROP TABLE IF EXISTS crm_eligible_type;
 DROP TABLE IF EXISTS crm_slot_column;
@@ -45,9 +49,29 @@ DROP TABLE IF EXISTS hqla_task_input;
 DROP TABLE IF EXISTS hqla_task_list;
 DROP TABLE IF EXISTS hqla_task_reported;
 DROP TABLE IF EXISTS hqla_task_dataset;
+DROP TABLE IF EXISTS hqla_record;
+DROP TABLE IF EXISTS hqla_file;
+DROP TABLE IF EXISTS hqla_snapshot;
+DROP TABLE IF EXISTS hqla_product_rule;
+DROP TABLE IF EXISTS hqla_product_recognition;
+DROP TABLE IF EXISTS hqla_field_suggestion;
+DROP TABLE IF EXISTS hqla_field_mapping;
+DROP TABLE IF EXISTS hqla_quality_run;
+DROP TABLE IF EXISTS hqla_quality_issue;
+DROP TABLE IF EXISTS hqla_task_run;
+DROP TABLE IF EXISTS hqla_result_detail;
+DROP TABLE IF EXISTS hqla_result_summary;
+DROP TABLE IF EXISTS hqla_calculation_exception;
+DROP TABLE IF EXISTS hqla_review;
+DROP TABLE IF EXISTS hqla_audit_log;
 DROP TABLE IF EXISTS hqla_task;
 DROP TABLE IF EXISTS hqla_reference;
 DROP TABLE IF EXISTS liquidity_product_field;
+DROP TABLE IF EXISTS liquidity_product_group;
+DROP TABLE IF EXISTS liquidity_field_group;
+DROP TABLE IF EXISTS liquidity_dictionary_item;
+DROP TABLE IF EXISTS liquidity_dictionary;
+DROP TABLE IF EXISTS liquidity_rule_scope;
 DROP TABLE IF EXISTS liquidity_product;
 DROP TABLE IF EXISTS liquidity_rule;
 DROP TABLE IF EXISTS liquidity_param_table;
@@ -99,7 +123,18 @@ CREATE TABLE rule_version (
   published_at VARCHAR(32) NOT NULL,
   author VARCHAR(64) NOT NULL,
   changelog TEXT NOT NULL,
-  KEY idx_rule_version_jur (jurisdiction, status)
+  framework VARCHAR(16) NOT NULL DEFAULT 'CAR',
+  source_version_id VARCHAR(40) NOT NULL DEFAULT '',
+  revision INT NOT NULL DEFAULT 1,
+  created_by VARCHAR(64) NOT NULL DEFAULT '',
+  updated_by VARCHAR(64) NOT NULL DEFAULT '',
+  created_at VARCHAR(32) NOT NULL DEFAULT '',
+  updated_at VARCHAR(32) NOT NULL DEFAULT '',
+  config_status VARCHAR(16) NOT NULL DEFAULT 'EMPTY',
+  validated_at VARCHAR(32) NOT NULL DEFAULT '',
+  published_snapshot_id VARCHAR(40) NOT NULL DEFAULT '',
+  KEY idx_rule_version_jur (jurisdiction, status),
+  KEY idx_rule_version_framework (framework, config_status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE clause_doc (
@@ -113,7 +148,17 @@ CREATE TABLE clause_doc (
   scope VARCHAR(255) NOT NULL,
   effective_from DATE NULL,
   source VARCHAR(255) NOT NULL,
-  KEY idx_clause_jur (jurisdiction)
+  rule_version_id VARCHAR(40) NOT NULL DEFAULT '',
+  framework VARCHAR(16) NOT NULL DEFAULT 'CAR',
+  clause_code VARCHAR(32) NOT NULL DEFAULT '',
+  regulation_name VARCHAR(128) NOT NULL DEFAULT '',
+  regulation_version VARCHAR(32) NOT NULL DEFAULT '',
+  status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE',
+  revision INT NOT NULL DEFAULT 1,
+  updated_by VARCHAR(64) NOT NULL DEFAULT '',
+  updated_at VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_clause_jur (jurisdiction),
+  KEY idx_clause_version (rule_version_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE clause_ref (
@@ -195,8 +240,13 @@ CREATE TABLE rule_document (
   title VARCHAR(255) NOT NULL,
   body JSON NOT NULL,
   updated_at VARCHAR(32) NOT NULL DEFAULT '',
+  rule_version_id VARCHAR(40) NOT NULL DEFAULT '',
+  revision INT NOT NULL DEFAULT 1,
+  updated_by VARCHAR(64) NOT NULL DEFAULT '',
+  content_hash CHAR(64) NOT NULL DEFAULT '',
   UNIQUE KEY uk_rule_document (jurisdiction, rule_version, kind, name),
-  KEY idx_rule_document_version (jurisdiction, rule_version, kind)
+  KEY idx_rule_document_version (jurisdiction, rule_version, kind),
+  KEY idx_rule_document_vid (rule_version_id, kind)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 监管参数表：规则集通过 table_id 引用，正文按 columns_json 的顺序存 rows_json。
@@ -211,7 +261,10 @@ CREATE TABLE rule_parameter_table (
   rows_json JSON NOT NULL,
   note TEXT NOT NULL,
   updated_at VARCHAR(32) NOT NULL DEFAULT '',
-  UNIQUE KEY uk_rule_parameter (jurisdiction, table_id, table_version),
+  rule_version_id VARCHAR(40) NOT NULL DEFAULT '',
+  revision INT NOT NULL DEFAULT 1,
+  updated_by VARCHAR(64) NOT NULL DEFAULT '',
+  UNIQUE KEY uk_rule_parameter (rule_version_id, table_id, table_version),
   KEY idx_rule_parameter_jur (jurisdiction)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -227,8 +280,64 @@ CREATE TABLE rule_list (
   rows_json JSON NOT NULL,
   note TEXT NOT NULL,
   updated_at VARCHAR(32) NOT NULL DEFAULT '',
-  UNIQUE KEY uk_rule_list (jurisdiction, list_id, list_version),
+  rule_version_id VARCHAR(40) NOT NULL DEFAULT '',
+  revision INT NOT NULL DEFAULT 1,
+  updated_by VARCHAR(64) NOT NULL DEFAULT '',
+  UNIQUE KEY uk_rule_list (rule_version_id, list_id, list_version),
   KEY idx_rule_list_jur (jurisdiction)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 配置修订留痕：对象类型 + 对象键 + 修订号，保存修改前后摘要。
+CREATE TABLE config_revision (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  rule_version_id VARCHAR(40) NOT NULL DEFAULT '',
+  object_type VARCHAR(40) NOT NULL,
+  object_key VARCHAR(160) NOT NULL DEFAULT '',
+  revision INT NOT NULL DEFAULT 1,
+  action VARCHAR(16) NOT NULL DEFAULT 'UPDATE',
+  before_json JSON NULL,
+  after_json JSON NULL,
+  actor VARCHAR(64) NOT NULL DEFAULT '',
+  created_at VARCHAR(32) NOT NULL,
+  KEY idx_config_revision_object (rule_version_id, object_type, object_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 发布快照：版本发布时冻结全部影响计量的配置。
+CREATE TABLE rule_config_snapshot (
+  id VARCHAR(40) NOT NULL PRIMARY KEY,
+  rule_version_id VARCHAR(40) NOT NULL,
+  jurisdiction CHAR(2) NOT NULL DEFAULT '',
+  framework VARCHAR(16) NOT NULL DEFAULT 'CAR',
+  version VARCHAR(40) NOT NULL DEFAULT '',
+  snapshot_no INT NOT NULL DEFAULT 1,
+  config_hash CHAR(64) NOT NULL DEFAULT '',
+  status VARCHAR(16) NOT NULL DEFAULT 'PUBLISHED',
+  created_by VARCHAR(64) NOT NULL DEFAULT '',
+  created_at VARCHAR(32) NOT NULL,
+  KEY idx_rule_snapshot_version (rule_version_id, snapshot_no)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE rule_config_snapshot_item (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  snapshot_id VARCHAR(40) NOT NULL,
+  object_type VARCHAR(40) NOT NULL,
+  object_key VARCHAR(160) NOT NULL DEFAULT '',
+  content_json LONGTEXT NOT NULL,
+  content_hash CHAR(64) NOT NULL DEFAULT '',
+  KEY idx_rule_snapshot_item (snapshot_id, object_type)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 规则节点与条款的结构化引用，替代只存自由文本的 clause_ref。
+CREATE TABLE rule_clause_relation (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  rule_version_id VARCHAR(40) NOT NULL DEFAULT '',
+  rule_document_id VARCHAR(120) NOT NULL DEFAULT '',
+  rule_node_id VARCHAR(120) NOT NULL DEFAULT '',
+  clause_id VARCHAR(32) NOT NULL,
+  relation_type VARCHAR(24) NOT NULL DEFAULT 'REFERENCE',
+  created_at VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_rule_clause_relation (rule_version_id, rule_document_id),
+  KEY idx_rule_clause_clause (clause_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE weight_rule (
@@ -261,16 +370,25 @@ CREATE TABLE mo_weight_row (
 -- 表内 / 表外 EAD 计算配置，一个产品一行。
 -- side 只在这张表上，规则表不带 side，所以同一产品不可能表内表外都有规则。
 CREATE TABLE ead_product_config (
-  product_code VARCHAR(32) NOT NULL PRIMARY KEY,
+  rule_version_id VARCHAR(40) NOT NULL DEFAULT '',
+  product_code VARCHAR(32) NOT NULL,
   needed TINYINT NOT NULL DEFAULT 1,
   reason VARCHAR(255) NOT NULL DEFAULT '',
   side ENUM('on', 'off') NULL,
-  version VARCHAR(40) NOT NULL DEFAULT ''
+  version VARCHAR(40) NOT NULL DEFAULT '',
+  decision_status VARCHAR(16) NOT NULL DEFAULT 'UNDECIDED',
+  revision INT NOT NULL DEFAULT 1,
+  status VARCHAR(16) NOT NULL DEFAULT 'APPROVED',
+  updated_by VARCHAR(64) NOT NULL DEFAULT '',
+  updated_at VARCHAR(32) NOT NULL DEFAULT '',
+  PRIMARY KEY (rule_version_id, product_code),
+  KEY idx_ead_config_product (product_code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 一个产品下的 EAD 规则，seq 自上而下，第一条命中生效。
 CREATE TABLE ead_product_rule (
-  id VARCHAR(32) NOT NULL PRIMARY KEY,
+  rule_version_id VARCHAR(40) NOT NULL DEFAULT '',
+  id VARCHAR(32) NOT NULL,
   product_code VARCHAR(32) NOT NULL,
   seq INT NOT NULL DEFAULT 1,
   name VARCHAR(128) NOT NULL,
@@ -286,6 +404,9 @@ CREATE TABLE ead_product_rule (
   status VARCHAR(20) NOT NULL DEFAULT 'draft',
   ccf DECIMAL(8, 4) NULL,
   params_json JSON NOT NULL,
+  revision INT NOT NULL DEFAULT 1,
+  PRIMARY KEY (rule_version_id, id),
+  UNIQUE KEY uk_ead_product_rule (rule_version_id, product_code, seq),
   KEY idx_ead_product_rule (product_code, seq)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -310,29 +431,43 @@ CREATE TABLE crm_rule (
 
 -- 信用风险缓释配置：按产品配置。产品清单读 product_type，可选源表列读 product_field。
 CREATE TABLE crm_product_config (
-  product_code VARCHAR(32) NOT NULL PRIMARY KEY,
+  rule_version_id VARCHAR(40) NOT NULL DEFAULT '',
+  product_code VARCHAR(32) NOT NULL,
   needed TINYINT NOT NULL DEFAULT 1,
   reason VARCHAR(255) NOT NULL DEFAULT '',
-  max_slots TINYINT NOT NULL DEFAULT 1
+  max_slots TINYINT NOT NULL DEFAULT 1,
+  decision_status VARCHAR(16) NOT NULL DEFAULT 'UNDECIDED',
+  revision INT NOT NULL DEFAULT 1,
+  status VARCHAR(16) NOT NULL DEFAULT 'APPROVED',
+  updated_by VARCHAR(64) NOT NULL DEFAULT '',
+  updated_at VARCHAR(32) NOT NULL DEFAULT '',
+  PRIMARY KEY (rule_version_id, product_code),
+  KEY idx_crm_config_product (product_code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 逐笔列名绑定。attr 只有 crm_type / crm_value / crm_weight 三个值。
+-- 逐笔列名绑定。attr 只有 crm_type / crm_value / crm_weight 三个值；
+-- target_fact_code 是计算引擎读取的标准事实编码。
 CREATE TABLE crm_slot_column (
+  rule_version_id VARCHAR(40) NOT NULL DEFAULT '',
   product_code VARCHAR(32) NOT NULL,
   attr VARCHAR(16) NOT NULL,
   slot TINYINT NOT NULL,
   column_name VARCHAR(80) NOT NULL,
-  PRIMARY KEY (product_code, attr, slot)
+  target_fact_code VARCHAR(40) NOT NULL DEFAULT '',
+  PRIMARY KEY (rule_version_id, product_code, attr, slot)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 产品的合格缓释物字典。字典外的类型视为不合格，缓释不予认定。
 CREATE TABLE crm_eligible_type (
+  rule_version_id VARCHAR(40) NOT NULL DEFAULT '',
   product_code VARCHAR(32) NOT NULL,
   code VARCHAR(32) NOT NULL,
   name VARCHAR(128) NOT NULL,
   note VARCHAR(255) NOT NULL DEFAULT '',
   seq INT NOT NULL DEFAULT 1,
-  PRIMARY KEY (product_code, code)
+  clause_id VARCHAR(32) NOT NULL DEFAULT '',
+  status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE',
+  PRIMARY KEY (rule_version_id, product_code, code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE product_exposure_rule (
@@ -362,7 +497,10 @@ CREATE TABLE rwa_task (
   base_date DATE NOT NULL,
   created_at VARCHAR(32) NOT NULL,
   updated_at VARCHAR(32) NOT NULL,
-  KEY idx_rwa_task_updated (updated_at)
+  rule_version_id VARCHAR(40) NOT NULL DEFAULT '',
+  snapshot_id VARCHAR(40) NOT NULL DEFAULT '',
+  KEY idx_rwa_task_updated (updated_at),
+  KEY idx_rwa_task_version (rule_version_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 主任务下的子任务。module 区分资本充足率和流动性两大工作模块。
@@ -376,9 +514,15 @@ CREATE TABLE rwa_task_sub (
   status VARCHAR(16) NOT NULL DEFAULT 'draft',
   batch_id VARCHAR(40) NULL,
   batch_name VARCHAR(128) NOT NULL DEFAULT '',
+  hqla_task_id VARCHAR(32) NULL,
+  is_required TINYINT NOT NULL DEFAULT 0,
+  result_summary JSON NULL,
+  progress INT NOT NULL DEFAULT 0,
+  review_status VARCHAR(16) NOT NULL DEFAULT '',
   created_at VARCHAR(32) NOT NULL,
   updated_at VARCHAR(32) NOT NULL,
-  KEY idx_rwa_sub_task (task_id)
+  KEY idx_rwa_sub_task (task_id),
+  KEY idx_rwa_sub_hqla (hqla_task_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE measure_batch (
@@ -398,7 +542,11 @@ CREATE TABLE measure_batch (
   created_at VARCHAR(32) NOT NULL,
   status VARCHAR(20) NOT NULL,
   rules_json JSON NULL,
+  rule_version_id VARCHAR(40) NOT NULL DEFAULT '',
+  snapshot_id VARCHAR(40) NOT NULL DEFAULT '',
+  engine_version VARCHAR(40) NOT NULL DEFAULT '',
   KEY idx_batch_date (base_date),
+  KEY idx_batch_version (rule_version_id),
   UNIQUE KEY uq_measure_batch_name (name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -443,9 +591,19 @@ CREATE TABLE hqla_task (
   frozen_at VARCHAR(32) NULL,
   frozen_sig VARCHAR(255) NULL,
   run_at VARCHAR(32) NULL,
+  rwa_task_id VARCHAR(32) NULL,
+  rwa_task_sub_id VARCHAR(32) NULL,
+  snapshot_id VARCHAR(40) NULL,
+  current_run_id VARCHAR(40) NULL,
+  input_version INT NOT NULL DEFAULT 1,
+  calc_status VARCHAR(16) NOT NULL DEFAULT 'not_run',
+  progress INT NOT NULL DEFAULT 0,
+  review_status VARCHAR(16) NOT NULL DEFAULT '',
   created_at VARCHAR(32) NOT NULL,
   updated_at VARCHAR(32) NOT NULL,
-  KEY idx_hqla_task_updated (updated_at)
+  KEY idx_hqla_task_updated (updated_at),
+  UNIQUE KEY uk_hqla_task_rwa_sub (rwa_task_sub_id),
+  KEY idx_hqla_task_rwa_task (rwa_task_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE hqla_task_input (
@@ -542,9 +700,83 @@ CREATE TABLE liquidity_product (
   domains_json JSON NULL,
   param_key VARCHAR(64) NOT NULL DEFAULT '',
   rule_count INT NOT NULL DEFAULT 0,
+  group_mode VARCHAR(8) NOT NULL DEFAULT 'NONE',
   updated_at VARCHAR(32) NOT NULL DEFAULT '',
   UNIQUE KEY uk_liquidity_product (jurisdiction, rule_version, code),
   KEY idx_liquidity_product_side (jurisdiction, rule_version, side)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE liquidity_product_group (
+  id VARCHAR(180) NOT NULL PRIMARY KEY,
+  jurisdiction CHAR(2) NOT NULL,
+  rule_version VARCHAR(40) NOT NULL,
+  product_code VARCHAR(64) NOT NULL,
+  group_code VARCHAR(64) NOT NULL,
+  group_name VARCHAR(128) NOT NULL,
+  description VARCHAR(500) NOT NULL DEFAULT '',
+  conditions_json JSON NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE',
+  sort_order INT NOT NULL DEFAULT 0,
+  updated_at VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uk_liquidity_product_group (jurisdiction, rule_version, product_code, group_code),
+  KEY idx_liquidity_product_group_product (jurisdiction, rule_version, product_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE liquidity_field_group (
+  id VARCHAR(180) NOT NULL PRIMARY KEY,
+  jurisdiction CHAR(2) NOT NULL,
+  rule_version VARCHAR(40) NOT NULL,
+  product_code VARCHAR(64) NOT NULL,
+  group_code VARCHAR(64) NOT NULL,
+  group_name VARCHAR(128) NOT NULL,
+  parent_code VARCHAR(64) NOT NULL DEFAULT '',
+  description VARCHAR(500) NOT NULL DEFAULT '',
+  sort_order INT NOT NULL DEFAULT 0,
+  status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE',
+  updated_at VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uk_liquidity_field_group (jurisdiction, rule_version, product_code, group_code),
+  KEY idx_liquidity_field_group_product (jurisdiction, rule_version, product_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE liquidity_dictionary (
+  id VARCHAR(180) NOT NULL PRIMARY KEY,
+  jurisdiction CHAR(2) NOT NULL,
+  rule_version VARCHAR(40) NOT NULL,
+  dict_code VARCHAR(64) NOT NULL,
+  dict_name VARCHAR(128) NOT NULL,
+  description VARCHAR(500) NOT NULL DEFAULT '',
+  dict_type VARCHAR(16) NOT NULL DEFAULT 'PUBLIC',
+  product_code VARCHAR(64) NOT NULL DEFAULT '',
+  status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE',
+  updated_at VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uk_liquidity_dictionary (jurisdiction, rule_version, dict_code),
+  KEY idx_liquidity_dictionary_product (jurisdiction, rule_version, product_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE liquidity_dictionary_item (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  jurisdiction CHAR(2) NOT NULL,
+  rule_version VARCHAR(40) NOT NULL,
+  dict_code VARCHAR(64) NOT NULL,
+  item_code VARCHAR(64) NOT NULL,
+  item_name VARCHAR(128) NOT NULL DEFAULT '',
+  description VARCHAR(255) NOT NULL DEFAULT '',
+  sort_order INT NOT NULL DEFAULT 0,
+  status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE',
+  UNIQUE KEY uk_liquidity_dictionary_item (jurisdiction, rule_version, dict_code, item_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE liquidity_rule_scope (
+  id VARCHAR(180) NOT NULL PRIMARY KEY,
+  jurisdiction CHAR(2) NOT NULL,
+  rule_version VARCHAR(40) NOT NULL,
+  product_code VARCHAR(64) NOT NULL,
+  group_code VARCHAR(64) NOT NULL DEFAULT '',
+  package_id VARCHAR(64) NOT NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE',
+  updated_at VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uk_liquidity_rule_scope (jurisdiction, rule_version, product_code, group_code, package_id),
+  KEY idx_liquidity_rule_scope_product (jurisdiction, rule_version, product_code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE liquidity_product_field (
@@ -567,6 +799,7 @@ CREATE TABLE liquidity_product_field (
   description VARCHAR(500) NOT NULL DEFAULT '',
   status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE',
   sort_order INT NOT NULL DEFAULT 0,
+  attributes_json JSON NULL,
   UNIQUE KEY uk_liquidity_field (jurisdiction, rule_version, product_code, field_code),
   KEY idx_liquidity_field_product (jurisdiction, rule_version, product_code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -637,20 +870,262 @@ CREATE TABLE hqla_task_dataset (
   id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
   task_id VARCHAR(32) NOT NULL,
   dataset_id VARCHAR(64) NOT NULL,
+  file_id VARCHAR(40) NOT NULL DEFAULT '',
   sheet_name VARCHAR(128) NOT NULL DEFAULT '',
   product_code VARCHAR(64) NOT NULL DEFAULT '',
   product_name VARCHAR(128) NOT NULL DEFAULT '',
+  product_group_code VARCHAR(64) NOT NULL DEFAULT '',
   confidence DECIMAL(5, 2) NULL,
   confirm_level VARCHAR(16) NOT NULL DEFAULT '',
   confirmed_at VARCHAR(32) NOT NULL DEFAULT '',
   headers_json JSON NULL,
   rows_json LONGTEXT NULL,
+  sample_json JSON NULL,
+  profile_json JSON NULL,
   mapping_json JSON NULL,
   mapping_meta_json JSON NULL,
   quality_json JSON NULL,
+  row_count INT NOT NULL DEFAULT 0,
+  column_count INT NOT NULL DEFAULT 0,
+  parse_status VARCHAR(16) NOT NULL DEFAULT 'parsed',
+  input_version INT NOT NULL DEFAULT 1,
   sort_order INT NOT NULL DEFAULT 0,
   UNIQUE KEY uk_hqla_dataset (task_id, dataset_id),
   KEY idx_hqla_dataset_task (task_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE hqla_snapshot (
+  id VARCHAR(40) NOT NULL PRIMARY KEY,
+  task_id VARCHAR(32) NOT NULL,
+  snapshot_no INT NOT NULL DEFAULT 1,
+  rule_version VARCHAR(40) NOT NULL DEFAULT '',
+  jurisdiction CHAR(2) NOT NULL DEFAULT '',
+  config_json LONGTEXT NOT NULL,
+  config_hash CHAR(64) NOT NULL DEFAULT '',
+  created_by VARCHAR(64) NOT NULL DEFAULT '',
+  created_at VARCHAR(32) NOT NULL,
+  KEY idx_hqla_snapshot_task (task_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE hqla_file (
+  id VARCHAR(40) NOT NULL PRIMARY KEY,
+  task_id VARCHAR(32) NOT NULL,
+  filename VARCHAR(255) NOT NULL DEFAULT '',
+  file_hash CHAR(64) NOT NULL DEFAULT '',
+  size_bytes BIGINT NOT NULL DEFAULT 0,
+  uploaded_by VARCHAR(64) NOT NULL DEFAULT '',
+  uploaded_at VARCHAR(32) NOT NULL,
+  KEY idx_hqla_file_task (task_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE hqla_record (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  task_id VARCHAR(32) NOT NULL,
+  dataset_id VARCHAR(64) NOT NULL,
+  record_id VARCHAR(128) NOT NULL,
+  row_no INT NOT NULL DEFAULT 0,
+  raw_json JSON NULL,
+  normalized_json JSON NULL,
+  product_code VARCHAR(64) NOT NULL DEFAULT '',
+  product_group_code VARCHAR(64) NOT NULL DEFAULT '',
+  recognition_status VARCHAR(16) NOT NULL DEFAULT 'pending',
+  quality_status VARCHAR(16) NOT NULL DEFAULT '',
+  calc_status VARCHAR(16) NOT NULL DEFAULT '',
+  input_version INT NOT NULL DEFAULT 1,
+  UNIQUE KEY uk_hqla_record (task_id, dataset_id, record_id),
+  KEY idx_hqla_record_task (task_id),
+  KEY idx_hqla_record_product (task_id, product_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE hqla_product_rule (
+  id VARCHAR(40) NOT NULL PRIMARY KEY,
+  task_id VARCHAR(32) NOT NULL,
+  dataset_id VARCHAR(64) NOT NULL DEFAULT '',
+  strategy_json JSON NULL,
+  skill_version VARCHAR(40) NOT NULL DEFAULT '',
+  model VARCHAR(80) NOT NULL DEFAULT '',
+  prompt_version VARCHAR(40) NOT NULL DEFAULT '',
+  status VARCHAR(16) NOT NULL DEFAULT 'suggested',
+  created_at VARCHAR(32) NOT NULL,
+  KEY idx_hqla_product_rule_task (task_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE hqla_product_recognition (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  task_id VARCHAR(32) NOT NULL,
+  dataset_id VARCHAR(64) NOT NULL,
+  record_id VARCHAR(128) NOT NULL,
+  suggested_product_code VARCHAR(64) NOT NULL DEFAULT '',
+  candidate_json JSON NULL,
+  confidence DECIMAL(5, 2) NULL,
+  reason VARCHAR(500) NOT NULL DEFAULT '',
+  method VARCHAR(16) NOT NULL DEFAULT 'AI',
+  confirmed_product_code VARCHAR(64) NOT NULL DEFAULT '',
+  recognition_status VARCHAR(16) NOT NULL DEFAULT 'pending',
+  skill_version VARCHAR(40) NOT NULL DEFAULT '',
+  model VARCHAR(80) NOT NULL DEFAULT '',
+  prompt_version VARCHAR(40) NOT NULL DEFAULT '',
+  input_version INT NOT NULL DEFAULT 1,
+  created_at VARCHAR(32) NOT NULL,
+  updated_at VARCHAR(32) NOT NULL,
+  UNIQUE KEY uk_hqla_product_recognition (task_id, dataset_id, record_id),
+  KEY idx_hqla_product_recognition_task (task_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE hqla_field_suggestion (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  task_id VARCHAR(32) NOT NULL,
+  dataset_id VARCHAR(64) NOT NULL,
+  product_code VARCHAR(64) NOT NULL,
+  source_column VARCHAR(128) NOT NULL,
+  suggested_field_code VARCHAR(64) NOT NULL DEFAULT '',
+  confidence DECIMAL(5, 2) NULL,
+  reason VARCHAR(500) NOT NULL DEFAULT '',
+  method VARCHAR(16) NOT NULL DEFAULT 'AI',
+  skill_version VARCHAR(40) NOT NULL DEFAULT '',
+  model VARCHAR(80) NOT NULL DEFAULT '',
+  prompt_version VARCHAR(40) NOT NULL DEFAULT '',
+  input_version INT NOT NULL DEFAULT 1,
+  created_at VARCHAR(32) NOT NULL,
+  UNIQUE KEY uk_hqla_field_suggestion (task_id, dataset_id, product_code, source_column),
+  KEY idx_hqla_field_suggestion_task (task_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE hqla_field_mapping (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  task_id VARCHAR(32) NOT NULL,
+  dataset_id VARCHAR(64) NOT NULL,
+  product_code VARCHAR(64) NOT NULL,
+  source_column VARCHAR(128) NOT NULL,
+  field_code VARCHAR(64) NOT NULL DEFAULT '',
+  required TINYINT NOT NULL DEFAULT 0,
+  status VARCHAR(16) NOT NULL DEFAULT 'confirmed',
+  confirmed_by VARCHAR(64) NOT NULL DEFAULT '',
+  confirmed_at VARCHAR(32) NOT NULL DEFAULT '',
+  input_version INT NOT NULL DEFAULT 1,
+  UNIQUE KEY uk_hqla_field_mapping (task_id, dataset_id, product_code, source_column),
+  KEY idx_hqla_field_mapping_task (task_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE hqla_quality_run (
+  id VARCHAR(40) NOT NULL PRIMARY KEY,
+  task_id VARCHAR(32) NOT NULL,
+  input_version INT NOT NULL DEFAULT 1,
+  status VARCHAR(16) NOT NULL DEFAULT 'running',
+  summary_json JSON NULL,
+  started_at VARCHAR(32) NOT NULL,
+  finished_at VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_hqla_quality_run_task (task_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE hqla_quality_issue (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  run_id VARCHAR(40) NOT NULL,
+  task_id VARCHAR(32) NOT NULL,
+  dataset_id VARCHAR(64) NOT NULL DEFAULT '',
+  record_id VARCHAR(128) NOT NULL DEFAULT '',
+  product_code VARCHAR(64) NOT NULL DEFAULT '',
+  row_no INT NOT NULL DEFAULT 0,
+  field_code VARCHAR(64) NOT NULL DEFAULT '',
+  issue_type VARCHAR(32) NOT NULL DEFAULT '',
+  level VARCHAR(8) NOT NULL DEFAULT 'WARN',
+  message VARCHAR(500) NOT NULL DEFAULT '',
+  status VARCHAR(16) NOT NULL DEFAULT 'open',
+  created_at VARCHAR(32) NOT NULL,
+  KEY idx_hqla_quality_issue_run (run_id),
+  KEY idx_hqla_quality_issue_task (task_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE hqla_task_run (
+  id VARCHAR(40) NOT NULL PRIMARY KEY,
+  task_id VARCHAR(32) NOT NULL,
+  run_no INT NOT NULL DEFAULT 1,
+  snapshot_id VARCHAR(40) NOT NULL DEFAULT '',
+  input_version INT NOT NULL DEFAULT 1,
+  engine_version VARCHAR(40) NOT NULL DEFAULT '',
+  status VARCHAR(16) NOT NULL DEFAULT 'running',
+  started_at VARCHAR(32) NOT NULL,
+  finished_at VARCHAR(32) NOT NULL DEFAULT '',
+  metrics_json JSON NULL,
+  stats_json JSON NULL,
+  exception_count INT NOT NULL DEFAULT 0,
+  created_by VARCHAR(64) NOT NULL DEFAULT '',
+  UNIQUE KEY uk_hqla_task_run_no (task_id, run_no),
+  KEY idx_hqla_task_run_task (task_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE hqla_result_detail (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  run_id VARCHAR(40) NOT NULL,
+  task_id VARCHAR(32) NOT NULL,
+  dataset_id VARCHAR(64) NOT NULL DEFAULT '',
+  record_id VARCHAR(128) NOT NULL DEFAULT '',
+  product_code VARCHAR(64) NOT NULL DEFAULT '',
+  product_name VARCHAR(128) NOT NULL DEFAULT '',
+  side VARCHAR(16) NOT NULL DEFAULT '',
+  business_id VARCHAR(64) NOT NULL DEFAULT '',
+  raw_amount DECIMAL(24, 2) NULL,
+  rate_key VARCHAR(64) NOT NULL DEFAULT '',
+  rate DECIMAL(12, 6) NULL,
+  amount DECIMAL(24, 2) NULL,
+  level VARCHAR(16) NOT NULL DEFAULT '',
+  category VARCHAR(64) NOT NULL DEFAULT '',
+  status VARCHAR(16) NOT NULL DEFAULT '',
+  message VARCHAR(255) NOT NULL DEFAULT '',
+  detail_json JSON NULL,
+  KEY idx_hqla_result_detail_run (run_id),
+  KEY idx_hqla_result_detail_task (task_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE hqla_result_summary (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  run_id VARCHAR(40) NOT NULL,
+  task_id VARCHAR(32) NOT NULL,
+  metric_key VARCHAR(64) NOT NULL,
+  metric_name VARCHAR(128) NOT NULL DEFAULT '',
+  value DECIMAL(24, 6) NULL,
+  unit VARCHAR(24) NOT NULL DEFAULT '',
+  detail_json JSON NULL,
+  KEY idx_hqla_result_summary_run (run_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE hqla_calculation_exception (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  run_id VARCHAR(40) NOT NULL,
+  task_id VARCHAR(32) NOT NULL,
+  dataset_id VARCHAR(64) NOT NULL DEFAULT '',
+  record_id VARCHAR(128) NOT NULL DEFAULT '',
+  product_code VARCHAR(64) NOT NULL DEFAULT '',
+  level VARCHAR(8) NOT NULL DEFAULT 'WARN',
+  code VARCHAR(64) NOT NULL DEFAULT '',
+  message VARCHAR(500) NOT NULL DEFAULT '',
+  detail_json JSON NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'open',
+  KEY idx_hqla_calculation_exception_run (run_id),
+  KEY idx_hqla_calculation_exception_task (task_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE hqla_review (
+  id VARCHAR(40) NOT NULL PRIMARY KEY,
+  task_id VARCHAR(32) NOT NULL,
+  run_id VARCHAR(40) NOT NULL DEFAULT '',
+  status VARCHAR(16) NOT NULL DEFAULT 'pending',
+  reviewer VARCHAR(64) NOT NULL DEFAULT '',
+  comment VARCHAR(1000) NOT NULL DEFAULT '',
+  reviewed_at VARCHAR(32) NOT NULL DEFAULT '',
+  KEY idx_hqla_review_task (task_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE hqla_audit_log (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  task_id VARCHAR(32) NOT NULL,
+  action VARCHAR(64) NOT NULL,
+  object_type VARCHAR(32) NOT NULL DEFAULT '',
+  object_id VARCHAR(64) NOT NULL DEFAULT '',
+  detail_json JSON NULL,
+  actor VARCHAR(64) NOT NULL DEFAULT '',
+  at VARCHAR(32) NOT NULL,
+  KEY idx_hqla_audit_log_task (task_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 平台账号与系统管理。登录只认启用中的账号和角色；密码存 SHA-256，不存明文。

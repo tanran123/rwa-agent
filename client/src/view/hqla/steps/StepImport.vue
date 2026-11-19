@@ -15,7 +15,20 @@ const fileInput = ref(null);
 const sourceName = ref("");
 
 const datasets = computed(() => (props.task && props.task.datasets) || []);
-const totalRows = computed(() => datasets.value.reduce((sum, item) => sum + (item.rows || []).length, 0));
+const totalRows = computed(() => datasets.value.reduce((sum, item) => sum + datasetRows(item), 0));
+const inputVersion = computed(() => Number(props.task && props.task.inputVersion) || 1);
+
+function datasetRows(dataset) {
+  return Number(dataset.rowCount) || (dataset.rows || []).length;
+}
+
+function profileText(dataset) {
+  const profile = dataset.profile;
+  if (!profile) return "—";
+  const columns = Object.values(profile.columns || {});
+  const nullable = columns.filter((column) => Number(column.nullRate) > 0).length;
+  return `${profile.columnCount || (dataset.headers || []).length} 列 · ${nullable} 列有空值 · 抽样 ${(dataset.sample || []).length} 行`;
+}
 
 async function onFile(event) {
   const file = event.target.files && event.target.files[0];
@@ -85,7 +98,10 @@ async function removeDataset(dataset) {
     <div class="panel-head"><h3>导入计量数据</h3><span class="sub">第 2 步</span></div>
     <div class="panel-body">
       <p class="dim" style="font-size: 12px; margin: 0 0 10px">
-        上传原始工作簿即可，无需提前按产品拆分；系统按 Sheet 解析为数据集，表头会自动识别。
+        上传原始工作簿即可，无需提前按产品拆分；系统按 Sheet 解析为数据集，保留原始行号并生成数据特征和抽样。
+      </p>
+      <p class="dim" style="font-size: 11.5px; margin: 0 0 10px">
+        当前输入版本 <b>v{{ inputVersion }}</b>。重新导入、删除数据集或修改识别结果后，当前计算结果和复核状态会失效。
       </p>
       <input ref="fileInput" type="file" accept=".xlsx,.xls,.csv" style="display: none" @change="onFile" />
       <div class="lq-upload" @click="fileInput.click()">
@@ -122,12 +138,13 @@ async function removeDataset(dataset) {
           <button type="button" class="btn sm danger" @click="clearAll">清空全部</button>
         </div>
         <table class="tbl">
-          <thead><tr><th>Sheet</th><th class="num">数据行</th><th class="num">字段数</th><th>产品识别</th><th></th></tr></thead>
+          <thead><tr><th>Sheet</th><th class="num">数据行</th><th class="num">字段数</th><th>数据特征</th><th>产品识别</th><th></th></tr></thead>
           <tbody>
             <tr v-for="dataset in datasets" :key="dataset.id">
-              <td><strong>{{ dataset.sheet }}</strong><div class="mono dim" style="font-size: 10.5px">{{ dataset.id }}</div></td>
-              <td class="num mono">{{ (dataset.rows || []).length.toLocaleString("zh-CN") }}</td>
+              <td><strong>{{ dataset.sheet }}</strong><div class="mono dim" style="font-size: 10.5px">{{ dataset.id }} · v{{ dataset.inputVersion || inputVersion }}</div></td>
+              <td class="num mono">{{ datasetRows(dataset).toLocaleString("zh-CN") }}</td>
               <td class="num mono">{{ (dataset.headers || []).length }}</td>
+              <td class="small dim">{{ profileText(dataset) }}</td>
               <td>
                 <span v-if="dataset.productCode" class="tag green">{{ dataset.productName || dataset.productCode }}</span>
                 <span v-else class="tag muted">待识别</span>

@@ -23,6 +23,39 @@ export const deleteDataset = (id, datasetId) =>
 export const identifyDatasets = (id) => request.post(`/hqla/tasks/${id}/identify`, {}, long)
 export const autoMapDatasets = (id) => request.post(`/hqla/tasks/${id}/auto-map`, {}, long)
 export const checkQuality = (id) => request.post(`/hqla/tasks/${id}/quality`, {}, long)
+
+// ---------------------------------------------------------------- 阶段 2：记录级识别与字段对应
+export const getTaskSnapshot = (id) => request.get(`/hqla/tasks/${id}/snapshot`)
+export const recognizeProducts = (id, body = {}) =>
+  request.post(`/hqla/tasks/${id}/products/recognize`, body, long)
+export const listRecognitions = (id, params = {}) =>
+  request.get(`/hqla/tasks/${id}/recognitions`, { params })
+export const confirmRecognitions = (id, body = {}) =>
+  request.post(`/hqla/tasks/${id}/recognitions/confirm`, body)
+export const suggestFields = (id, body = {}) =>
+  request.post(`/hqla/tasks/${id}/fields/suggest`, body, long)
+export const listFields = (id, params = {}) =>
+  request.get(`/hqla/tasks/${id}/fields`, { params })
+export const confirmFields = (id, body = {}) =>
+  request.post(`/hqla/tasks/${id}/fields/confirm`, body)
+
+// ---------------------------------------------------------------- 阶段 3：质量检查与计算批次
+export const getPreflight = (id, allowPartial = false) =>
+  request.get(`/hqla/tasks/${id}/preflight`, { params: allowPartial ? { allowPartial: 1 } : {} })
+export const runQuality = (id) => request.post(`/hqla/tasks/${id}/quality/run`, {}, long)
+export const listQualityRuns = (id) => request.get(`/hqla/tasks/${id}/quality/runs`)
+export const listQualityIssues = (id, params = {}) =>
+  request.get(`/hqla/tasks/${id}/quality/issues`, { params })
+export const computeRun = (id, body = {}) => request.post(`/hqla/tasks/${id}/runs`, body, long)
+export const listRuns = (id) => request.get(`/hqla/tasks/${id}/runs`)
+export const getRun = (id, runId) => request.get(`/hqla/tasks/${id}/runs/${runId}`)
+export const listRunResults = (id, runId, params = {}) =>
+  request.get(`/hqla/tasks/${id}/runs/${runId}/results`, { params })
+export const listRunExceptions = (id, runId, params = {}) =>
+  request.get(`/hqla/tasks/${id}/runs/${runId}/exceptions`, { params })
+export const reviewTask = (id, body = {}) => request.post(`/hqla/tasks/${id}/review`, body)
+export const exportRunWorkbook = (id, runId) =>
+  request.get(`/hqla/tasks/${id}/runs/${runId}/export.xlsx`, { ...long, responseType: 'blob' })
 export const saveList = (id, code, body) => request.put(`/hqla/tasks/${id}/lists/${code}`, body)
 export const deleteList = (id, code) => request.delete(`/hqla/tasks/${id}/lists/${code}`)
 export const saveConfig = (id, config) => request.put(`/hqla/tasks/${id}/config`, { config })

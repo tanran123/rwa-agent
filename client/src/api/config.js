@@ -18,15 +18,17 @@ export const validateRuleBody = (body) => request.post('/rule-documents/validate
 
 export const importRuleDocuments = (body) => request.post('/rule-documents/import', body, { timeout: 180000 })
 
-export const fetchParameterTables = (jurisdiction = '') =>
-  request.get('/parameter-tables', { params: jurisdiction ? { jurisdiction } : {} })
+export const previewRuleDocumentsImport = (body) => request.post('/rule-documents/import/preview', body, { timeout: 60000 })
+
+export const fetchParameterTables = (jurisdiction = '', version = '') =>
+  request.get('/parameter-tables', { params: { jurisdiction, version } })
 
 export const fetchParameterTable = (id) => request.get('/parameter-tables/' + codeOf(id))
 
 export const saveParameterTable = (id, body) => request.put('/parameter-tables/' + codeOf(id), body)
 
-export const fetchReferenceLists = (jurisdiction = '') =>
-  request.get('/reference-lists', { params: jurisdiction ? { jurisdiction } : {} })
+export const fetchReferenceLists = (jurisdiction = '', version = '') =>
+  request.get('/reference-lists', { params: { jurisdiction, version } })
 
 export const fetchReferenceList = (id) => request.get('/reference-lists/' + codeOf(id))
 

@@ -155,7 +155,8 @@ def compute(payload):
         ds_contribution = 0.0
         if not product:
             exceptions.append({
-                "dataset": dataset.get("sheet") or "", "rowNo": 0, "businessId": "",
+                "dataset": dataset.get("sheet") or "", "datasetId": dataset.get("id") or "",
+                "rowNo": 0, "businessId": "", "recordId": "",
                 "reason": "数据集尚未确认产品，未参与计算", "productCode": code,
             })
             dataset_stats.append({
@@ -190,7 +191,8 @@ def compute(payload):
                 ds_exceptions += 1
                 bucket["exceptions"] += 1
                 exceptions.append({
-                    "dataset": dataset.get("sheet") or "", "rowNo": row_no, "businessId": business_id,
+                    "dataset": dataset.get("sheet") or "", "datasetId": dataset.get("id") or "",
+                    "rowNo": row_no, "businessId": business_id, "recordId": row.get("record_id") or "",
                     "reason": "金额缺失或无法解析，未参与计算", "productCode": code,
                 })
                 continue
@@ -198,7 +200,8 @@ def compute(payload):
                 ds_exceptions += 1
                 bucket["exceptions"] += 1
                 exceptions.append({
-                    "dataset": dataset.get("sheet") or "", "rowNo": row_no, "businessId": business_id,
+                    "dataset": dataset.get("sheet") or "", "datasetId": dataset.get("id") or "",
+                    "rowNo": row_no, "businessId": business_id, "recordId": row.get("record_id") or "",
                     "reason": f"产品 {code} 未配置可用的{'折扣率' if side == 'ASSET' else '流入/流出率'}（{param_key or '空参数键'}）",
                     "productCode": code,
                 })
@@ -226,8 +229,9 @@ def compute(payload):
             bucket["rate"] = rate
             if len(trace) < 500:
                 trace.append({
-                    "dataset": dataset.get("sheet") or "", "rowNo": row_no,
-                    "businessId": business_id, "productCode": code,
+                    "dataset": dataset.get("sheet") or "", "datasetId": dataset.get("id") or "",
+                    "rowNo": row_no, "businessId": business_id, "recordId": row.get("record_id") or "",
+                    "productCode": code,
                     "productName": product.get("name") or "", "side": side,
                     "amountField": amount_field, "amount": _round(amount),
                     "rateKey": param_key, "rate": rate, "level": (rate_row or {}).get("level", ""),

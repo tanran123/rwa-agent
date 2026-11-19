@@ -21,9 +21,9 @@ const store = createStore({
       versions: [],
       orgs: [],
       customerId: 'c-city',
-      orgId: 'mo-branch',
-      jurisdiction: 'MO',
-      versionId: 'rv-mo-2026-1',
+      orgId: 'hk-branch',
+      jurisdiction: 'HK',
+      versionId: 'rv-hk-2026-1',
       baseDate: '2026-09-30',
     }
   },

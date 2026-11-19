@@ -1,8 +1,13 @@
 import request from './request'
 
-export const fetchEadConfig = () => request.get('/ead-config')
+const params = (meta = {}) => ({
+  version: meta.version || '',
+  jurisdiction: meta.jurisdiction || ''
+})
 
-export const saveEadConfig = (config) => request.put('/ead-config', { config })
+export const fetchEadConfig = (meta = {}) => request.get('/ead-config', { params: params(meta) })
+
+export const saveEadConfig = (config, meta = {}) => request.put('/ead-config', { config, ...params(meta) })
 
 export const checkEadFormula = (body) => request.post('/ead-formula/check', body, { timeout: 20000 })
 

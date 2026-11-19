@@ -8,7 +8,8 @@ const props = defineProps({
   version: { type: Object, default: null },
   nav: { type: Boolean, default: true },
   workbench: { type: Boolean, default: false },
-  editable: { type: Boolean, default: false }
+  editable: { type: Boolean, default: false },
+  completeness: { type: Number, default: null }
 });
 
 defineEmits(["edit"]);
@@ -71,6 +72,18 @@ function active(path) {
           <div class="field">
             <label>适用机构</label>
             <div>{{ shown.institution || "未指定" }}</div>
+          </div>
+          <div class="field">
+            <label>监管框架</label>
+            <div>{{ shown.framework || "CAR" }}</div>
+          </div>
+          <div class="field">
+            <label>配置状态</label>
+            <div>{{ shown.configStatus || "—" }}</div>
+          </div>
+          <div v-if="completeness != null" class="field">
+            <label>配置完整度</label>
+            <div>{{ completeness }}%</div>
           </div>
         </div>
         <div

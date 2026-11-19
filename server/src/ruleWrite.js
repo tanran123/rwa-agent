@@ -1,4 +1,5 @@
 import { pool, query } from "./db.js";
+import { assertRevision, assertVersionWritable, recordRevision } from "./configAudit.js";
 
 const VERSION_STATUS = ["draft", "reviewing", "published", "superseded", "disabled"];
 const ONBOARDING = ["column", "manual"];
@@ -10,6 +11,13 @@ function fail(status, message) {
   const err = new Error(message);
   err.status = status;
   throw err;
+}
+
+function nowText() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + " " +
+    pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
 }
 
 async function write(fn, duplicateMessage) {
@@ -128,6 +136,8 @@ async function requireProduct(q, code) {
 }
 
 function versionFields(body) {
+  const framework = String(body.framework || "CAR").trim().toUpperCase();
+  if (!["CAR", "LCR"].includes(framework)) fail(400, "监管框架只能是 CAR 或 LCR");
   return {
     jurisdiction: null,
     version: text(body, "version", "版本编号", 40),
@@ -140,7 +150,11 @@ function versionFields(body) {
     rulesetFile: text(body, "rulesetFile", "规则文件", 64, false),
     publishedAt: text(body, "publishedAt", "发布时间", 32, false),
     author: text(body, "author", "维护人", 64, false),
-    changelog: text(body, "changelog", "变更说明", 65535, false)
+    changelog: text(body, "changelog", "变更说明", 65535, false),
+    framework,
+    sourceVersionId: text(body, "sourceVersionId", "来源版本", 40, false),
+    configStatus: text(body, "configStatus", "配置状态", 16, false),
+    actor: text(body, "actor", "操作人", 64, false)
   };
 }
 
@@ -154,30 +168,52 @@ export async function createRuleVersion(body) {
   const id = keyOf(body.id, "编号");
   if (id.length > 40) fail(400, "编号不能超过 40 个字");
   const fields = versionFields(body);
-  return write(async () => tx(async (q) => {
+  const saved = await write(async () => tx(async (q) => {
     fields.jurisdiction = await requireJurisdiction(q, body.jurisdiction);
     await q(
       `INSERT INTO rule_version
-        (id, jurisdiction, version, name, rule_type, effective_from, effective_to, status, institution, ruleset_file, published_at, author, changelog)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, fields.jurisdiction, fields.version, fields.name, fields.ruleType, fields.effectiveFrom, fields.effectiveTo, fields.status, fields.institution, fields.rulesetFile, fields.publishedAt, fields.author, fields.changelog]
+        (id, jurisdiction, version, name, rule_type, effective_from, effective_to, status, institution, ruleset_file, published_at, author, changelog,
+         framework, source_version_id, revision, created_by, updated_by, created_at, updated_at, config_status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)`,
+      [id, fields.jurisdiction, fields.version, fields.name, fields.ruleType, fields.effectiveFrom, fields.effectiveTo, fields.status, fields.institution, fields.rulesetFile, fields.publishedAt, fields.author, fields.changelog,
+        fields.framework, fields.sourceVersionId, fields.actor, fields.actor, nowText(), nowText(), fields.configStatus || (fields.status === "published" ? "PUBLISHED" : "CONFIGURING")]
     );
     return versionRow(q, id);
   }), "编号已存在");
+  await recordRevision({
+    ruleVersionId: id, objectType: "rule_version", objectKey: id, action: "CREATE",
+    after: { version: fields.version, framework: fields.framework, status: fields.status }, actor: fields.actor
+  });
+  return saved;
 }
 
 export async function updateRuleVersion(id, body) {
   const key = keyOf(id, "编号");
   const fields = versionFields(body);
-  return write(async () => tx(async (q) => {
-    await versionRow(q, key);
+  const saved = await write(async () => tx(async (q) => {
+    const existing = await versionRow(q, key);
     fields.jurisdiction = await requireJurisdiction(q, body.jurisdiction);
+    const framework = body.framework ? fields.framework : (existing.framework || "CAR");
+    const sourceVersionId = body.sourceVersionId !== undefined ? fields.sourceVersionId : (existing.source_version_id || "");
+    const configStatus = fields.configStatus || existing.config_status || "CONFIGURING";
+    const actor = fields.actor || existing.updated_by || "";
     await q(
-      `UPDATE rule_version SET jurisdiction = ?, version = ?, name = ?, rule_type = ?, effective_from = ?, effective_to = ?, status = ?, institution = ?, ruleset_file = ?, published_at = ?, author = ?, changelog = ? WHERE id = ?`,
-      [fields.jurisdiction, fields.version, fields.name, fields.ruleType, fields.effectiveFrom, fields.effectiveTo, fields.status, fields.institution, fields.rulesetFile, fields.publishedAt, fields.author, fields.changelog, key]
+      `UPDATE rule_version
+          SET jurisdiction = ?, version = ?, name = ?, rule_type = ?, effective_from = ?, effective_to = ?,
+              status = ?, institution = ?, ruleset_file = ?, published_at = ?, author = ?, changelog = ?,
+              framework = ?, source_version_id = ?, config_status = ?, revision = revision + 1,
+              updated_by = ?, updated_at = ?
+        WHERE id = ?`,
+      [fields.jurisdiction, fields.version, fields.name, fields.ruleType, fields.effectiveFrom, fields.effectiveTo, fields.status, fields.institution, fields.rulesetFile, fields.publishedAt, fields.author, fields.changelog,
+        framework, sourceVersionId, configStatus, actor, nowText(), key]
     );
     return versionRow(q, key);
   }), "版本编号已存在");
+  await recordRevision({
+    ruleVersionId: key, objectType: "rule_version", objectKey: key, action: "UPDATE",
+    before: { version: saved.version, status: saved.status }, after: { name: fields.name, status: fields.status }, actor: fields.actor
+  });
+  return saved;
 }
 
 async function orgRow(q, id) {
@@ -255,18 +291,31 @@ export async function deleteOrg(id) {
   });
 }
 
-export async function deleteRuleVersion(id) {
+export async function deleteRuleVersion(id, actor = "") {
   const key = keyOf(id, "编号");
   await tx(async (q) => {
     const row = await versionRow(q, key);
-    const [products, ead, rules, batches] = await Promise.all([
+    const [products, ead, rules, batches, docs, versionedEad, snapshots, tasks] = await Promise.all([
       q("SELECT code FROM product_type WHERE rule_version = ? LIMIT 1", [row.version]),
       q("SELECT product_code FROM ead_product_config WHERE version = ? LIMIT 1", [row.version]),
       q("SELECT id FROM product_exposure_rule WHERE version = ? LIMIT 1", [row.version]),
-      q("SELECT id FROM measure_batch WHERE version = ? LIMIT 1", [row.version])
+      q("SELECT id FROM measure_batch WHERE (version = ? OR rule_version_id = ?) LIMIT 1", [row.version, key]),
+      q("SELECT id FROM rule_document WHERE rule_version_id = ? LIMIT 1", [key]),
+      q("SELECT product_code FROM ead_product_config WHERE rule_version_id = ? LIMIT 1", [key]),
+      q("SELECT id FROM rule_config_snapshot WHERE rule_version_id = ? LIMIT 1", [key]),
+      q("SELECT id FROM rwa_task WHERE rule_version_id = ? LIMIT 1", [key])
     ]);
-    if (products[0] || ead[0] || rules[0] || batches[0]) fail(400, "这个版本还被产品、EAD、专属规则或计量批次引用");
+    if (products[0] || ead[0] || rules[0] || batches[0] || docs[0] || versionedEad[0] || snapshots[0] || tasks[0]) {
+      fail(400, "这个版本还被规则文档、EAD、专属规则、快照、任务或计量批次引用");
+    }
+    await q("DELETE FROM config_revision WHERE rule_version_id = ?", [key]);
     await q("DELETE FROM rule_version WHERE id = ?", [key]);
+    await q(
+      `INSERT INTO config_revision
+         (rule_version_id, object_type, object_key, revision, action, before_json, after_json, actor, created_at)
+       VALUES (?, 'rule_version', ?, 1, 'DELETE', ?, NULL, ?, ?)`,
+      [key, key, JSON.stringify({ version: row.version, name: row.name }), actor, nowText()]
+    );
   });
 }
 
@@ -280,6 +329,7 @@ function clauseFields(body) {
     scope: text(body, "scope", "适用范围", 255, false),
     effectiveFrom: day(body.effectiveFrom, "生效日期"),
     source: text(body, "source", "来源", 255, false),
+    actor: text(body, "actor", "操作人", 64, false),
     referencedBy: strings(body.referencedBy, "引用规则", 80, 80)
   };
 }
@@ -298,19 +348,38 @@ async function saveClauseRefs(q, id, names) {
   }
 }
 
+async function clauseVersionId(q, jurisdiction, body) {
+  const version = String(body.ruleVersion || body.version || "").trim();
+  const rows = version
+    ? await q("SELECT id FROM rule_version WHERE version = ? AND jurisdiction = ? LIMIT 1", [version, jurisdiction])
+    : await q(
+      "SELECT id FROM rule_version WHERE jurisdiction = ? ORDER BY status = 'published' DESC, status = 'draft' DESC, effective_from DESC LIMIT 1",
+      [jurisdiction]
+    );
+  return rows[0] ? rows[0].id : "";
+}
+
 export async function createClause(body) {
   const id = keyOf(body.id, "编号");
   if (id.length > 32) fail(400, "编号不能超过 32 个字");
   const fields = clauseFields(body);
   return write(async () => tx(async (q) => {
     const jurisdiction = await requireJurisdiction(q, body.jurisdiction);
+    const ruleVersionId = await clauseVersionId(q, jurisdiction, body);
+    await assertVersionWritable(ruleVersionId);
     await q(
       `INSERT INTO clause_doc
-        (id, jurisdiction, doc, doc_version, clause_no, title, body, scope, effective_from, source)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, jurisdiction, fields.doc, fields.docVersion, fields.clause, fields.title, fields.text, fields.scope, fields.effectiveFrom, fields.source]
+        (id, jurisdiction, doc, doc_version, clause_no, title, body, scope, effective_from, source,
+         rule_version_id, framework, clause_code, regulation_name, regulation_version, status, revision, updated_by, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CAR', ?, ?, ?, 'ACTIVE', 1, ?, ?)`,
+      [id, jurisdiction, fields.doc, fields.docVersion, fields.clause, fields.title, fields.text, fields.scope, fields.effectiveFrom, fields.source,
+        ruleVersionId, fields.clause, fields.doc, fields.docVersion, fields.actor, nowText()]
     );
     await saveClauseRefs(q, id, fields.referencedBy);
+    await recordRevision({
+      ruleVersionId, objectType: "clause_doc", objectKey: id, action: "CREATE",
+      after: { clause: fields.clause, title: fields.title }, actor: fields.actor
+    });
     return clauseRow(q, id);
   }), "编号已存在");
 }
@@ -319,28 +388,48 @@ export async function updateClause(id, body) {
   const key = keyOf(id, "编号");
   const fields = clauseFields(body);
   return write(async () => tx(async (q) => {
-    await clauseRow(q, key);
+    const existing = await clauseRow(q, key);
+    assertRevision(existing.row.revision, body.baseRevision, "条款「" + existing.row.clause_no + "」");
     const jurisdiction = await requireJurisdiction(q, body.jurisdiction);
+    const ruleVersionId = await clauseVersionId(q, jurisdiction, body);
+    await assertVersionWritable(ruleVersionId);
     await q(
-      `UPDATE clause_doc SET jurisdiction = ?, doc = ?, doc_version = ?, clause_no = ?, title = ?, body = ?, scope = ?, effective_from = ?, source = ? WHERE id = ?`,
-      [jurisdiction, fields.doc, fields.docVersion, fields.clause, fields.title, fields.text, fields.scope, fields.effectiveFrom, fields.source, key]
+      `UPDATE clause_doc
+          SET jurisdiction = ?, doc = ?, doc_version = ?, clause_no = ?, title = ?, body = ?, scope = ?,
+              effective_from = ?, source = ?, rule_version_id = ?, clause_code = ?, regulation_name = ?,
+              regulation_version = ?, revision = revision + 1, updated_by = ?, updated_at = ?
+        WHERE id = ?`,
+      [jurisdiction, fields.doc, fields.docVersion, fields.clause, fields.title, fields.text, fields.scope, fields.effectiveFrom, fields.source,
+        ruleVersionId, fields.clause, fields.doc, fields.docVersion, fields.actor, nowText(), key]
     );
     await saveClauseRefs(q, key, fields.referencedBy);
+    await recordRevision({
+      ruleVersionId, objectType: "clause_doc", objectKey: key, action: "UPDATE",
+      before: { clause: existing.row.clause_no, title: existing.row.title },
+      after: { clause: fields.clause, title: fields.title }, actor: fields.actor
+    });
     return clauseRow(q, key);
   }), "条款已存在");
 }
 
-export async function deleteClause(id) {
+export async function deleteClause(id, actor = "") {
   const key = keyOf(id, "编号");
   await tx(async (q) => {
     await clauseRow(q, key);
-    const [rules, ead] = await Promise.all([
+    const [rules, ead, relations] = await Promise.all([
       q("SELECT id FROM product_exposure_rule WHERE clause_id = ? LIMIT 1", [key]),
-      q("SELECT id FROM ead_product_rule WHERE clause_id = ? LIMIT 1", [key])
+      q("SELECT id FROM ead_product_rule WHERE clause_id = ? LIMIT 1", [key]),
+      q("SELECT id FROM rule_clause_relation WHERE clause_id = ? LIMIT 1", [key])
     ]);
-    if (rules[0] || ead[0]) fail(400, "这条条款还被专属规则或 EAD 规则引用");
+    if (rules[0] || ead[0] || relations[0]) fail(400, "这条条款还被专属规则、EAD 规则或结构化规则引用");
     await q("DELETE FROM clause_ref WHERE clause_id = ?", [key]);
+    await q("DELETE FROM rule_clause_relation WHERE clause_id = ?", [key]);
+    const clause = await clauseRow(q, key);
     await q("DELETE FROM clause_doc WHERE id = ?", [key]);
+    await recordRevision({
+      ruleVersionId: clause.row.rule_version_id || "", objectType: "clause_doc", objectKey: key,
+      action: "DELETE", before: { clause: clause.row.clause_no, title: clause.row.title }, actor
+    });
   });
 }
 

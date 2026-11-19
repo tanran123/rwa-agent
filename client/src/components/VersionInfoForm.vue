@@ -1,5 +1,5 @@
 <script setup>
-import { watch } from "vue";
+import { computed, watch } from "vue";
 import { useContext } from "@/composables/useContext";
 
 const props = defineProps({
@@ -12,13 +12,24 @@ const props = defineProps({
 defineEmits(["save", "cancel"]);
 
 const { session } = useContext();
+const HK = "HK";
 const jurisdictionLabels = (code) => (session.jurisdictions.find((item) => item.code === code) || {}).label || code;
+const jurisdictionOptions = computed(() => {
+  const list = session.jurisdictions || [];
+  return props.creating ? list.filter((item) => item.code === HK) : list;
+});
+const orgOptions = computed(() => {
+  const list = session.orgs || [];
+  return props.creating ? list.filter((item) => item.jurisdiction === HK) : list;
+});
 
 watch(() => session.ready, () => {
-  if (!props.form.jurisdiction && session.jurisdictions[0]) {
-    props.form.jurisdiction = session.jurisdictions[0].code;
+  if (props.creating) {
+    props.form.jurisdiction = HK;
+  } else if (!props.form.jurisdiction) {
+    props.form.jurisdiction = HK;
   }
-});
+}, { immediate: true });
 </script>
 
 <template>
@@ -33,12 +44,19 @@ watch(() => session.ready, () => {
       <p v-if="error" class="notice danger">{{ error }}</p>
       <div class="grid c2">
         <label class="field">地区
-          <select v-model="form.jurisdiction">
-            <option v-for="item in session.jurisdictions" :key="item.code" :value="item.code">{{ item.label }}</option>
+          <select v-model="form.jurisdiction" :disabled="creating">
+            <option v-for="item in jurisdictionOptions" :key="item.code" :value="item.code">{{ item.label }}</option>
           </select>
+          <span v-if="creating" class="hint">当前只维护香港监管规则。</span>
         </label>
         <label class="field">规则名称
-          <input v-model="form.name" type="text" placeholder="如：澳门信用风险资本计量规则" />
+          <input v-model="form.name" type="text" placeholder="如：香港银行业（资本）规则" />
+        </label>
+        <label class="field">监管框架
+          <select v-model="form.framework">
+            <option value="CAR">资本充足率 CAR</option>
+            <option value="LCR">流动性 LCR</option>
+          </select>
         </label>
         <label class="field">生效日期
           <input v-model="form.effectiveFrom" type="date" />
@@ -49,7 +67,7 @@ watch(() => session.ready, () => {
         <label class="field">适用机构
           <select v-model="form.institution">
             <option value="">未指定</option>
-            <option v-for="item in session.orgs" :key="item.id" :value="item.name">
+            <option v-for="item in orgOptions" :key="item.id" :value="item.name">
               {{ item.name }}（{{ jurisdictionLabels(item.jurisdiction) }}）
             </option>
           </select>

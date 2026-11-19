@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 import { useRoute } from "vue-router";
 import {
-  fetchParameterTables, fetchReferenceLists, fetchRuleDocument, fetchRuleDocuments, importRuleDocuments
+  fetchParameterTables, fetchReferenceLists, fetchRuleDocument, fetchRuleDocuments, importRuleDocuments, previewRuleDocumentsImport
 } from "@/api/config";
 import { useContext } from "@/composables/useContext";
 import ExposureOverview from "@/components/ExposureOverview.vue";
@@ -37,8 +37,8 @@ async function load() {
     }
     const [docRows, tableRows, listRows] = await Promise.all([
       fetchRuleDocuments({ jurisdiction: jurisdiction.value, version: version.value }),
-      fetchParameterTables(jurisdiction.value),
-      fetchReferenceLists(jurisdiction.value)
+      fetchParameterTables(jurisdiction.value, version.value),
+      fetchReferenceLists(jurisdiction.value, version.value)
     ]);
     docs.value = docRows;
     tables.value = tableRows;
@@ -59,13 +59,20 @@ async function load() {
 }
 
 async function importDocs() {
-  const yes = await askConfirm(
-    "把 docs/信用风险规则/ 下的香港 STC 规则集、参数表和名单导入当前版本。同名文档会被覆盖。",
-    { title: "导入 STC 规则配置", confirmText: "导入" }
-  );
-  if (!yes) return;
   loading.value = true;
+  error.value = "";
   try {
+    const preview = await previewRuleDocumentsImport({ jurisdiction: jurisdiction.value || "HK", version: version.value });
+    const docs = preview.documentChanges || {};
+    const text = [
+      "把 docs/信用风险规则/ 下的香港 STC 规则集、参数表和名单导入当前版本。",
+      "文档：新增 " + (docs.added || 0) + "、更新 " + (docs.updated || 0) + "、不变 " + (docs.same || 0) + "。",
+      "参数表：新增 " + (preview.parameterTables.added || 0) + "、更新 " + (preview.parameterTables.updated || 0) + "。",
+      "名单：新增 " + (preview.referenceLists.added || 0) + "、更新 " + (preview.referenceLists.updated || 0) + "。",
+      "导入前会自动生成一份配置快照，同名文档会被覆盖。"
+    ].join("\n");
+    const yes = await askConfirm(text, { title: "导入预览", confirmText: "确认导入" });
+    if (!yes) { loading.value = false; return; }
     await importRuleDocuments({ jurisdiction: jurisdiction.value || "HK", version: version.value });
     await load();
   } catch (err) {

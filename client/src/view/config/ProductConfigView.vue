@@ -237,7 +237,7 @@ function openWizardCopy(row, index) {
     initial: {
       index: -1,
       copy: true,
-      mapping: Object.assign({}, row, { product_codes: [] })
+      mapping: Object.assign({}, row.entry || row, { product_codes: [] })
     }
   };
 }
@@ -276,7 +276,7 @@ function openWizardNew() {
 }
 
 function openWizardEdit(row, index) {
-  wizard.value = { initial: { index: index, mapping: row } };
+  wizard.value = { initial: { index: index, mapping: Object.assign({}, row.entry || row) } };
 }
 
 async function onWizardSaved() {
