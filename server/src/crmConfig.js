@@ -1,11 +1,12 @@
 import { pool, query } from "./db.js";
+import { configProducts } from "./productStandard.js";
 
 /**
  * 信用风险缓释配置：按产品配置。
  *
- * 产品清单读 product_type，各产品的标准字段清单读 product_field。
- * 配置页第 2 步能绑定的列，只来自该产品标准字段里真实存在的源表列
- * （product_field.source_field），不另立清单。
+ * 产品清单和各产品的标准字段清单来自产品标准字段配置写入的产品注册；
+ * 历史版本还没有产品注册时回退到 product_type / product_field。
+ * 配置页第 2 步能绑定的列，只来自该产品标准字段里真实存在的源表列。
  */
 
 /** 缓释配置只绑定这三个属性。 */
@@ -45,32 +46,8 @@ function fail(message, status = 400) {
   return error;
 }
 
-/** 产品清单和标准字段都从库里读，配置只写产品 code 和列名。 */
-async function productsWithFields() {
-  const products = await query("SELECT code, label, icon, color, rule_version FROM product_type ORDER BY code");
-  const fields = await query(
-    `SELECT product_code, code, name, meaning, std_field, required, source_system, source_field
-     FROM product_field ORDER BY id`
-  );
-  return products.map((row) => ({
-    code: row.code,
-    label: row.label,
-    icon: row.icon,
-    color: row.color,
-    ruleVersion: row.rule_version,
-    fields: fields
-      .filter((field) => field.product_code === row.code)
-      .map((field) => ({
-        code: field.code,
-        name: field.name,
-        meaning: field.meaning,
-        stdField: field.std_field,
-        required: !!field.required,
-        sourceSystem: field.source_system,
-        sourceField: field.source_field
-      }))
-  }));
-}
+/** 产品清单和标准字段来自产品标准字段配置写入的产品注册。 */
+const productsWithFields = configProducts;
 
 const PLACEHOLDER = new Set(["", "—", "-", "－"]);
 
@@ -278,7 +255,7 @@ export async function saveCrmConfig(config) {
     if (!item || typeof item !== "object") throw fail(at + "不是对象");
     const code = String(item.code || "");
     const product = known.get(code);
-    if (!product) throw fail(at + "：产品 " + code + " 不在 product_type 里");
+    if (!product) throw fail(at + "：产品 " + code + " 不在产品标准字段配置里");
     collect(product.label, product, item, push);
   });
 

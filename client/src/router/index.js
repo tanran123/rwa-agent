@@ -6,6 +6,9 @@ import OrgsView from '../view/rule/OrgsView.vue'
 import ClausesView from '../view/rule/ClausesView.vue'
 import FieldsView from '../view/rule/FieldsView.vue'
 import MappingsView from '../view/rule/MappingsView.vue'
+import ExposureOverviewPage from '../view/config/ExposureOverviewPage.vue'
+import ProductConfigView from '../view/config/ProductConfigView.vue'
+import ProductWorkbenchView from '../view/config/ProductWorkbenchView.vue'
 import GenericView from '../view/exposure/GenericView.vue'
 import ExposureView from '../view/exposure/ExposureView.vue'
 import CrmView from '../view/exposure/CrmView.vue'
@@ -22,9 +25,13 @@ import ResultsView from '../view/measure/ResultsView.vue'
 import BatchesView from '../view/measure/BatchesView.vue'
 import TasksView from '../view/measure/TasksView.vue'
 import TaskDetailView from '../view/measure/TaskDetailView.vue'
+import TaskCreateView from '../view/measure/TaskCreateView.vue'
 import ExportView from '../view/measure/ExportView.vue'
 import HqlaTasksView from '../view/hqla/HqlaTasksView.vue'
 import HqlaWizardView from '../view/hqla/HqlaWizardView.vue'
+import LiquidityConfigView from '../view/liquidity/LiquidityConfigView.vue'
+import LiquidityProductView from '../view/liquidity/LiquidityProductView.vue'
+import LiquidityParamsView from '../view/liquidity/LiquidityParamsView.vue'
 import LoginView from '../view/system/LoginView.vue'
 import UsersView from '../view/system/UsersView.vue'
 import RolesView from '../view/system/RolesView.vue'
@@ -54,6 +61,9 @@ const routes = [
   { path: '/clauses', name: 'clauses', component: ClausesView, meta: { group: '规则配置', title: '监管条款库', blurb: '条款和引用它的规则放在同一张表里。点一行看原文和引用。', versionContext: true } },
   { path: '/fields', name: 'fields', component: FieldsView, meta: { group: '规则配置', title: '产品标准字段管理', blurb: '规则写字段 name，不写 Excel 表头。手工字段不要从表格对齐。', sections: fieldTabs, versionContext: true } },
   { path: '/mappings', name: 'mappings', component: MappingsView, meta: { group: '规则配置', title: '字段映射', blurb: '源系统字段对到标准字段。', sections: fieldTabs, versionContext: true } },
+  { path: '/product-config', name: 'product-config', component: ProductConfigView, meta: { group: '规则配置', title: '产品标准字段配置', blurb: '产品规则注册决定用哪套映射和哪套规则集，数据字段映射决定源字段如何变成规则输入。', versionContext: true } },
+  { path: '/exposure-config', name: 'exposure-config', component: ExposureOverviewPage, meta: { group: '规则配置', title: '敞口划分', blurb: '按全景图、分类矩阵和决策流程查看分类与权重规则，点击节点查看规则、参数表和名单。', versionContext: true } },
+  { path: '/product-workbench/:family/:module?', name: 'product-workbench', component: ProductWorkbenchView, meta: { group: '规则配置', title: '产品配置工作台', blurb: '单个产品的产品组、标准字段、字段映射和规则预览统一在这里配置。', versionContext: true } },
   { path: '/generic', name: 'generic', component: GenericView, meta: { group: '规则配置', title: '通用暴露分类规则', blurb: '分类瀑布。命中进入下级，本层都不成立再看下一条。', sections: classTabs, versionContext: true } },
   { path: '/exposure', name: 'exposure', component: ExposureView, meta: { group: '规则配置', title: '产品线路', blurb: '每个产品挂在通用分类上的专属规则。', sections: classTabs, versionContext: true } },
   { path: '/crm', name: 'crm', component: CrmView, meta: { group: '规则配置', title: '信用风险缓释', blurb: '合格工具，以及什么情况下这条缓释不计入。', sections: classTabs, versionContext: true } },
@@ -66,16 +76,20 @@ const routes = [
   { path: '/ead-on', redirect: '/ead' },
   { path: '/ead-off', redirect: '/ead' },
   { path: '/ccf', name: 'ccf', component: CcfView, meta: { group: '规则配置', title: '信用转换系数', blurb: '一行是一种表外类型加一个条件。', versionContext: true } },
-  { path: '/crm-config', name: 'crm-config', component: CrmConfigView, meta: { group: '规则配置', title: '信用风险缓释配置', blurb: '按产品绑定缓释字段并维护合格缓释物字典。产品清单读 product_type，可选列读 product_field。', versionContext: true } },
+  { path: '/crm-config', name: 'crm-config', component: CrmConfigView, meta: { group: '规则配置', title: '信用风险缓释配置', blurb: '按产品绑定缓释字段并维护合格缓释物字典。产品清单和可绑定标准字段来自产品标准字段配置。', versionContext: true } },
   { path: '/tasks', name: 'tasks', component: TasksView, meta: { group: '任务运行', title: '任务工作台', blurb: '每个季度一个主任务。创建时固定监管版本和机构，列表统计资本充足率和流动性子任务的数量与进度，点任务进入详情工作台。' } },
+  { path: '/tasks/new', name: 'task-create', component: TaskCreateView, meta: { group: '任务运行', title: '新建主任务', blurb: '选择季度、监管版本和机构，检查规则配置后创建主任务及初始子任务。' } },
   { path: '/tasks/:id', name: 'task-detail', component: TaskDetailView, meta: { group: '任务运行', title: '任务详情工作台', blurb: '在资本充足率和流动性两个模块下新增子任务，并进入各自的计算。' } },
   { path: '/wizard', name: 'wizard', component: WizardView, meta: { group: '任务运行', title: '信用风险 RWA 计量向导', blurb: '分步骤完成从计量范围选择、数据导入到计量结果查看的全过程' } },
   { path: '/engine', name: 'engine', component: EngineView, meta: { group: '任务运行', title: '底稿计算', blurb: '映射、计算、追溯。逐笔结果写入计量明细后在结果页查看。' } },
   { path: '/results', name: 'results', component: ResultsView, meta: { group: '任务运行', title: '计量结果明细', blurb: '逐笔债项计量结果与审计证据；点击任意债项进入该笔的完整计量详情页' } },
   { path: '/batches', name: 'batches', component: BatchesView, meta: { group: '任务运行', title: '计量批次管理', blurb: '每个批次固定当时的规则版本。规则更新后，历史批次不改。' } },
   { path: '/export', name: 'export', component: ExportView, meta: { group: '任务运行', title: 'Excel 审计底稿导出', blurb: '导出真实的 xlsx。底稿里的业务数据是模拟数据。' } },
-  { path: '/hqla', name: 'hqla', component: HqlaTasksView, meta: { group: '任务运行', title: 'HQLA 计算任务', blurb: '按任务组织：新建、复制、归档、导入归档。每个任务独立保存自己的明细、清单、判定标准与结论。', versionContext: true } },
-  { path: '/hqla/:id', name: 'hqla-wizard', component: HqlaWizardView, meta: { group: '任务运行', title: '当前任务向导', blurb: '七步：明细 → 清单 → 标准 → 抽样 → 取数 → 核对 → 对账。', versionContext: true } },
+  { path: '/liquidity-config', name: 'liquidity-config', component: LiquidityConfigView, meta: { group: '规则配置', title: '流动性产品管理', blurb: '按规则版本维护 LCR 产品、侧别、标准字段与规则范围。', versionContext: true } },
+  { path: '/liquidity-products/:code/:tab?', name: 'liquidity-product', component: LiquidityProductView, meta: { group: '规则配置', title: '流动性产品配置工作台', blurb: '单个产品的产品组、标准字段、规则配置和规则预览。', versionContext: true } },
+  { path: '/liquidity-params', name: 'liquidity-params', component: LiquidityParamsView, meta: { group: '规则配置', title: '清单与参数', blurb: '跨产品共享的参数表、系数表和监管名单。', versionContext: true } },
+  { path: '/hqla', name: 'hqla', component: HqlaTasksView, meta: { group: '任务运行', title: 'LCR 计量任务', blurb: '按任务组织：规则版本 → 数据导入 → 产品识别 → 字段 Mapping → 质量检查 → 计算 → 复核输出。', versionContext: true } },
+  { path: '/hqla/:id', name: 'hqla-wizard', component: HqlaWizardView, meta: { group: '任务运行', title: 'LCR 计量任务向导', blurb: '七步：基本信息与规则版本 → Excel 数据导入 → 产品自动识别 → 标准字段 Mapping → 数据质量检查 → 自动计量计算 → 结果复核与输出。', versionContext: true } },
   { path: '/system/users', name: 'sys-users', component: UsersView, meta: { group: '系统管理', title: '用户管理', blurb: '管理平台账号、角色与授权机构。账号停用后立即失去访问权限；当前登录账号不可停用。', menu: 'sys-users' } },
   { path: '/system/roles', name: 'sys-roles', component: RolesView, meta: { group: '系统管理', title: '角色管理', blurb: '角色是菜单权限与授权机构的模板。角色停用后，其下账号保留数据但无法登录。', menu: 'sys-roles' } },
   { path: '/system/permissions', name: 'sys-perms', component: PermissionsView, meta: { group: '系统管理', title: '权限管理', blurb: '按角色配置可见菜单。这里控制的是「能否看到入口」，机构级数据权限仍由用户授权机构控制。', menu: 'sys-perms' } },

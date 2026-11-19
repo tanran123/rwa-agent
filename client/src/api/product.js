@@ -4,6 +4,12 @@ const codeOf = (code) => encodeURIComponent(code)
 
 export const fetchProducts = () => request.get('/products')
 
+export const fetchProductStandardProducts = (version = '') =>
+  request.get('/product-standard/products', { params: version ? { version } : {} })
+
+export const fetchProductGroupMappings = (version = '') =>
+  request.get('/product-standard/group-mappings', { params: version ? { version } : {} })
+
 export const createProduct = (body) => request.post('/products', body)
 
 export const saveProduct = (code, body) => request.put('/products/' + codeOf(code), body)

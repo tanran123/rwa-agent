@@ -122,6 +122,94 @@ def list_meta():
     }
 
 
+# ---------------------------------------------------------------- LCR 工作簿
+
+def _header_row(matrix):
+    """在前 12 行里挑表头：非空单元格最多、文本最多的一行。"""
+    best_index = 0
+    best_score = -1
+    for index, row in enumerate(matrix[:12]):
+        cells = [cell for cell in row if cell not in (None, "")]
+        if not cells:
+            continue
+        text = sum(1 for cell in cells if isinstance(cell, str) and cell.strip())
+        score = len(cells) + text * 0.5
+        if score > best_score:
+            best_score = score
+            best_index = index
+    return best_index
+
+
+def _headers_of(matrix, header_index):
+    width = max((len(row) for row in matrix), default=0)
+    names = []
+    seen = {}
+    for index in range(width):
+        cell = matrix[header_index][index] if header_index < len(matrix) and index < len(matrix[header_index]) else None
+        name = str(cell).strip() if cell not in (None, "") else f"第 {index + 1} 列"
+        if name in seen:
+            seen[name] += 1
+            name = f"{name}_{seen[name]}"
+        else:
+            seen[name] = 1
+        names.append(name)
+    return names
+
+
+def inspect_workbook(payload):
+    """返回每个 Sheet 的表头、预览行和总行数，供导入步骤确认。"""
+    sheets = _sheets_from_payload(payload)
+    out = []
+    for sheet in sheets:
+        matrix = sheet["matrix"]
+        header_index = _header_row(matrix)
+        headers = _headers_of(matrix, header_index)
+        preview = []
+        for row in matrix[header_index + 1: header_index + 11]:
+            values = list(row) + [""] * (len(headers) - len(row))
+            if not any(value not in (None, "") for value in values):
+                continue
+            preview.append({headers[index]: values[index] for index in range(len(headers))})
+        data_rows = [
+            row for row in matrix[header_index + 1:]
+            if any(value not in (None, "") for value in row)
+        ]
+        out.append({
+            "name": sheet["name"],
+            "headerRow": header_index + 1,
+            "headers": headers,
+            "preview": preview,
+            "rows": len(data_rows),
+        })
+    return {"sheets": out}
+
+
+def parse_workbook(payload):
+    """把工作簿每张 Sheet 解析成 {headers, rows} 数据集；不做产品识别。"""
+    sheets = _sheets_from_payload(payload)
+    datasets = []
+    for index, sheet in enumerate(sheets):
+        matrix = sheet["matrix"]
+        header_index = _header_row(matrix)
+        headers = _headers_of(matrix, header_index)
+        rows = []
+        for line_no, row in enumerate(matrix[header_index + 1:], start=header_index + 2):
+            values = list(row) + [""] * (len(headers) - len(row))
+            if not any(value not in (None, "") for value in values):
+                continue
+            record = {headers[column]: values[column] for column in range(len(headers))}
+            record["_line"] = line_no
+            rows.append(record)
+        datasets.append({
+            "id": f"DS{index + 1}",
+            "sheet": sheet["name"],
+            "headers": headers,
+            "rows": rows,
+            "rowCount": len(rows),
+        })
+    return {"datasets": datasets}
+
+
 # ---------------------------------------------------------------- 计算
 
 def _normalize_lists(raw):

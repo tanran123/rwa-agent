@@ -519,7 +519,7 @@ const neededCount = computed(() =>
           <div class="ead-left-head">
             <b>产品清单</b>
             <div class="dim" style="font-size: 11px; margin-top: 2px">
-              来自 product_type · 共 {{ scopedProducts(data).length }} 个产品
+              来自产品标准字段配置 · 共 {{ scopedProducts(data).length }} 个产品
             </div>
           </div>
           <div class="ead-list">

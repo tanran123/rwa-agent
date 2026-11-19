@@ -17,6 +17,8 @@
 | `langgraph.json` | LangGraph 应用配置。图是 `agent/llm/graph.py` 的 `agent`。 |
 | `output/` | 每次计算写出的留痕和结果工作簿。不提交。 |
 | `tools/build-seed.mjs` | 从 `server/data/master_data.cjs` 和分类 JSON 重新生成 `sql/002_seed.sql`。 |
+| `tools/import-liquidity.mjs` | 把 `server/data/liquidity.v1.0.0.json` 的流动性产品、标准字段、规则、参数表和名单导入某个监管规则版本。默认香港当前版本；`--reset` 先清空该版本的流动性配置。 |
+| `tools/import-rulesets.mjs` | 把 `docs/信用风险规则/` 下的香港 STC 分类规则、风险权重、8 套字段映射、产品注册、参数表和名单导入某个监管版本，写入 `rule_document`、`rule_parameter_table`、`rule_list`。用法：`node tools/import-rulesets.mjs --version HK-SA-2026.1 --jurisdiction HK`。 |
 | `tools/debug_step5.py` | 离线逐笔调试第五步暴露分类：打印规则文档、字段映射、facts、规则步骤和状态。用法见文件开头。 |
 | `tools/simulate_step5.py` | 模拟 8 个产品类型、28 笔债项，调用第五步分类并核对期望结果；留痕写在 `output/traces/step5/SIM-STEP5/`。 |
 | `tools/test_wizard.mjs` | 按向导顺序串行调用 Koa：上传、应用产品与映射、执行第五步分类、可选写入批次并读取结果明细。 |

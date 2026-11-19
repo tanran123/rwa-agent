@@ -9,6 +9,7 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { pool, query } from "./db.js";
+import { lcrInput, autoMapDataset, identifyDatasets, listLiquidityProducts, qualityDataset } from "./liquidity.js";
 
 const FLASK = "http://127.0.0.1:8766";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -115,6 +116,24 @@ function reportedOut(row) {
   };
 }
 
+function datasetOut(row) {
+  return {
+    id: row.dataset_id,
+    sheet: row.sheet_name || "",
+    productCode: row.product_code || "",
+    productName: row.product_name || "",
+    confidence: row.confidence == null ? null : Number(row.confidence),
+    level: row.confirm_level || "",
+    confirmedAt: row.confirmed_at || "",
+    headers: parseJson(row.headers_json, []),
+    rows: parseJson(row.rows_json, []),
+    mapping: parseJson(row.mapping_json, {}),
+    mappingMeta: parseJson(row.mapping_meta_json, null),
+    quality: parseJson(row.quality_json, null),
+    sort: Number(row.sort_order) || 0,
+  };
+}
+
 function referenceOut(row) {
   return {
     id: row.id,
@@ -157,11 +176,19 @@ export async function listTasks() {
     const [stats] = await query(
       `SELECT
          (SELECT COUNT(*) FROM hqla_task_input WHERE task_id = ?) AS inputCount,
-         (SELECT COUNT(*) FROM hqla_task_list WHERE task_id = ?) AS listCount`,
-      [row.id, row.id]
+         (SELECT COUNT(*) FROM hqla_task_list WHERE task_id = ?) AS listCount,
+         (SELECT COUNT(*) FROM hqla_task_dataset WHERE task_id = ?) AS datasetCount,
+         (SELECT COUNT(*) FROM hqla_task_dataset WHERE task_id = ? AND product_code <> '') AS productCount,
+         (SELECT COUNT(*) FROM hqla_task_dataset WHERE task_id = ? AND mapping_json IS NOT NULL AND JSON_LENGTH(mapping_json) > 0) AS mappedCount,
+         (SELECT COUNT(*) FROM hqla_task_dataset WHERE task_id = ? AND quality_json IS NOT NULL) AS qualityCount`,
+      [row.id, row.id, row.id, row.id, row.id, row.id]
     );
     task.inputCount = Number(stats.inputCount) || 0;
     task.listCount = Number(stats.listCount) || 0;
+    task.datasetCount = Number(stats.datasetCount) || 0;
+    task.productCount = Number(stats.productCount) || 0;
+    task.mappedCount = Number(stats.mappedCount) || 0;
+    task.qualityCount = Number(stats.qualityCount) || 0;
     out.push(task);
   }
   return out;
@@ -170,12 +197,14 @@ export async function listTasks() {
 export async function getTask(id) {
   const row = await taskRow(id);
   const task = taskOut(row);
-  const [input, lists, reported] = await Promise.all([
+  const [input, lists, reported, datasets] = await Promise.all([
     query("SELECT * FROM hqla_task_input WHERE task_id = ? ORDER BY line_no", [id]),
     query("SELECT * FROM hqla_task_list WHERE task_id = ? ORDER BY id", [id]),
     query("SELECT * FROM hqla_task_reported WHERE task_id = ? ORDER BY id", [id]),
+    query("SELECT * FROM hqla_task_dataset WHERE task_id = ? ORDER BY sort_order, id", [id]),
   ]);
   task.input = { rows: input.map(inputOut), meta: task.inputMeta };
+  task.datasets = datasets.map(datasetOut);
   task.lists = {};
   for (const list of lists) {
     if (!task.lists[list.list_code]) task.lists[list.list_code] = { rows: [], meta: { name: list.list_code, count: 0 } };
@@ -278,6 +307,7 @@ export async function deleteTask(id) {
   await query("DELETE FROM hqla_task_input WHERE task_id = ?", [id]);
   await query("DELETE FROM hqla_task_list WHERE task_id = ?", [id]);
   await query("DELETE FROM hqla_task_reported WHERE task_id = ?", [id]);
+  await query("DELETE FROM hqla_task_dataset WHERE task_id = ?", [id]);
   await query("DELETE FROM hqla_task WHERE id = ?", [id]);
   return { ok: true };
 }
@@ -288,6 +318,9 @@ export async function duplicateTask(id) {
   await query("UPDATE hqla_task SET status = 'doing', config = ?, step = ? WHERE id = ?", [JSON.stringify(task.cfg || {}), task.step || 1, copy.id]);
   if (task.input && task.input.rows && task.input.rows.length) {
     await saveInput(copy.id, { rows: task.input.rows, meta: task.input.meta });
+  }
+  if (task.datasets && task.datasets.length) {
+    await saveDatasets(copy.id, { datasets: task.datasets });
   }
   for (const code of Object.keys(task.lists || {})) {
     await saveList(copy.id, code, { rows: task.lists[code].rows });
@@ -321,6 +354,7 @@ export async function importTask(body) {
     created.id,
   ]);
   if (source.input && source.input.rows) await saveInput(created.id, source.input);
+  if (source.datasets && source.datasets.length) await saveDatasets(created.id, { datasets: source.datasets });
   for (const code of Object.keys(source.lists || {})) {
     const entry = source.lists[code];
     if (entry && entry.rows && entry.rows.length) await saveList(created.id, code, entry);
@@ -361,6 +395,130 @@ export async function saveInput(id, body) {
     nowText(),
     id,
   ]);
+  return getTask(id);
+}
+
+export async function saveDatasets(id, body) {
+  await taskRow(id);
+  const datasets = Array.isArray(body.datasets) ? body.datasets : [];
+  await query("DELETE FROM hqla_task_dataset WHERE task_id = ?", [id]);
+  let order = 0;
+  for (const dataset of datasets) {
+    order += 1;
+    const datasetId = String(dataset.id || "DS" + order).slice(0, 64);
+    await query(
+      `INSERT INTO hqla_task_dataset
+         (task_id, dataset_id, sheet_name, product_code, product_name, confidence, confirm_level,
+          confirmed_at, headers_json, rows_json, mapping_json, mapping_meta_json, quality_json, sort_order)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id, datasetId, String(dataset.sheet || "").slice(0, 128),
+        String(dataset.productCode || "").slice(0, 64), String(dataset.productName || "").slice(0, 128),
+        dataset.confidence == null ? null : Number(dataset.confidence), String(dataset.level || "").slice(0, 16),
+        String(dataset.confirmedAt || "").slice(0, 32),
+        JSON.stringify(dataset.headers || []), JSON.stringify(dataset.rows || []),
+        JSON.stringify(dataset.mapping || {}),
+        dataset.mappingMeta ? JSON.stringify(dataset.mappingMeta) : null,
+        dataset.quality ? JSON.stringify(dataset.quality) : null,
+        order
+      ]
+    );
+  }
+  await query("UPDATE hqla_task SET updated_at = ? WHERE id = ?", [nowText(), id]);
+  return getTask(id);
+}
+
+export async function saveDatasetMeta(id, datasetId, patch = {}) {
+  await taskRow(id);
+  const rows = await query("SELECT * FROM hqla_task_dataset WHERE task_id = ? AND dataset_id = ?", [id, datasetId]);
+  if (!rows.length) throw fail(404, "数据集不存在");
+  const current = datasetOut(rows[0]);
+  const next = { ...current, ...patch, id: current.id };
+  await query(
+    `UPDATE hqla_task_dataset
+        SET product_code = ?, product_name = ?, confidence = ?, confirm_level = ?, confirmed_at = ?,
+            headers_json = ?, mapping_json = ?, mapping_meta_json = ?, quality_json = ?
+      WHERE task_id = ? AND dataset_id = ?`,
+    [
+      String(next.productCode || "").slice(0, 64), String(next.productName || "").slice(0, 128),
+      next.confidence == null ? null : Number(next.confidence), String(next.level || "").slice(0, 16),
+      String(next.confirmedAt || "").slice(0, 32),
+      JSON.stringify(next.headers || []), JSON.stringify(next.mapping || {}),
+      next.mappingMeta ? JSON.stringify(next.mappingMeta) : null,
+      next.quality ? JSON.stringify(next.quality) : null,
+      id, datasetId
+    ]
+  );
+  await query("UPDATE hqla_task SET updated_at = ? WHERE id = ?", [nowText(), id]);
+  return getTask(id);
+}
+
+export async function deleteDataset(id, datasetId) {
+  await query("DELETE FROM hqla_task_dataset WHERE task_id = ? AND dataset_id = ?", [id, datasetId]);
+  await query("UPDATE hqla_task SET updated_at = ? WHERE id = ?", [nowText(), id]);
+  return getTask(id);
+}
+
+async function configuredProducts(task) {
+  const cfg = task.cfg || {};
+  if (!cfg.ruleVersion) throw fail(400, "请先在第一步选择监管规则版本");
+  const catalogue = await listLiquidityProducts({
+    jurisdiction: cfg.jurisdiction || "HK",
+    version: cfg.ruleVersion,
+  });
+  if (!catalogue.products.length) throw fail(400, "这一版还没有流动性产品配置");
+  return catalogue.products;
+}
+
+export async function identifyTaskDatasets(id) {
+  const task = await getTask(id);
+  if (!task.datasets.length) throw fail(400, "还没有导入数据");
+  const products = await configuredProducts(task);
+  const identified = identifyDatasets(task.datasets, products);
+  for (const dataset of identified) {
+    const product = products.find((item) => item.code === dataset.productCode);
+    await saveDatasetMeta(id, dataset.id, {
+      productCode: dataset.productCode,
+      productName: product ? product.name : dataset.productName,
+      confidence: dataset.confidence,
+      level: dataset.level,
+      confirmedAt: dataset.confirmedAt || "",
+    });
+  }
+  return { datasets: identified };
+}
+
+export async function mapTaskDatasets(id) {
+  const task = await getTask(id);
+  if (!task.datasets.length) throw fail(400, "还没有导入数据");
+  const products = await configuredProducts(task);
+  for (const dataset of task.datasets) {
+    const product = products.find((item) => item.code === dataset.productCode);
+    if (!product) continue;
+    const mapping = autoMapDataset(dataset, product);
+    const plain = {};
+    mapping.mappings.forEach((item) => {
+      if (item.standard) plain[item.standard] = item.excel;
+    });
+    await saveDatasetMeta(id, dataset.id, {
+      mapping: plain,
+      mappingMeta: mapping,
+      quality: null,
+    });
+  }
+  return getTask(id);
+}
+
+export async function qualityTaskDatasets(id) {
+  const task = await getTask(id);
+  if (!task.datasets.length) throw fail(400, "还没有导入数据");
+  const products = await configuredProducts(task);
+  for (const dataset of task.datasets) {
+    const product = products.find((item) => item.code === dataset.productCode);
+    if (!product) continue;
+    const quality = qualityDataset(dataset, product);
+    await saveDatasetMeta(id, dataset.id, { quality });
+  }
   return getTask(id);
 }
 
@@ -468,6 +626,20 @@ export async function inspectUpload(body) {
 
 export async function parseUpload(body) {
   return callFlask("/api/hqla/parse", body);
+}
+
+export async function inspectWorkbook(body) {
+  return callFlask("/api/hqla/inspect-workbook", body);
+}
+
+export async function parseWorkbook(body) {
+  return callFlask("/api/hqla/parse-workbook", body);
+}
+
+export async function computeLcr(id) {
+  const task = await getTask(id);
+  const payload = await lcrInput(task);
+  return callFlask("/api/hqla/lcr-compute", payload);
 }
 
 export async function computeTask(id) {

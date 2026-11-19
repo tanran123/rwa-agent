@@ -36,6 +36,9 @@ const PARENT = {
   "/clauses": "/versions",
   "/mappings": "/versions",
   "/fields": "/versions",
+  "/product-config": "/versions",
+  "/product-workbench": "/versions",
+  "/exposure-config": "/versions",
   "/exposure": "/versions",
   "/generic": "/versions",
   "/crm": "/versions",
@@ -47,6 +50,9 @@ const PARENT = {
   "/ead-on": "/versions",
   "/ead-off": "/versions",
   "/ccf": "/versions",
+  "/liquidity-config": "/versions",
+  "/liquidity-products": "/versions",
+  "/liquidity-params": "/versions",
   "/batches": "/results",
   "/export": "/results"
 };
@@ -54,6 +60,8 @@ const PARENT = {
 export function menuPath(path) {
   const p = String(path || "");
   if (p.indexOf("/tree") === 0) return "/versions";
+  if (p.indexOf("/product-workbench") === 0) return "/versions";
+  if (p.indexOf("/liquidity-products") === 0) return "/versions";
   if (p.indexOf("/tasks/") === 0) return "/tasks";
   if (p.indexOf("/hqla") === 0) return "/tasks";
   if (p.indexOf("/versions") === 0) return "/versions";

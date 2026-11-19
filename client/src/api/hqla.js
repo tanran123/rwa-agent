@@ -15,6 +15,14 @@ export const importTask = (doc) => request.post('/hqla/import', doc)
 
 // ---------------------------------------------------------------- 任务数据
 export const saveInput = (id, body) => request.put(`/hqla/tasks/${id}/input`, body)
+export const saveDatasets = (id, datasets) => request.put(`/hqla/tasks/${id}/datasets`, { datasets })
+export const saveDatasetMeta = (id, datasetId, patch) =>
+  request.put(`/hqla/tasks/${id}/datasets/${encodeURIComponent(datasetId)}`, patch)
+export const deleteDataset = (id, datasetId) =>
+  request.delete(`/hqla/tasks/${id}/datasets/${encodeURIComponent(datasetId)}`)
+export const identifyDatasets = (id) => request.post(`/hqla/tasks/${id}/identify`, {}, long)
+export const autoMapDatasets = (id) => request.post(`/hqla/tasks/${id}/auto-map`, {}, long)
+export const checkQuality = (id) => request.post(`/hqla/tasks/${id}/quality`, {}, long)
 export const saveList = (id, code, body) => request.put(`/hqla/tasks/${id}/lists/${code}`, body)
 export const deleteList = (id, code) => request.delete(`/hqla/tasks/${id}/lists/${code}`)
 export const saveConfig = (id, config) => request.put(`/hqla/tasks/${id}/config`, { config })
@@ -29,7 +37,10 @@ export const upsertReference = (rows) => request.post('/hqla/reference', { rows 
 export const demo = (kind) => request.get(`/hqla/demo/${kind}`)
 export const inspectUpload = (body) => request.post('/hqla/inspect', body, long)
 export const parseUpload = (body) => request.post('/hqla/parse', body, long)
+export const inspectWorkbook = (body) => request.post('/hqla/inspect-workbook', body, long)
+export const parseWorkbook = (body) => request.post('/hqla/parse-workbook', body, long)
 export const computeTask = (id) => request.post(`/hqla/tasks/${id}/compute`, {}, long)
+export const computeLcr = (id) => request.post(`/hqla/tasks/${id}/lcr-compute`, {}, long)
 export const planSample = (id) => request.post(`/hqla/tasks/${id}/sample`, {}, long)
 export const listHits = (id, code) => request.post(`/hqla/tasks/${id}/list-hits`, { code }, long)
 export const exportWorkbook = (id) => request.post(`/hqla/tasks/${id}/export`, {}, { ...long, responseType: 'blob' })

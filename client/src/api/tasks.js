@@ -3,6 +3,8 @@ import request from './request'
 // 信用风险 RWA 任务工作台：主任务（季度）+ 暴露子任务
 export const fetchTasks = () => request.get('/rwa-tasks')
 export const fetchTask = (id) => request.get('/rwa-tasks/' + id)
+export const fetchTaskReadiness = (version, jurisdiction = '') =>
+  request.get('/rwa-tasks/readiness', { params: { version, jurisdiction } })
 export const createTask = (body) => request.post('/rwa-tasks', body)
 export const updateTask = (id, body) => request.put('/rwa-tasks/' + id, body)
 export const deleteTask = (id) => request.delete('/rwa-tasks/' + id)

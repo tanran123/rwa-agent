@@ -139,6 +139,10 @@ function scopeTo(row) {
 
 function openConfig(row, path) {
   scopeTo(row);
+  if (path === "/exposure-config") {
+    router.push({ path: path, query: { jurisdiction: row.jurisdiction, version: row.version } });
+    return;
+  }
   router.push(path);
 }
 

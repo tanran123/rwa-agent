@@ -3,20 +3,27 @@ import Router from "@koa/router";
 import cors from "@koa/cors";
 import bodyParser from "koa-bodyparser";
 import { query } from "./db.js";
-import { annotatedUpload, applyMeasureChoices, auditWorkbook, classifyUpload, detectMeasureProducts, mapMeasureFields, measureDemo, readClassifyTrace, readMeasureRun, readUploadedWorkbook, saveMeasureRun } from "./measure.js";
+import { annotatedUpload, applyMeasureChoices, auditWorkbook, classifyUpload, detectMeasureProducts, mapMeasureFields, measureDemo, readClassifyTrace, readMeasureRun, readUploadedWorkbook, saveMeasureRun, weightUpload } from "./measure.js";
 import { paperView, uploadSamples } from "./paper.js";
 import {
   archiveSubtask, createRwaTask, createSubtask, deleteRwaTask, deleteSubtask, getRwaTask,
-  listRwaTasks, updateRwaTask, updateSubtask
+  listRwaTasks, readRwaTaskReadiness, updateRwaTask, updateSubtask
 } from "./tasks.js";
 import { trialEad } from "./ead.js";
 import { checkEadFormula, readEadConfig, saveEadConfig } from "./eadConfig.js";
 import { readCrmConfig, saveCrmConfig } from "./crmConfig.js";
+import { configProducts, productGroupMappings } from "./productStandard.js";
 import {
-  archiveTask, computeTask, createTask, deleteList, deleteTask, demoData, duplicateTask, exportTask, exportWorkbook,
-  getTask, importTask, inspectUpload, listHitsFor, listMeta, listTasks, parseUpload, planSample, referenceRows,
-  saveInput, saveList, saveReported, saveSimple, updateTask, upsertReference
+  archiveTask, computeLcr, computeTask, createTask, deleteDataset, deleteList, deleteTask, demoData, duplicateTask, exportTask, exportWorkbook,
+  getTask, identifyTaskDatasets, importTask, inspectUpload, inspectWorkbook, listHitsFor, listMeta, listTasks,
+  mapTaskDatasets, parseUpload, parseWorkbook, planSample, qualityTaskDatasets, referenceRows,
+  saveDatasetMeta, saveDatasets, saveInput, saveList, saveReported, saveSimple, updateTask, upsertReference
 } from "./hqla.js";
+import {
+  deleteLiquidityField, deleteLiquidityProduct, getLiquidityProduct, liquidityConfigCheck,
+  liquidityMeta, liquidityParams, liquidityRules, liquidityVersions, listLiquidityProducts,
+  saveLiquidityField, saveLiquidityProduct
+} from "./liquidity.js";
 import { copyExposureDoc, deleteExposureDoc, exposureChat, exposureDoc, exposureDocs, provisionExposureDocs, saveExposureChat, saveExposureDoc } from "./exposureDocs.js";
 import {
   createLlm, createRole, createTokenLog, createUser, defaultLlm, listLlm, listLoginLogs, listOperationLogs,
@@ -34,6 +41,13 @@ import {
   updateOrg, updateProduct, updateRuleVersion, updateWeightRule
 } from "./ruleWrite.js";
 import { requestContext } from "./requestContext.js";
+import {
+  createRuleDocument, deleteRuleDocument, importStcDocuments, ruleDocument, ruleDocuments,
+  saveRuleDocument, validateRuleBody, validateRuleDocumentById
+} from "./ruleDocs.js";
+import {
+  parameterTable, parameterTables, referenceList, referenceLists, saveParameterTable, saveReferenceList
+} from "./refData.js";
 
 const app = new Koa();
 const router = new Router({ prefix: "/api" });
@@ -373,6 +387,14 @@ router.post("/clauses/batch-delete", async (ctx) => {
   ctx.body = await deleteClauses(ctx.request.body || {});
 });
 
+router.get("/product-standard/products", async (ctx) => {
+  ctx.body = await configProducts(String(ctx.query.version || ""));
+});
+
+router.get("/product-standard/group-mappings", async (ctx) => {
+  ctx.body = await productGroupMappings(String(ctx.query.version || ""));
+});
+
 router.get("/products", async (ctx) => {
   const rows = await query(
     `SELECT p.*, (SELECT COUNT(*) FROM product_field f WHERE f.product_code = p.code) AS field_count
@@ -485,6 +507,80 @@ router.post("/field-mappings/batch-delete", async (ctx) => {
   ctx.body = await deleteMappings(ctx.request.body || {});
 });
 
+// ---------------------------------------------------------------- 敞口划分与产品规则配置（V3.5）
+// 规则集文档、参数表和名单各存一张表；页面读写这里的 JSON，计算侧不从这里取数。
+
+router.get("/rule-documents", async (ctx) => {
+  ctx.body = await ruleDocuments({
+    jurisdiction: String(ctx.query.jurisdiction || ""),
+    version: String(ctx.query.version || ""),
+    kind: String(ctx.query.kind || "")
+  });
+});
+
+router.get("/rule-documents/:id", async (ctx) => {
+  const doc = await ruleDocument(ctx.params.id);
+  if (!doc) ctx.throw(404, "没有这份规则文档");
+  ctx.body = doc;
+});
+
+router.post("/rule-documents", async (ctx) => {
+  ctx.body = await createRuleDocument(ctx.request.body || {});
+});
+
+router.post("/rule-documents/import", async (ctx) => {
+  const body = ctx.request.body || {};
+  ctx.body = await importStcDocuments({
+    jurisdiction: String(body.jurisdiction || "HK"),
+    version: String(body.version || "")
+  });
+});
+
+router.post("/rule-documents/validate", async (ctx) => {
+  ctx.body = await validateRuleBody(ctx.request.body || {});
+});
+
+router.put("/rule-documents/:id", async (ctx) => {
+  ctx.body = await saveRuleDocument(ctx.params.id, ctx.request.body || {});
+});
+
+router.post("/rule-documents/:id/validate", async (ctx) => {
+  ctx.body = await validateRuleDocumentById(ctx.params.id);
+});
+
+router.delete("/rule-documents/:id", async (ctx) => {
+  await deleteRuleDocument(ctx.params.id);
+  ctx.body = { ok: true };
+});
+
+router.get("/parameter-tables", async (ctx) => {
+  ctx.body = await parameterTables(String(ctx.query.jurisdiction || ""));
+});
+
+router.get("/parameter-tables/:id", async (ctx) => {
+  const table = await parameterTable(ctx.params.id);
+  if (!table) ctx.throw(404, "没有这张参数表");
+  ctx.body = table;
+});
+
+router.put("/parameter-tables/:id", async (ctx) => {
+  ctx.body = await saveParameterTable(ctx.params.id, ctx.request.body || {});
+});
+
+router.get("/reference-lists", async (ctx) => {
+  ctx.body = await referenceLists(String(ctx.query.jurisdiction || ""));
+});
+
+router.get("/reference-lists/:id", async (ctx) => {
+  const list = await referenceList(ctx.params.id);
+  if (!list) ctx.throw(404, "没有这份名单");
+  ctx.body = list;
+});
+
+router.put("/reference-lists/:id", async (ctx) => {
+  ctx.body = await saveReferenceList(ctx.params.id, ctx.request.body || {});
+});
+
 router.get("/exposure-classes", async (ctx) => {
   const rows = await exposureDocs(String(ctx.query.version || ""));
   ctx.body = rows.map((item) => ({
@@ -595,7 +691,7 @@ router.put("/ead-config", async (ctx) => {
 
 router.post("/ead-formula/check", async (ctx) => {
   const body = ctx.request.body || {};
-  ctx.body = await checkEadFormula(body.productCode, body.side, body.formula);
+  ctx.body = await checkEadFormula(body.productCode, body.side, body.formula, body.version || "");
 });
 
 router.post("/ead-trial", async (ctx) => {
@@ -736,6 +832,10 @@ router.get("/measure", async (ctx) => {
   ctx.body = await measureDemo();
 });
 
+router.get("/rwa-tasks/readiness", async (ctx) => {
+  ctx.body = await readRwaTaskReadiness(ctx.query.version || "", ctx.query.jurisdiction || "");
+});
+
 router.get("/rwa-tasks", async (ctx) => {
   ctx.body = await listRwaTasks();
 });
@@ -804,6 +904,11 @@ router.post("/measure/products", async (ctx) => {
 router.post("/measure/classify", async (ctx) => {
   const body = ctx.request.body || {};
   ctx.body = await classifyUpload(body.uploadId, body.version || "");
+});
+
+router.post("/measure/weight", async (ctx) => {
+  const body = ctx.request.body || {};
+  ctx.body = await weightUpload(body.uploadId, body.version || "");
 });
 
 router.get("/measure/classify/trace/:uploadId/:file", async (ctx) => {
@@ -955,6 +1060,34 @@ router.post("/rules/chat", async (ctx) => {
   }
 });
 
+// ---------------------------------------------------------------- 流动性产品配置
+// 产品、字段、规则、参数表都按 (jurisdiction, rule_version) 读取；配置维护只改这一版。
+
+router.get("/liquidity/versions", async (ctx) => {
+  ctx.body = await liquidityVersions(String(ctx.query.jurisdiction || ""));
+});
+router.get("/liquidity/meta", async (ctx) => { ctx.body = await liquidityMeta(ctx.query); });
+router.get("/liquidity/products", async (ctx) => { ctx.body = await listLiquidityProducts(ctx.query); });
+router.get("/liquidity/products/:code", async (ctx) => { ctx.body = await getLiquidityProduct(ctx.params.code, ctx.query); });
+router.post("/liquidity/products", async (ctx) => { ctx.status = 201; ctx.body = await saveLiquidityProduct(ctx.request.body || {}); });
+router.put("/liquidity/products/:code", async (ctx) => {
+  ctx.body = await saveLiquidityProduct({ ...(ctx.request.body || {}), code: ctx.params.code });
+});
+router.delete("/liquidity/products/:code", async (ctx) => { ctx.body = await deleteLiquidityProduct(ctx.params.code, ctx.query); });
+router.post("/liquidity/products/:code/fields", async (ctx) => {
+  ctx.status = 201;
+  ctx.body = await saveLiquidityField(ctx.params.code, ctx.request.body || {});
+});
+router.put("/liquidity/products/:code/fields/:fieldCode", async (ctx) => {
+  ctx.body = await saveLiquidityField(ctx.params.code, { ...(ctx.request.body || {}), code: ctx.params.fieldCode });
+});
+router.delete("/liquidity/products/:code/fields/:fieldCode", async (ctx) => {
+  ctx.body = await deleteLiquidityField(ctx.params.code, ctx.params.fieldCode, ctx.query);
+});
+router.get("/liquidity/rules", async (ctx) => { ctx.body = await liquidityRules(ctx.query); });
+router.get("/liquidity/params", async (ctx) => { ctx.body = await liquidityParams(ctx.query); });
+router.get("/liquidity/config-check", async (ctx) => { ctx.body = await liquidityConfigCheck(ctx.query); });
+
 // ---------------------------------------------------------------- 流动性 HQLA
 // 判定/抽样/加总/对账/导出在 Flask；这里存任务并转发。
 
@@ -970,6 +1103,9 @@ router.put("/hqla/tasks/:id", async (ctx) => { ctx.body = await updateTask(ctx.p
 router.delete("/hqla/tasks/:id", async (ctx) => { ctx.body = await deleteTask(ctx.params.id); });
 
 router.post("/hqla/tasks/:id/duplicate", async (ctx) => { ctx.status = 201; ctx.body = await duplicateTask(ctx.params.id); });
+router.post("/hqla/tasks/:id/identify", async (ctx) => { ctx.body = await identifyTaskDatasets(ctx.params.id); });
+router.post("/hqla/tasks/:id/auto-map", async (ctx) => { ctx.body = await mapTaskDatasets(ctx.params.id); });
+router.post("/hqla/tasks/:id/quality", async (ctx) => { ctx.body = await qualityTaskDatasets(ctx.params.id); });
 router.post("/hqla/tasks/:id/archive", async (ctx) => {
   const body = ctx.request.body || {};
   ctx.body = await archiveTask(ctx.params.id, !!body.archived);
@@ -982,6 +1118,13 @@ router.get("/hqla/tasks/:id/archive.json", async (ctx) => {
 router.post("/hqla/import", async (ctx) => { ctx.status = 201; ctx.body = await importTask(ctx.request.body || {}); });
 
 router.put("/hqla/tasks/:id/input", async (ctx) => { ctx.body = await saveInput(ctx.params.id, ctx.request.body || {}); });
+router.put("/hqla/tasks/:id/datasets", async (ctx) => { ctx.body = await saveDatasets(ctx.params.id, ctx.request.body || {}); });
+router.put("/hqla/tasks/:id/datasets/:datasetId", async (ctx) => {
+  ctx.body = await saveDatasetMeta(ctx.params.id, ctx.params.datasetId, ctx.request.body || {});
+});
+router.delete("/hqla/tasks/:id/datasets/:datasetId", async (ctx) => {
+  ctx.body = await deleteDataset(ctx.params.id, ctx.params.datasetId);
+});
 router.put("/hqla/tasks/:id/lists/:code", async (ctx) => { ctx.body = await saveList(ctx.params.id, ctx.params.code, ctx.request.body || {}); });
 router.delete("/hqla/tasks/:id/lists/:code", async (ctx) => { ctx.body = await deleteList(ctx.params.id, ctx.params.code); });
 router.put("/hqla/tasks/:id/config", async (ctx) => { ctx.body = await saveSimple(ctx.params.id, ctx.request.body || {}, { config: "config" }); });
@@ -992,6 +1135,7 @@ router.put("/hqla/tasks/:id/fetch", async (ctx) => {
 router.put("/hqla/tasks/:id/reported", async (ctx) => { ctx.body = await saveReported(ctx.params.id, ctx.request.body || {}); });
 
 router.post("/hqla/tasks/:id/compute", async (ctx) => { ctx.body = await computeTask(ctx.params.id); });
+router.post("/hqla/tasks/:id/lcr-compute", async (ctx) => { ctx.body = await computeLcr(ctx.params.id); });
 router.post("/hqla/tasks/:id/sample", async (ctx) => { ctx.body = await planSample(ctx.params.id); });
 router.post("/hqla/tasks/:id/list-hits", async (ctx) => {
   const body = ctx.request.body || {};
@@ -1006,6 +1150,8 @@ router.post("/hqla/tasks/:id/export", async (ctx) => {
 
 router.post("/hqla/inspect", async (ctx) => { ctx.body = await inspectUpload(ctx.request.body || {}); });
 router.post("/hqla/parse", async (ctx) => { ctx.body = await parseUpload(ctx.request.body || {}); });
+router.post("/hqla/inspect-workbook", async (ctx) => { ctx.body = await inspectWorkbook(ctx.request.body || {}); });
+router.post("/hqla/parse-workbook", async (ctx) => { ctx.body = await parseWorkbook(ctx.request.body || {}); });
 
 app.use(cors());
 app.use(bodyParser({ jsonLimit: "32mb" }));

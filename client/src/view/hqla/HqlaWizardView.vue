@@ -1,34 +1,36 @@
 <script setup>
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { computeTask, getTask, updateTask } from "@/api/hqla";
-import { askConfirm } from "@/utils/confirm";
-import StepInput from "./steps/StepInput.vue";
-import StepLists from "./steps/StepLists.vue";
-import StepConfig from "./steps/StepConfig.vue";
-import StepSampling from "./steps/StepSampling.vue";
-import StepFetch from "./steps/StepFetch.vue";
-import StepCheck from "./steps/StepCheck.vue";
-import StepRecon from "./steps/StepRecon.vue";
+import { getTask, updateTask } from "@/api/hqla";
+import { fetchLiquidityMeta } from "@/api/liquidity";
+import { useContext } from "@/composables/useContext";
+import StepBasic from "./steps/StepBasic.vue";
+import StepImport from "./steps/StepImport.vue";
+import StepProduct from "./steps/StepProduct.vue";
+import StepMapping from "./steps/StepMapping.vue";
+import StepQuality from "./steps/StepQuality.vue";
+import StepCalc from "./steps/StepCalc.vue";
+import StepResult from "./steps/StepResult.vue";
 
 const route = useRoute();
 const router = useRouter();
+const { session } = useContext();
 
 const task = ref(null);
-const result = ref(null);
+const meta = ref(null);
 const loading = ref(true);
 const error = ref("");
-const computing = ref(false);
 
 const STEPS = [
-  { n: 1, title: "明细全量数据导入", desc: "导入客户提供的债券明细全量清单" },
-  { n: 2, title: "内部基础参数清单", desc: "交易账簿、回购台账、关联方、政策性银行、结构性债、RMBS 批准" },
-  { n: 3, title: "判定标准配置", desc: "关卡一排除项、关卡二分档、关卡三上限" },
-  { n: 4, title: "抽样策略配置", desc: "全量 / 属性抽样 / 固定样本量，生成样本清单" },
-  { n: 5, title: "外部数据获取", desc: "按抽样清单逐只抓取评级、风险权重、价格" },
-  { n: 6, title: "逐笔核对与追溯", desc: "关卡一 / 关卡二判定与完整证据链" },
-  { n: 7, title: "汇总重编与对账", desc: "Level × 币种加权、组合上限、与申报数对账" }
+  { key: "basic", title: "基本信息与规则版本", desc: "选择监管规则版本，锁定版本快照与适用产品范围" },
+  { key: "import", title: "Excel 数据导入", desc: "上传原始工作簿，按 Sheet 解析为数据集" },
+  { key: "product", title: "产品自动识别", desc: "按数据集识别产品，低置信度人工确认" },
+  { key: "mapping", title: "标准字段 Mapping", desc: "Excel 表头映射到产品标准字段" },
+  { key: "quality", title: "数据质量检查", desc: "字段完整性、金额格式、重复与负值" },
+  { key: "calc", title: "自动计量计算", desc: "HQLA、现金流入流出与 LCR 汇总" },
+  { key: "result", title: "结果复核与输出", desc: "产品结果、单笔追溯与归档" }
 ];
+const COMPONENTS = [StepBasic, StepImport, StepProduct, StepMapping, StepQuality, StepCalc, StepResult];
 
 const STATUS = {
   draft: { label: "草稿", tone: "muted" },
@@ -38,26 +40,34 @@ const STATUS = {
 };
 
 const step = computed(() => Math.min(7, Math.max(1, Number(task.value && task.value.step) || 1)));
-const stepComponent = computed(() => [StepInput, StepLists, StepConfig, StepSampling, StepFetch, StepCheck, StepRecon][step.value - 1]);
+const stepComponent = computed(() => COMPONENTS[step.value - 1]);
+const cfg = computed(() => (task.value && task.value.cfg) || {});
+const datasets = computed(() => (task.value && task.value.datasets) || []);
+const result = computed(() => (task.value && task.value.summary && task.value.summary.calculation) || null);
 
 const checks = computed(() => {
   const t = task.value;
   if (!t) return [];
+  const list = t.datasets || [];
+  const c = t.cfg || {};
+  const mappedAmount = (dataset) => {
+    const keys = Object.keys(dataset.mapping || {});
+    return ["amount", "book_value", "fair_value", "undrawn_amount"].some((key) => keys.includes(key));
+  };
   return [
-    !!(t.input && t.input.rows && t.input.rows.length),
-    !!(t.lists && Object.keys(t.lists).some((key) => (t.lists[key].rows || []).length)),
-    !!(t.cfg && t.cfg.rules && t.cfg.rules.length),
-    !!(t.sample && t.sample.size),
-    !!(t.fetchLog && t.fetchLog.length),
-    !!t.runAt,
-    !!t.summary
+    !!(c.ruleVersion && c.snapshotLockedAt && Object.keys(c.snapshot || {}).length),
+    list.length > 0,
+    list.length > 0 && list.every((item) => !!item.productCode && (!!item.confirmedAt || item.level === "CONFIRMED" || item.level === "HIGH")),
+    list.length > 0 && list.every((item) => !item.productCode || mappedAmount(item)),
+    list.length > 0 && list.every((item) => !!item.quality) && !list.some((item) => item.quality.status === "BLOCK"),
+    !!(t.summary && t.summary.calculation),
+    !!(c.review && c.review.status === "reviewed")
   ];
 });
 
 const pct = computed(() => {
-  const t = task.value;
-  if (!t) return 0;
-  if (t.status === "done") return 100;
+  if (!task.value) return 0;
+  if (task.value.status === "done" || task.value.status === "archived") return 100;
   const current = step.value;
   return Math.round((((current - 1) + (checks.value[current - 1] ? 1 : 0.15)) / 7) * 100);
 });
@@ -65,54 +75,40 @@ const pct = computed(() => {
 const summaryLine = computed(() => {
   const t = task.value;
   if (!t) return "";
-  const rows = (t.input && t.input.rows) || [];
+  const rows = datasets.value.reduce((sum, item) => sum + (item.rows || []).length, 0);
   switch (step.value) {
-    case 1: return rows.length ? `明细 ${rows.length} 行 · 合计 ${rows.reduce((a, r) => a + (r.amount || 0), 0).toLocaleString("zh-CN", { maximumFractionDigits: 0 })} 港元` : "尚未导入明细";
-    case 2: return `明细 ${rows.length} 行 · 已载入清单 ${Object.keys(t.lists || {}).filter((k) => (t.lists[k].rows || []).length).length} 类`;
-    case 3: return `启用规则 ${((t.cfg && t.cfg.rules) || []).filter((r) => r.enabled !== false).length} 条`;
-    case 4: return t.sample ? `样本 ${t.sample.size} / ${t.sample.universe} 笔 · 种子 ${t.sample.seed}` : `待抽样 · 总体 ${rows.length} 行`;
+    case 1: return cfg.value.ruleVersion ? `已锁定 ${cfg.value.ruleVersion}` : "尚未选择监管规则版本";
+    case 2: return `${datasets.value.length} 个数据集 · ${rows.toLocaleString("zh-CN")} 行`;
+    case 3: return `${datasets.value.filter((item) => item.productCode).length} / ${datasets.value.length} 个数据集已识别产品`;
+    case 4: return `${datasets.value.filter((item) => Object.keys(item.mapping || {}).length).length} / ${datasets.value.length} 个数据集已映射`;
     case 5: {
-      const log = t.fetchLog || [];
-      return log.length ? `已抓取 ${log.length} 笔 · 命中 ${log.filter((x) => x.status === "命中").length} 笔` : `待抓取 ${t.sample ? t.sample.size : 0} 笔`;
+      const blocking = datasets.value.filter((item) => item.quality && item.quality.status === "BLOCK").length;
+      const warnings = datasets.value.filter((item) => item.quality && item.quality.status === "WARN").length;
+      return `阻断 ${blocking} · 警告 ${warnings}`;
     }
-    case 6: {
-      const rows6 = (result.value && result.value.sampleRows) || [];
-      return `样本 ${rows6.length} 笔 · 异常 ${rows6.filter((r) => r.status === "fail").length} · 关注 ${rows6.filter((r) => r.status === "warn").length}`;
-    }
-    case 7: return result.value && result.value.caps ? `最终 HQLA ${Math.round(result.value.caps.after.total / 1000).toLocaleString("zh-CN")} 千元` : "—";
+    case 6: return result.value ? `LCR ${result.value.lcr == null ? "—" : result.value.lcr.toFixed(2) + "%"}` : "待执行计算";
+    case 7: return result.value ? `LCR ${result.value.lcr == null ? "—" : result.value.lcr.toFixed(2) + "%"} · ${result.value.stats.exceptions} 条异常` : "待计算";
     default: return "";
   }
 });
 
-function taskSig(t) {
-  return JSON.stringify({
-    n: (t.input && t.input.rows ? t.input.rows.length : 0),
-    l: Object.keys(t.lists || {}).filter((k) => ((t.lists[k] || {}).rows || []).length).length,
-    s: t.sample ? t.sample.size : 0,
-    v: (t.cfg && t.cfg.standardVersion) || "",
-    k: !!(t.cfg && t.cfg.locked),
-    r: ((t.cfg && t.cfg.rules) || []).length
-  });
-}
-
-const frozenStale = computed(() => {
-  const t = task.value;
-  return !!(t && t.frozenAt && t.frozenSig && t.frozenSig !== taskSig(t));
-});
-
 async function loadTask() {
   task.value = await getTask(route.params.id);
-}
-
-async function recompute() {
-  if (!task.value) return;
-  computing.value = true;
+  const c = task.value.cfg || {};
+  if (c.ruleVersion) {
+    const target = (session.versions || []).find((item) => item.version === c.ruleVersion);
+    if (target) {
+      session.jurisdiction = target.jurisdiction;
+      session.versionId = target.id;
+    }
+  }
   try {
-    result.value = await computeTask(task.value.id);
+    meta.value = await fetchLiquidityMeta(
+      c.jurisdiction || session.jurisdiction || "HK",
+      c.ruleVersion || ""
+    );
   } catch (err) {
-    error.value = err.message;
-  } finally {
-    computing.value = false;
+    meta.value = { products: [], versions: [], meta: null };
   }
 }
 
@@ -120,59 +116,40 @@ async function reload() {
   error.value = "";
   try {
     await loadTask();
-    await recompute();
   } catch (err) {
     error.value = err.message;
   }
 }
 
 async function goStep(n) {
-  if (n > step.value && n > 1 && !checks.value[n - 2]) {
-    let need = n - 1;
-    for (let i = 0; i < n - 1; i += 1) {
-      if (!checks.value[i]) { need = i + 1; break; }
+  if (!task.value) return;
+  const target = Math.min(7, Math.max(1, n));
+  if (target > step.value + 1) {
+    for (let index = step.value; index < target - 1; index += 1) {
+      if (!checks.value[index]) {
+        error.value = `请先完成第 ${index + 1} 步：${STEPS[index].title}`;
+        return;
+      }
     }
-    error.value = `请先完成第 ${need} 步：${STEPS[need - 1].title}`;
+  }
+  if (target > step.value && target > 1 && !checks.value[target - 2]) {
+    error.value = `请先完成第 ${target - 1} 步：${STEPS[target - 2].title}`;
     return;
   }
-  await updateTask(task.value.id, { step: n });
+  error.value = "";
+  await updateTask(task.value.id, { step: target, status: task.value.status === "draft" ? "doing" : task.value.status });
   await reload();
 }
 
 async function finish() {
-  if (!result.value) return;
-  const t = task.value;
-  const summary = {
-    securities: result.value.stats ? result.value.stats.securities : 0,
-    gate1Fail: result.value.stats ? result.value.stats.gate1Fail : 0,
-    fail: result.value.stats ? result.value.stats.fail : 0,
-    warn: result.value.stats ? result.value.stats.warn : 0,
-    hqla: result.value.caps ? result.value.caps.before.total : 0,
-    reported: result.value.agg ? result.value.agg.totals.weighted : null,
-    diff: result.value.recon ? result.value.recon.summary.diff : null
-  };
-  const nextSig = taskSig(t);
-  await updateTask(t.id, {
+  if (!task.value) return;
+  const now = new Date().toISOString().slice(0, 19).replace("T", " ");
+  await updateTask(task.value.id, {
     status: "done",
     step: 7,
-    summary,
-    runAt: result.value.runAt,
-    frozenAt: new Date().toISOString().replace("T", " ").slice(0, 19),
-    frozenSig: nextSig
+    config: { ...cfg.value, review: { status: "reviewed", reviewedAt: now } }
   });
   router.push("/hqla");
-}
-
-async function unfreeze() {
-  const ok = await askConfirm("将清除冻结状态并按当前数据重算，原冻结结论会被覆盖。确定继续？", { title: "重新计算" });
-  if (!ok) return;
-  await updateTask(task.value.id, { status: "doing", frozenAt: null, frozenSig: null });
-  await reload();
-}
-
-async function next() {
-  if (step.value === 7) return finish();
-  await goStep(step.value + 1);
 }
 
 watch(() => route.params.id, reload);
@@ -193,59 +170,96 @@ onMounted(async () => {
   <div v-if="loading" class="empty">正在加载任务…</div>
 
   <template v-else-if="task">
-    <div style="display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-bottom: 10px">
-      <span class="tag" :class="(STATUS[task.status] || {}).tone || 'muted'">{{ (STATUS[task.status] || {}).label || task.status }}</span>
-      <span class="dim" style="font-size: 11.5px">{{ task.id }} · {{ task.institution }} · 基准日 {{ task.baseDate }}</span>
-      <span class="dim" style="font-size: 11.5px">{{ summaryLine }}</span>
-      <span class="spacer"></span>
-      <div class="progress" style="width: 160px"><i :style="{ width: pct + '%' }"></i></div>
-      <span class="dim" style="font-size: 11px">{{ pct }}%</span>
-      <button type="button" class="btn sm" @click="router.push('/hqla')">返回任务清单</button>
-    </div>
-
-    <div v-if="frozenStale" class="notice warn" style="margin-bottom: 10px">
-      结论已冻结，但数据或判定标准已变更。冻结时间 {{ task.frozenAt }}；如需更新结论，请点击「重新计算」。
-      <button type="button" class="btn sm" style="margin-left: 8px" @click="unfreeze">重新计算</button>
-    </div>
-
-    <div class="panel">
-      <div class="panel-head">
-        <h3>{{ task.name }}</h3>
-        <span class="sub">第 {{ step }} / 7 步 · {{ STEPS[step - 1].desc }}</span>
+    <div class="lq-wizard-head">
+      <div>
+        <h2>{{ task.name }}</h2>
+        <p>
+          <span class="mono">{{ task.id }}</span> · {{ task.institution }} · 基准日 {{ task.baseDate }} ·
+          规则版本 {{ cfg.ruleVersion || "—" }}
+        </p>
       </div>
+      <div class="lq-wizard-actions">
+        <span class="tag" :class="(STATUS[task.status] || {}).tone || 'muted'">{{ (STATUS[task.status] || {}).label || task.status }}</span>
+        <div class="lq-progress" style="width: 150px">
+          <div class="lq-progress-bar"><i :style="{ width: pct + '%' }"></i></div>
+          <span :class="{ ok: pct >= 100 }">{{ pct }}%</span>
+        </div>
+        <button type="button" class="btn sm" @click="router.push('/hqla')">返回任务列表</button>
+      </div>
+    </div>
+
+    <p class="dim" style="font-size: 11.5px; margin: 0 0 8px">{{ summaryLine }}</p>
+
+    <div class="panel lq-step-panel">
       <div class="panel-body">
-        <div class="steps">
-          <div
-            v-for="item in STEPS"
-            :key="item.n"
-            class="step"
-            :class="{ active: item.n === step, done: item.n < step }"
+        <div class="lq-steps">
+          <button
+            v-for="(item, index) in STEPS"
+            :key="item.key"
+            type="button"
+            class="lq-step"
+            :class="{ on: index + 1 === step, done: index + 1 < step }"
             :title="item.desc"
-            @click="goStep(item.n)"
+            @click="goStep(index + 1)"
           >
-            <span class="sn">{{ item.n < step ? "✓" : item.n }}</span>
+            <span class="n">{{ index + 1 < step ? "✓" : index + 1 }}</span>
             <span>{{ item.title }}</span>
-          </div>
+          </button>
         </div>
 
-        <p v-if="computing" class="dim" style="font-size: 11.5px">正在计算…</p>
+        <div class="panel-head" style="margin-bottom: 10px">
+          <h3>第 {{ step }} 步 · {{ STEPS[step - 1].title }}</h3>
+          <span class="sub">{{ STEPS[step - 1].desc }}</span>
+        </div>
 
         <component
           :is="stepComponent"
           :task="task"
+          :meta="meta"
           :result="result"
           :reload="reload"
+          :finish="finish"
         />
       </div>
     </div>
 
-    <div style="display: flex; gap: 8px; align-items: center; margin-top: 14px">
-      <button type="button" class="btn" :disabled="step <= 1" @click="goStep(step - 1)">上一步</button>
-      <button type="button" class="btn-primary" @click="next">
-        {{ step === 7 ? "完成任务" : `下一步：${STEPS[step].title}` }}
+    <div class="lq-step-nav">
+      <button type="button" class="btn" @click="step <= 1 ? router.push('/hqla') : goStep(step - 1)">
+        {{ step <= 1 ? "← 返回任务列表" : "← 上一步：" + STEPS[step - 2].title }}
       </button>
       <span class="spacer"></span>
-      <span v-if="step === 1" class="dim" style="font-size: 11px">导入后点击「下一步」继续</span>
+      <button v-if="step < 7" type="button" class="btn primary" @click="goStep(step + 1)">下一步：{{ STEPS[step].title }} →</button>
+      <button v-else type="button" class="btn primary" :disabled="(task.cfg && task.cfg.review && task.cfg.review.status === 'reviewed')" @click="finish">
+        {{ task.cfg && task.cfg.review && task.cfg.review.status === "reviewed" ? "已复核并归档" : "完成复核并归档" }}
+      </button>
     </div>
   </template>
 </template>
+
+<style scoped>
+.lq-wizard-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 8px; }
+.lq-wizard-head h2 { margin: 0 0 4px; font-size: 18px; }
+.lq-wizard-head p { margin: 0; color: var(--muted); font-size: 12.5px; }
+.lq-wizard-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.lq-steps { display: flex; gap: 4px; flex-wrap: wrap; padding: 4px 0 12px; }
+.lq-step {
+  display: flex; align-items: center; gap: 6px;
+  border: 1px solid transparent; background: none; border-radius: 8px;
+  padding: 5px 8px; font-size: 12px; color: #64748b;
+}
+.lq-step:hover { background: #f8fafc; color: #334155; }
+.lq-step .n {
+  width: 21px; height: 21px; border-radius: 50%; background: #f1f5f9; color: #475569;
+  display: inline-flex; align-items: center; justify-content: center; font-size: 10.5px; font-weight: 600;
+}
+.lq-step.on { background: #eef2ff; color: #3730a3; font-weight: 600; }
+.lq-step.on .n { background: #4f46e5; color: #fff; }
+.lq-step.done .n { background: #059669; color: #fff; }
+.lq-step-panel { padding: 12px 16px; }
+.lq-step-nav { display: flex; align-items: center; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.lq-progress { display: flex; align-items: center; gap: 6px; }
+.lq-progress-bar { flex: 1; height: 7px; background: #eef2ff; border-radius: 6px; overflow: hidden; }
+.lq-progress-bar i { display: block; height: 100%; background: #f59e0b; }
+.lq-progress span { font-size: 10.5px; color: #b45309; }
+.lq-progress span.ok { color: #047857; }
+</style>

@@ -28,6 +28,9 @@ DROP TABLE IF EXISTS ead_rule;
 DROP TABLE IF EXISTS mo_weight_row;
 DROP TABLE IF EXISTS bank_grade_row;
 DROP TABLE IF EXISTS weight_rule;
+DROP TABLE IF EXISTS rule_list;
+DROP TABLE IF EXISTS rule_parameter_table;
+DROP TABLE IF EXISTS rule_document;
 DROP TABLE IF EXISTS exposure_document;
 DROP TABLE IF EXISTS field_mapping;
 DROP TABLE IF EXISTS product_field;
@@ -41,8 +44,16 @@ DROP TABLE IF EXISTS jurisdiction;
 DROP TABLE IF EXISTS hqla_task_input;
 DROP TABLE IF EXISTS hqla_task_list;
 DROP TABLE IF EXISTS hqla_task_reported;
+DROP TABLE IF EXISTS hqla_task_dataset;
 DROP TABLE IF EXISTS hqla_task;
 DROP TABLE IF EXISTS hqla_reference;
+DROP TABLE IF EXISTS liquidity_product_field;
+DROP TABLE IF EXISTS liquidity_product;
+DROP TABLE IF EXISTS liquidity_rule;
+DROP TABLE IF EXISTS liquidity_param_table;
+DROP TABLE IF EXISTS liquidity_param;
+DROP TABLE IF EXISTS liquidity_list;
+DROP TABLE IF EXISTS liquidity_config_meta;
 DROP TABLE IF EXISTS token_log;
 DROP TABLE IF EXISTS llm_config;
 DROP TABLE IF EXISTS operation_log;
@@ -168,6 +179,56 @@ CREATE TABLE exposure_document (
   body JSON NOT NULL,
   UNIQUE KEY uq_exposure_document_name (name),
   KEY idx_exposure_document_version (rule_version)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- V3.4 规则配置文件：一份文档一行，按监管版本区分。
+-- kind 取值 exposure_classification / risk_weight / product_registry / data_mapping，
+-- 与文档自身的 rule_type 对应；product_registry 和 data_mapping 见配套规范 02。
+CREATE TABLE rule_document (
+  id VARCHAR(120) NOT NULL PRIMARY KEY,
+  jurisdiction CHAR(2) NOT NULL,
+  rule_version VARCHAR(40) NOT NULL,
+  kind VARCHAR(32) NOT NULL,
+  name VARCHAR(64) NOT NULL,
+  doc_version VARCHAR(32) NOT NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'DRAFT',
+  title VARCHAR(255) NOT NULL,
+  body JSON NOT NULL,
+  updated_at VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uk_rule_document (jurisdiction, rule_version, kind, name),
+  KEY idx_rule_document_version (jurisdiction, rule_version, kind)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 监管参数表：规则集通过 table_id 引用，正文按 columns_json 的顺序存 rows_json。
+CREATE TABLE rule_parameter_table (
+  id VARCHAR(120) NOT NULL PRIMARY KEY,
+  jurisdiction CHAR(2) NOT NULL,
+  table_id VARCHAR(64) NOT NULL,
+  table_version VARCHAR(32) NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  purpose VARCHAR(32) NOT NULL DEFAULT 'regulatory_parameter',
+  columns_json JSON NOT NULL,
+  rows_json JSON NOT NULL,
+  note TEXT NOT NULL,
+  updated_at VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uk_rule_parameter (jurisdiction, table_id, table_version),
+  KEY idx_rule_parameter_jur (jurisdiction)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 监管名单：规则集通过 list_id 引用，名单条目按 columns_json 的顺序存 rows_json。
+CREATE TABLE rule_list (
+  id VARCHAR(120) NOT NULL PRIMARY KEY,
+  jurisdiction CHAR(2) NOT NULL,
+  list_id VARCHAR(64) NOT NULL,
+  list_version VARCHAR(32) NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  list_type VARCHAR(16) NOT NULL DEFAULT 'positive',
+  columns_json JSON NOT NULL,
+  rows_json JSON NOT NULL,
+  note TEXT NOT NULL,
+  updated_at VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uk_rule_list (jurisdiction, list_id, list_version),
+  KEY idx_rule_list_jur (jurisdiction)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE weight_rule (
@@ -451,6 +512,145 @@ CREATE TABLE hqla_reference (
   sub VARCHAR(8) NOT NULL DEFAULT '',
   region VARCHAR(16) NOT NULL DEFAULT '',
   KEY idx_hqla_ref_isin (isin)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 流动性产品配置：按监管规则版本维护 LCR 产品、标准字段、规则和参数。
+CREATE TABLE liquidity_config_meta (
+  id VARCHAR(180) NOT NULL PRIMARY KEY,
+  jurisdiction CHAR(2) NOT NULL,
+  rule_version VARCHAR(40) NOT NULL,
+  lcr_version VARCHAR(40) NOT NULL DEFAULT '',
+  lcr_version_name VARCHAR(200) NOT NULL DEFAULT '',
+  snapshot_json JSON NULL,
+  source VARCHAR(255) NOT NULL DEFAULT '',
+  updated_at VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uk_liquidity_meta (jurisdiction, rule_version)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE liquidity_product (
+  id VARCHAR(180) NOT NULL PRIMARY KEY,
+  jurisdiction CHAR(2) NOT NULL,
+  rule_version VARCHAR(40) NOT NULL,
+  code VARCHAR(64) NOT NULL,
+  name VARCHAR(128) NOT NULL,
+  category VARCHAR(64) NOT NULL DEFAULT '',
+  product_group VARCHAR(64) NOT NULL DEFAULT '',
+  side VARCHAR(16) NOT NULL DEFAULT '',
+  source_system VARCHAR(64) NOT NULL DEFAULT '',
+  status VARCHAR(16) NOT NULL DEFAULT 'LIVE',
+  description VARCHAR(500) NOT NULL DEFAULT '',
+  domains_json JSON NULL,
+  param_key VARCHAR(64) NOT NULL DEFAULT '',
+  rule_count INT NOT NULL DEFAULT 0,
+  updated_at VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uk_liquidity_product (jurisdiction, rule_version, code),
+  KEY idx_liquidity_product_side (jurisdiction, rule_version, side)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE liquidity_product_field (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  jurisdiction CHAR(2) NOT NULL,
+  rule_version VARCHAR(40) NOT NULL,
+  product_code VARCHAR(64) NOT NULL,
+  field_code VARCHAR(64) NOT NULL,
+  field_name VARCHAR(128) NOT NULL DEFAULT '',
+  category VARCHAR(64) NOT NULL DEFAULT '',
+  field_group VARCHAR(64) NOT NULL DEFAULT '',
+  group_order INT NOT NULL DEFAULT 0,
+  data_type VARCHAR(24) NOT NULL DEFAULT 'STRING',
+  role VARCHAR(24) NOT NULL DEFAULT 'NONE',
+  required TINYINT NOT NULL DEFAULT 0,
+  value_type VARCHAR(24) NOT NULL DEFAULT 'FREE_TEXT',
+  dictionary VARCHAR(64) NOT NULL DEFAULT '',
+  source_column VARCHAR(128) NOT NULL DEFAULT '',
+  aliases_json JSON NULL,
+  description VARCHAR(500) NOT NULL DEFAULT '',
+  status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE',
+  sort_order INT NOT NULL DEFAULT 0,
+  UNIQUE KEY uk_liquidity_field (jurisdiction, rule_version, product_code, field_code),
+  KEY idx_liquidity_field_product (jurisdiction, rule_version, product_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE liquidity_rule (
+  id VARCHAR(180) NOT NULL PRIMARY KEY,
+  jurisdiction CHAR(2) NOT NULL,
+  rule_version VARCHAR(40) NOT NULL,
+  rule_id VARCHAR(64) NOT NULL,
+  name VARCHAR(200) NOT NULL DEFAULT '',
+  package_id VARCHAR(64) NOT NULL DEFAULT '',
+  package_name VARCHAR(128) NOT NULL DEFAULT '',
+  side VARCHAR(16) NOT NULL DEFAULT '',
+  sequence_no INT NOT NULL DEFAULT 0,
+  priority INT NOT NULL DEFAULT 0,
+  rule_type VARCHAR(24) NOT NULL DEFAULT '',
+  rule_type_name VARCHAR(64) NOT NULL DEFAULT '',
+  condition_text TEXT NULL,
+  result_text TEXT NULL,
+  basis VARCHAR(128) NOT NULL DEFAULT '',
+  description TEXT NULL,
+  products_json JSON NULL,
+  UNIQUE KEY uk_liquidity_rule (jurisdiction, rule_version, rule_id),
+  KEY idx_liquidity_rule_side (jurisdiction, rule_version, side)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE liquidity_param_table (
+  id VARCHAR(180) NOT NULL PRIMARY KEY,
+  jurisdiction CHAR(2) NOT NULL,
+  rule_version VARCHAR(40) NOT NULL,
+  table_id VARCHAR(64) NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  kind VARCHAR(32) NOT NULL DEFAULT '',
+  rows_json JSON NOT NULL,
+  note TEXT NOT NULL,
+  updated_at VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uk_liquidity_table (jurisdiction, rule_version, table_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE liquidity_param (
+  id VARCHAR(180) NOT NULL PRIMARY KEY,
+  jurisdiction CHAR(2) NOT NULL,
+  rule_version VARCHAR(40) NOT NULL,
+  param_id VARCHAR(64) NOT NULL,
+  name VARCHAR(128) NOT NULL,
+  value DECIMAL(18, 6) NOT NULL DEFAULT 0,
+  unit VARCHAR(24) NOT NULL DEFAULT '',
+  basis VARCHAR(128) NOT NULL DEFAULT '',
+  UNIQUE KEY uk_liquidity_param (jurisdiction, rule_version, param_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE liquidity_list (
+  id VARCHAR(180) NOT NULL PRIMARY KEY,
+  jurisdiction CHAR(2) NOT NULL,
+  rule_version VARCHAR(40) NOT NULL,
+  list_id VARCHAR(64) NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  list_type VARCHAR(32) NOT NULL DEFAULT '',
+  list_version VARCHAR(32) NOT NULL DEFAULT '',
+  items_json JSON NOT NULL,
+  note TEXT NOT NULL,
+  updated_at VARCHAR(32) NOT NULL DEFAULT '',
+  UNIQUE KEY uk_liquidity_list (jurisdiction, rule_version, list_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- LCR 计量任务的数据集：一张 Sheet 一条，rows_json 保存标准化后的行对象。
+CREATE TABLE hqla_task_dataset (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  task_id VARCHAR(32) NOT NULL,
+  dataset_id VARCHAR(64) NOT NULL,
+  sheet_name VARCHAR(128) NOT NULL DEFAULT '',
+  product_code VARCHAR(64) NOT NULL DEFAULT '',
+  product_name VARCHAR(128) NOT NULL DEFAULT '',
+  confidence DECIMAL(5, 2) NULL,
+  confirm_level VARCHAR(16) NOT NULL DEFAULT '',
+  confirmed_at VARCHAR(32) NOT NULL DEFAULT '',
+  headers_json JSON NULL,
+  rows_json LONGTEXT NULL,
+  mapping_json JSON NULL,
+  mapping_meta_json JSON NULL,
+  quality_json JSON NULL,
+  sort_order INT NOT NULL DEFAULT 0,
+  UNIQUE KEY uk_hqla_dataset (task_id, dataset_id),
+  KEY idx_hqla_dataset_task (task_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 平台账号与系统管理。登录只认启用中的账号和角色；密码存 SHA-256，不存明文。

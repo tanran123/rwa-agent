@@ -192,7 +192,7 @@ function shapeOf(rule, kids) {
   return "weight";
 }
 
-function mermaidText(text) {
+export function mermaidText(text) {
   return String(text == null ? "" : text)
     .replace(/&/g, " ")
     .replace(/[<>]/g, " ")
@@ -202,7 +202,7 @@ function mermaidText(text) {
     .trim();
 }
 
-function wrapMermaid(text, size) {
+export function wrapMermaid(text, size) {
   const clean = mermaidText(text);
   if (clean.length <= size) return clean;
   const lines = [];

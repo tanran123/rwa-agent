@@ -8,6 +8,8 @@ import { activeLlm } from "./admin.js";
 import { requestContext } from "./requestContext.js";
 import { eadConfigMap } from "./eadConfig.js";
 import { cellText, productGroups } from "./measureSampling.js";
+import { configProducts, versionRuleDocuments } from "./productStandard.js";
+import { buildV35Pack, classifyV35Pack, weightV35Pack, finalizeV35Pack, suggestionsFor } from "./measureV35.js";
 
 const require = createRequire(import.meta.url);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -860,14 +862,25 @@ async function detectWithModel(groups, products) {
 
 export async function detectMeasureProducts(body) {
   const version = body && body.version ? String(body.version) : "";
-  let products = await query("SELECT code, label, description, rule_version FROM product_type ORDER BY code");
-  if (version && products.some((item) => item.rule_version === version)) {
-    products = products.filter((item) => item.rule_version === version);
+  const standard = version ? await configProducts(version) : [];
+  let catalog;
+  if (standard.length) {
+    catalog = standard.map((item) => ({
+      code: item.code,
+      label: item.label,
+      description: "产品族 " + item.code + "，适用产品代码 " + (item.productCodes || []).join("、")
+        + "；候选暴露类型 " + (item.candidateExposureClasses || []).join("、")
+    }));
+  } else {
+    let products = await query("SELECT code, label, description, rule_version FROM product_type ORDER BY code");
+    if (version && products.some((item) => item.rule_version === version)) {
+      products = products.filter((item) => item.rule_version === version);
+    }
+    catalog = products.map((item) => ({ code: item.code, label: item.label, description: item.description }));
   }
   const groups = productGroups(rowsForSampling(body), {
     seed: String((body && body.uploadId) || (body && body.version) || "")
   });
-  const catalog = products.map((item) => ({ code: item.code, label: item.label, description: item.description }));
   if (!groups.length || !catalog.length) return { groups: [], modelError: catalog.length ? "" : "没有已配置的产品" };
   try {
     const mapped = await detectWithModel(groups, catalog);
@@ -926,6 +939,53 @@ export async function mapMeasureFields(body) {
   const samples = drawn.samples;
   const columnValues = drawn.columnValues;
   if (!codes.length) return { mappings: {}, modelError: "" };
+  const version = body && body.version ? String(body.version) : "";
+  const standard = version ? await configProducts(version) : [];
+  if (standard.length) {
+    const productByCode = new Map(standard.map((item) => [item.code, item]));
+    const docs = await versionRuleDocuments(version);
+    const mappingByName = new Map((docs.mappings || []).map((item) => [item.name, item.doc]));
+    const mappings = {};
+    const pending = [];
+    codes.forEach((code) => {
+      const product = productByCode.get(code);
+      if (!product) {
+        mappings[code] = [];
+        return;
+      }
+      const mappingDoc = mappingByName.get(product.dataMappingRef) || {};
+      const suggestions = suggestionsFor(product, mappingDoc, headers);
+      suggestions.forEach((item) => {
+        if (!item.column && !item.constant) pending.push({ code, item, field: product.fields.find((row) => row.code === item.stdCode) || {} });
+      });
+      mappings[code] = suggestions;
+    });
+    let modelError = "";
+    if (pending.length && headers.length) {
+      try {
+        const mapped = await mapWithModel(headers, pending.map((row) => ({
+          id: row.code + "." + row.item.stdCode,
+          name: row.item.stdField,
+          meaning: row.field.name || "",
+          source: row.item.stdCode,
+          options: []
+        })), samples, columnValues);
+        pending.forEach((row) => {
+          const slot = mapped[row.code + "." + row.item.stdCode];
+          if (!slot || !slot.column) return;
+          row.item.column = slot.column;
+          row.item.reason = "模型对应：" + (slot.reason || row.item.stdField);
+          row.item.source = "model";
+          row.item.confidence = 0.7;
+          row.item.needsReview = true;
+          row.item.transform = "模型对应";
+        });
+      } catch (err) {
+        modelError = err.message || "模型没有对上";
+      }
+    }
+    return { mappings, modelError, standard: true };
+  }
   const marks = codes.map(() => "?").join(", ");
   const rows = await query(
     `SELECT product_code, code, name, meaning, std_field, source_field, required, options_json
@@ -1325,12 +1385,28 @@ export async function readUploadedWorkbook(body) {
   const mock = require(path.join(root, "server/data/mock_loans.cjs"));
   const pipeline = require(path.join(root, "server/lib/pipeline.cjs"));
   const loans = loansFromRows(parsed.headers, parsed.rows, master, pipeline, mock.PRODUCT_DETECT_RULES);
-  const pack = await measureLoans(loans, {
-    sheets: parsed.sheets,
-    headerRow: parsed.headerRow,
-    headers: parsed.headers,
-    sourceFile: filename
-  }, choicesOf(body));
+  const version = String((body && body.version) || "");
+  const docs = version ? await versionRuleDocuments(version) : null;
+  let pack;
+  if (docs && docs.registry && docs.classification) {
+    pack = await buildV35Pack({
+      loans,
+      headers: parsed.headers,
+      sheets: parsed.sheets,
+      headerRow: parsed.headerRow,
+      sourceFile: filename,
+      version,
+      jurisdiction: String((body && body.jurisdiction) || ""),
+      choices: choicesOf(body)
+    });
+  } else {
+    pack = await measureLoans(loans, {
+      sheets: parsed.sheets,
+      headerRow: parsed.headerRow,
+      headers: parsed.headers,
+      sourceFile: filename
+    }, choicesOf(body));
+  }
   let annotated = null;
   let workbookError = "";
   try {
@@ -1745,6 +1821,32 @@ export async function classifyUpload(uploadId, version = "") {
     error.status = 400;
     throw error;
   }
+  const versionDocs = version ? await versionRuleDocuments(version) : null;
+  if (versionDocs && versionDocs.registry && versionDocs.classification) {
+    const pack = await classifyV35Pack(stored.pack, version, stored.pack.jurisdiction || "");
+    stored.pack = pack;
+    try {
+      stored.annotated = await annotateWorkbook(stored.buffer, stored.pack);
+      stored.workbookError = "";
+    } catch (err) {
+      stored.workbookError = err.message || "结果没有写进工作簿";
+      stored.annotated = null;
+    }
+    return {
+      ...stored.pack,
+      uploadId,
+      workbookReady: !!stored.annotated,
+      workbookError: stored.workbookError || "",
+      classificationRows: stored.pack.results.map((row) => ({
+        loanId: row.loanId,
+        exposureClass: row.exposureClass,
+        exposureSubClass: row.exposureSubClass,
+        ruleId: row.matchedRuleId,
+        path: row.matchedRule,
+        status: row.status
+      }))
+    };
+  }
   const catalog = await loadCatalog(version);
   const resultById = new Map(
     ((stored.pack.results || [])).map((row) => [String(row.loanId), row])
@@ -1853,6 +1955,37 @@ export async function classifyUpload(uploadId, version = "") {
   };
 }
 
+export async function weightUpload(uploadId, version = "") {
+  const stored = uploads.get(String(uploadId || ""));
+  if (!stored || !stored.pack) {
+    const error = new Error("上传的工作簿已经不在，请重新导入后再计算风险权重");
+    error.status = 400;
+    throw error;
+  }
+  const ruleVersion = version || stored.pack.version || "";
+  const docs = ruleVersion ? await versionRuleDocuments(ruleVersion) : null;
+  if (!docs || !docs.registry || !docs.weight) {
+    const error = new Error("当前监管版本没有 V3.5 风险权重规则文档");
+    error.status = 400;
+    throw error;
+  }
+  stored.pack = await weightV35Pack(stored.pack, ruleVersion, stored.pack.jurisdiction || "");
+  stored.pack = await finalizeV35Pack(stored.pack, ruleVersion);
+  try {
+    stored.annotated = await annotateWorkbook(stored.buffer, stored.pack);
+    stored.workbookError = "";
+  } catch (err) {
+    stored.workbookError = err.message || "结果没有写进工作簿";
+    stored.annotated = null;
+  }
+  return {
+    ...stored.pack,
+    uploadId,
+    workbookReady: !!stored.annotated,
+    workbookError: stored.workbookError || ""
+  };
+}
+
 function weightText(value) {
   if (value == null || Number.isNaN(Number(value))) return "";
   const pct = Math.round(Number(value) * 1000) / 10;
@@ -1876,7 +2009,10 @@ function lineDetail(row) {
     eadFormula: row.eadFormula || "",
     eadSteps: row.eadSteps || [],
     rwaSteps: row.rwaSteps || [],
-    crm: row.crm || null
+    crm: row.crm || null,
+    classification: row.classification || null,
+    weight: row.weight || null,
+    facts: row.facts || null
   };
 }
 

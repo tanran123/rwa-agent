@@ -91,7 +91,7 @@ function statusOf(item) {
 async function runCheck(item, rule) {
   rule._checking = true;
   try {
-    const result = await checkEadFormula({ productCode: item.code, side: item.side, formula: rule.formula });
+    const result = await checkEadFormula({ productCode: item.code, side: item.side, formula: rule.formula, version: item.ruleVersion || "" });
     rule._check = result;
     if (result.ok) rule.structured = result.structured;
   } catch (err) {
@@ -286,6 +286,7 @@ function payload() {
     version: data.value.version,
     products: data.value.products.map((item) => ({
       code: item.code,
+      ruleVersion: item.ruleVersion,
       needed: item.needed,
       reason: item.reason || "",
       side: item.side,
@@ -375,7 +376,7 @@ async function rerun() {
           <div class="ead-left-head">
             <b>产品清单</b>
             <div class="dim" style="font-size: 11px; margin-top: 2px">
-              来自 product_type · 共 {{ scopedProducts(data).length }} 个产品
+              来自产品标准字段配置 · 共 {{ scopedProducts(data).length }} 个产品
             </div>
           </div>
           <div class="ead-list">
@@ -632,7 +633,7 @@ async function rerun() {
                             </div>
                             <div class="fx-pk-list">
                               <div v-if="!product.fields.length" class="empty">
-                                该产品在 product_field 里还没有标准字段，无法编写公式。
+                                该产品在产品标准字段配置里还没有标准字段，无法编写公式。
                               </div>
                               <button
                                 v-for="field in product.fields"

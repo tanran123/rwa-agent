@@ -22,6 +22,8 @@ export const detectMeasureProducts = (body) => request.post('/measure/products',
 
 export const classifyMeasure = (uploadId, version = '') => request.post('/measure/classify', { uploadId, version }, { timeout: 300000 })
 
+export const weightMeasure = (uploadId, version = '') => request.post('/measure/weight', { uploadId, version }, { timeout: 300000 })
+
 export const fetchPaper = (offset = 0) => request.get('/working-paper', { params: { offset, limit: 80 }, timeout: 60000 })
 
 export const fetchUploadSamples = () => request.get('/upload-samples')

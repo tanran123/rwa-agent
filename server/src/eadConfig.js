@@ -2,6 +2,7 @@ import { createRequire } from "module";
 import path from "path";
 import { fileURLToPath } from "url";
 import { pool, query } from "./db.js";
+import { configProducts } from "./productStandard.js";
 
 const require = createRequire(import.meta.url);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -21,29 +22,8 @@ function json(value) {
   return value;
 }
 
-/** 产品清单和标准字段都从库里读，配置只写产品 code 和标准字段。 */
-async function productsWithFields() {
-  const products = await query("SELECT code, label, icon, color, rule_version FROM product_type ORDER BY code");
-  const fields = await query(
-    "SELECT product_code, code, name, meaning, std_field, required FROM product_field ORDER BY id"
-  );
-  return products.map((row) => ({
-    code: row.code,
-    label: row.label,
-    icon: row.icon,
-    color: row.color,
-    ruleVersion: row.rule_version,
-    fields: fields
-      .filter((field) => field.product_code === row.code)
-      .map((field) => ({
-        name: field.name,
-        code: field.code,
-        stdField: field.std_field,
-        meaning: field.meaning,
-        required: !!field.required
-      }))
-  }));
-}
+/** 产品清单和标准字段来自产品标准字段配置写入的产品注册。 */
+const productsWithFields = configProducts;
 
 /** 公式里能用哪些名字：标准字段的中文名、编码、std_field，表外再加 CCF。 */
 function allowListOf(fields, side) {
@@ -207,9 +187,10 @@ export async function readEadConfig() {
   return { version: configs[0] ? configs[0].version : "", products: list, issues };
 }
 
-export async function checkEadFormula(productCode, side, formula) {
+export async function checkEadFormula(productCode, side, formula, version = "") {
   const products = await productsWithFields();
-  const product = products.find((item) => item.code === productCode);
+  const product = products.find((item) => item.code === productCode && (!version || item.ruleVersion === version))
+    || products.find((item) => item.code === productCode);
   if (!product) throw fail("产品不存在：" + productCode);
   const which = side === "off" ? "off" : "on";
   const result = check(product, which, formula);
@@ -230,7 +211,7 @@ export async function saveEadConfig(config) {
   if (!Array.isArray(config.products)) throw fail("config 缺少 products 数组");
 
   const products = await productsWithFields();
-  const known = new Map(products.map((item) => [item.code, item]));
+  const known = new Map(products.map((item) => [item.code + "|" + (item.ruleVersion || ""), item]));
 
   const configRows = [];
   const ruleRows = [];
@@ -240,8 +221,11 @@ export async function saveEadConfig(config) {
     const at = "第 " + (index + 1) + " 个产品";
     if (!item || typeof item !== "object") throw fail(at + "不是对象");
     const code = String(item.code || "");
-    const product = known.get(code);
-    if (!product) throw fail(at + "：产品 " + code + " 不在 product_type 里");
+    const itemVersion = String(item.ruleVersion || config.version || "");
+    const product = known.get(code + "|" + itemVersion)
+      || products.find((entry) => entry.code === code && (!itemVersion || entry.ruleVersion === itemVersion))
+      || products.find((entry) => entry.code === code);
+    if (!product) throw fail(at + "：产品 " + code + " 不在产品标准字段配置里");
 
     const needed = item.needed !== false;
     const side = item.side === "on" || item.side === "off" ? item.side : null;

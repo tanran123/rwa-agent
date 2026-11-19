@@ -4,7 +4,11 @@ Flask 的 /api/hqla/* 接口调用 service.py；Koa 负责把任务数据存进 
 """
 
 from .engine import cfg_default, level_def, sec_key
-from .service import compute, export, inspect, list_hits, list_meta, parse, sample_plan
+from .lcr import compute as lcr_compute
+from .service import (
+    compute, export, inspect, inspect_workbook, list_hits, list_meta, parse,
+    parse_workbook, sample_plan,
+)
 
 __all__ = [
     "cfg_default",
@@ -13,8 +17,11 @@ __all__ = [
     "compute",
     "export",
     "inspect",
+    "inspect_workbook",
     "list_hits",
     "list_meta",
+    "lcr_compute",
     "parse",
+    "parse_workbook",
     "sample_plan",
 ]

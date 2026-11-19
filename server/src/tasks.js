@@ -7,6 +7,7 @@
  */
 
 import { query } from "./db.js";
+import { configProducts, versionRuleDocuments } from "./productStandard.js";
 
 function pad(value) {
   return String(value).padStart(2, "0");
@@ -67,7 +68,9 @@ function subOut(row) {
 
 function decorate(task, subs) {
   const capital = subs.filter((item) => item.module !== "liquidity");
+  const liquidity = subs.filter((item) => item.module === "liquidity");
   const archived = capital.filter((item) => item.status === "archived").length;
+  const liquidityArchived = liquidity.filter((item) => item.status === "archived").length;
   const status = !subs.length ? "draft" : capital.length && archived === capital.length ? "done" : "doing";
   const ead = capital.reduce((sum, item) => sum + (Number(item.ead) || 0), 0);
   const rwa = capital.reduce((sum, item) => sum + (Number(item.rwa) || 0), 0);
@@ -76,7 +79,8 @@ function decorate(task, subs) {
     subs,
     subCount: subs.length,
     capitalCount: capital.length,
-    liquidityCount: subs.length - capital.length,
+    liquidityCount: liquidity.length,
+    liquidityArchived: liquidityArchived,
     archivedCount: archived,
     status,
     ead,
@@ -114,6 +118,37 @@ export async function getRwaTask(id) {
   return decorate(taskOut(row), await subRows(id));
 }
 
+
+export async function readRwaTaskReadiness(version, jurisdiction = "") {
+  const ruleVersion = String(version || "").trim();
+  if (!ruleVersion) {
+    return { ok: false, version: ruleVersion, jurisdiction, issues: ["缺少监管规则版本"] };
+  }
+  const [products, docs] = await Promise.all([
+    configProducts(ruleVersion),
+    versionRuleDocuments(ruleVersion)
+  ]);
+  const fieldCount = products.reduce((sum, item) => sum + ((item.fields || []).length), 0);
+  const issues = [];
+  if (!docs.registry) issues.push("该版本还没有产品注册");
+  if (!products.length) issues.push("产品清单为空");
+  if (!docs.classification) issues.push("缺少 V3.5 暴露分类规则集");
+  if (!docs.weight) issues.push("缺少 V3.5 风险权重规则集");
+  if (!docs.mappings.length) issues.push("缺少字段映射文档");
+  return {
+    ok: issues.length === 0,
+    version: ruleVersion,
+    jurisdiction,
+    productCount: products.length,
+    fieldCount,
+    registry: docs.registry ? { name: docs.registry.name, version: docs.registry.docVersion } : null,
+    classification: docs.classification ? { name: docs.classification.name, version: docs.classification.docVersion } : null,
+    weight: docs.weight ? { name: docs.weight.name, version: docs.weight.docVersion } : null,
+    mappingCount: docs.mappings.length,
+    issues
+  };
+}
+
 export async function createRwaTask(body) {
   const name = String(body.name || "").trim();
   const jurisdiction = String(body.jurisdiction || "").trim().slice(0, 2);
@@ -124,6 +159,8 @@ export async function createRwaTask(body) {
   if (!jurisdiction) throw fail(400, "请选择司法管辖区");
   if (!version) throw fail(400, "请选择监管规则版本");
   if (!institution) throw fail(400, "请选择机构");
+  const readiness = await readRwaTaskReadiness(version, jurisdiction);
+  if (!readiness.ok) throw fail(400, "当前监管版本的规则配置不完整：" + readiness.issues.join("；"));
   const id = uid("RT");
   const now = nowText();
   await query(
@@ -131,6 +168,18 @@ export async function createRwaTask(body) {
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [id, name.slice(0, 200), institution, jurisdiction, version, baseDate, now, now]
   );
+  const subtasks = Array.isArray(body.subtasks) ? body.subtasks : [];
+  for (const item of subtasks) {
+    if (!item || typeof item !== "object") continue;
+    const module = item.module === "liquidity" ? "liquidity" : "capital";
+    const subName = String(item.name || (module === "liquidity" ? "流动性计量" : "资本充足率计量")).trim();
+    if (!subName) continue;
+    await query(
+      `INSERT INTO rwa_task_sub (id, task_id, module, name, exposure_type, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 'draft', ?, ?)`,
+      [uid("RS"), id, module, subName.slice(0, 200), String(item.exposureType || "").trim().slice(0, 64), now, now]
+    );
+  }
   return getRwaTask(id);
 }
 

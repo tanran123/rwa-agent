@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
 import { createTask, deleteTask, fetchTasks, updateTask } from "@/api/tasks";
 import { useContext } from "@/composables/useContext";
@@ -13,6 +13,8 @@ const error = ref("");
 const busy = ref(false);
 const form = ref(null);
 const editingId = ref("");
+const tasks = ref([]);
+const filters = ref({ q: "", jurisdiction: "", version: "", institution: "", status: "", from: "", to: "" });
 
 const TASK_STATUS = {
   draft: { label: "待开始", tone: "muted" },
@@ -62,8 +64,47 @@ function onFormJurisdiction() {
 function openCreate() {
   error.value = "";
   editingId.value = "";
-  form.value = blankForm();
+  form.value = null;
+  router.push({ name: "task-create" });
 }
+
+function clearFilters() {
+  filters.value = { q: "", jurisdiction: "", version: "", institution: "", status: "", from: "", to: "" };
+}
+
+const filterOptions = computed(() => ({
+  jurisdictions: [...new Set(tasks.value.map((item) => item.jurisdiction).filter(Boolean))],
+  versions: [...new Set(tasks.value.map((item) => item.version).filter(Boolean))],
+  institutions: [...new Set(tasks.value.map((item) => item.institution).filter(Boolean))]
+}));
+
+const filteredTasks = computed(() => {
+  const f = filters.value;
+  const text = f.q.trim().toLowerCase();
+  return tasks.value.filter((task) => {
+    if (f.jurisdiction && task.jurisdiction !== f.jurisdiction) return false;
+    if (f.version && task.version !== f.version) return false;
+    if (f.institution && task.institution !== f.institution) return false;
+    if (f.status && task.status !== f.status) return false;
+    if (f.from && String(task.baseDate || "") < f.from) return false;
+    if (f.to && String(task.baseDate || "") > f.to) return false;
+    if (!text) return true;
+    return [task.name, task.id, task.version, task.institution, task.jurisdiction, task.baseDate]
+      .join(" ").toLowerCase().includes(text);
+  });
+});
+
+const summary = computed(() => {
+  const rows = filteredTasks.value;
+  return {
+    total: rows.length,
+    doing: rows.filter((item) => item.status === "doing").length,
+    done: rows.filter((item) => item.status === "done").length,
+    draft: rows.filter((item) => item.status === "draft").length,
+    ead: rows.reduce((sum, item) => sum + (Number(item.ead) || 0), 0),
+    rwa: rows.reduce((sum, item) => sum + (Number(item.rwa) || 0), 0)
+  };
+});
 
 function openEdit(task) {
   error.value = "";
@@ -79,7 +120,9 @@ function openEdit(task) {
 }
 
 async function load() {
-  return fetchTasks();
+  const rows = await fetchTasks();
+  tasks.value = rows;
+  return rows;
 }
 
 async function refresh() {
@@ -154,9 +197,49 @@ function openTask(task) {
   <p v-if="error" class="notice danger">{{ error }}</p>
 
   <p class="notice info">
-    每个季度是一个主任务。主任务创建时固定监管规则版本和机构；任务清单只统计两个工作模块的子任务数量和进度，
+    每个季度是一个主任务。主任务创建时固定监管规则版本和机构；任务清单统计两个工作模块的子任务数量和进度，
     点任务进入详情工作台，再在资本充足率或流动性模块下新增子任务。
   </p>
+
+  <div class="task-summary">
+    <div class="task-summary-item"><span>主任务</span><b>{{ summary.total }}</b><em>当前筛选</em></div>
+    <div class="task-summary-item"><span>进行中</span><b>{{ summary.doing }}</b><em>有待办子任务</em></div>
+    <div class="task-summary-item"><span>已完成</span><b>{{ summary.done }}</b><em>资本充足率全部归档</em></div>
+    <div class="task-summary-item"><span>待开始</span><b>{{ summary.draft }}</b><em>还没有子任务</em></div>
+    <div class="task-summary-item wide"><span>EAD / RWA</span><b>{{ shortMoney(summary.ead) }} / {{ shortMoney(summary.rwa) }}</b><em>只汇总当前筛选的已归档批次</em></div>
+  </div>
+
+  <div class="panel task-filters">
+    <div class="panel-body">
+      <div class="task-filter-row">
+        <input v-model="filters.q" type="search" placeholder="搜索主任务名称 / ID / 机构" />
+        <select v-model="filters.jurisdiction">
+          <option value="">全部地区</option>
+          <option v-for="item in filterOptions.jurisdictions" :key="item" :value="item">{{ item }}</option>
+        </select>
+        <select v-model="filters.version">
+          <option value="">全部版本</option>
+          <option v-for="item in filterOptions.versions" :key="item" :value="item">{{ item }}</option>
+        </select>
+        <select v-model="filters.institution">
+          <option value="">全部机构</option>
+          <option v-for="item in filterOptions.institutions" :key="item" :value="item">{{ item }}</option>
+        </select>
+        <select v-model="filters.status">
+          <option value="">全部状态</option>
+          <option value="draft">待开始</option>
+          <option value="doing">进行中</option>
+          <option value="done">已完成</option>
+        </select>
+        <input v-model="filters.from" type="date" title="基准日起" />
+        <span class="dim">至</span>
+        <input v-model="filters.to" type="date" title="基准日止" />
+        <button type="button" class="btn sm" @click="clearFilters">清空筛选</button>
+        <span class="spacer"></span>
+        <span class="dim" style="font-size: 11.5px">显示 {{ filteredTasks.length }} / {{ tasks.length }}</span>
+      </div>
+    </div>
+  </div>
 
   <div v-if="form" class="panel" style="margin-bottom: 14px">
     <div class="panel-head">
@@ -209,24 +292,28 @@ function openTask(task) {
       <div class="panel">
         <div class="panel-head">
           <h3>任务清单</h3>
-          <span class="sub">{{ data.length }} 个主任务 · 统计资本充足率和流动性子任务的数量与进度</span>
+          <span class="sub">{{ filteredTasks.length }} 个主任务 · 统计资本充足率和流动性子任务的数量与进度</span>
           <span class="spacer"></span>
           <button type="button" class="btn sm primary" @click="openCreate">新建主任务</button>
         </div>
         <div class="panel-body tight">
-          <div v-if="!data.length" class="empty">
+          <div v-if="!tasks.length" class="empty">
             <div class="ei">▤</div>
             <div>还没有主任务。点击「新建主任务」开始一个季度的计量。</div>
+          </div>
+          <div v-else-if="!filteredTasks.length" class="empty">
+            <div class="ei">⌕</div>
+            <div>没有符合条件的任务。换个关键词或清空筛选。</div>
           </div>
           <table v-else class="tbl compact">
             <thead>
               <tr>
                 <th>主任务</th><th>监管版本 · 机构</th><th>状态</th>
-                <th>资本充足率</th><th>流动性</th><th class="num">EAD</th><th class="num">RWA</th><th>操作</th>
+                <th>资本充足率</th><th>流动性</th><th class="num">EAD</th><th class="num">RWA</th><th>更新时间</th><th>操作</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="task in data" :key="task.id" class="clickable" @click="openTask(task)">
+              <tr v-for="task in filteredTasks" :key="task.id" class="clickable" @click="openTask(task)">
                 <td>
                   <strong>{{ task.name }}</strong>
                   <div class="dim" style="font-size: 10.5px">{{ task.id }} · 基准日 {{ task.baseDate }}</div>
@@ -250,12 +337,13 @@ function openTask(task) {
                   <span v-else class="dim">未建子任务</span>
                 </td>
                 <td>
-                  <div v-if="task.liquidityCount">{{ task.liquidityCount }} 个子任务</div>
+                  <div v-if="task.liquidityCount">{{ task.liquidityArchived || 0 }} / {{ task.liquidityCount }} 已归档</div>
                   <span v-else class="dim">未建子任务</span>
                   <div v-if="task.liquidityCount" class="dim" style="font-size: 10.5px">在 HQLA 任务执行</div>
                 </td>
                 <td class="num">{{ task.archivedCount ? shortMoney(task.ead) : "—" }}</td>
                 <td class="num">{{ task.archivedCount ? shortMoney(task.rwa) : "—" }}</td>
+                <td class="dim" style="font-size: 11px">{{ task.updatedAt || "—" }}</td>
                 <td @click.stop>
                   <div style="display: flex; gap: 4px; flex-wrap: wrap">
                     <button type="button" class="btn sm primary" @click="openTask(task)">进入</button>

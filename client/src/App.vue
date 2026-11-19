@@ -29,7 +29,12 @@ const navShown = ref(false);
 const { session, scopeVersion, loadBootstrap } = useContext();
 
 const activePath = computed(() => menuPath(route.path));
-const viewKey = computed(() => (route.meta.chart ? "tree" : route.path + "|" + session.jurisdiction + "|" + session.versionId + "|" + scopeVersion.value));
+const viewKey = computed(() => {
+  if (route.name === "product-workbench") {
+    return ["product-workbench", route.params.family, route.query.entry, session.jurisdiction, session.versionId].join("|");
+  }
+  return route.meta.chart ? "tree" : route.path + "|" + session.jurisdiction + "|" + session.versionId + "|" + scopeVersion.value;
+});
 const isLogin = computed(() => route.path === "/login");
 const user = computed(() => auth.user);
 

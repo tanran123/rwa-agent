@@ -1,0 +1,417 @@
+{
+  "_note": "V3.3 只覆盖风险暴露分类和风险权重确定。本文件保留原配置里不在这两类规则范围内的计算构件，供执行引擎和编排程序使用，不要按规则集加载。",
+  "source": "agent/steps/weight/knowledge/权重法风险暴露分类.json",
+  "multiple_assessments": {
+    "name": "multiple_assessments",
+    "label": "多重评级取值",
+    "note": "写在规则树里。这一条不判断风险暴露类型，没有 when，分类往下走时不会停在这里，也不会挡住前面的类别。一笔上有多家外部评级时，先按 children 选定用哪个评级的权重，再从现金那一条重新分类。商业银行的 A+、A、B、C 仍由商业银行那一支决定。",
+    "applies_to": [
+      "issuer_rating",
+      "bond_rating",
+      "country_rating"
+    ],
+    "pick": [
+      {
+        "when": {
+          "field": "assessment_count",
+          "op": "eq",
+          "match": 1
+        },
+        "use": "only"
+      },
+      {
+        "when": {
+          "field": "assessment_count",
+          "op": "eq",
+          "match": 2
+        },
+        "use": "higher_weight"
+      },
+      {
+        "when": {
+          "field": "assessment_count",
+          "op": "gte",
+          "match": 3
+        },
+        "use": "higher_of_two_lowest_weights"
+      }
+    ],
+    "children": [
+      {
+        "name": "multiple_assessments_one",
+        "label": "只有1个评级",
+        "note": "用该评级对应的权重。",
+        "when": {
+          "all": [
+            {
+              "field": "assessment_count",
+              "op": "eq",
+              "match": 1
+            }
+          ]
+        }
+      },
+      {
+        "name": "multiple_assessments_two",
+        "label": "2个评级且权重不同",
+        "note": "用较高的风险权重。权重相同就用这个权重。",
+        "when": {
+          "all": [
+            {
+              "field": "assessment_count",
+              "op": "eq",
+              "match": 2
+            }
+          ]
+        }
+      },
+      {
+        "name": "multiple_assessments_many",
+        "label": "3个及以上评级且权重不同",
+        "note": "先取权重最低的两个，再用这两个中较高的权重。不得为了降低资本要求改选评级。",
+        "when": {
+          "all": [
+            {
+              "field": "assessment_count",
+              "op": "gte",
+              "match": 3
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "crm_split": {
+    "name": "crm_split",
+    "label": "信用风险缓释拆分",
+    "note": "写在规则树里。权重分类不进入这一条。原债务人的风险权重在前面的规则里已经确定，这里只拆本金。覆盖金额、未覆盖金额、保护方权重、币种是否相同、抵押品类型缺任何一项时，不拆分。",
+    "formula": "covered_amount * protection_weight_used + uncovered_amount * debtor_weight",
+    "covered": {
+      "floor": 0.2,
+      "note": "未触发 0% 豁免时，被覆盖部分的权重取保护方权重和 0.2 中的较大者。"
+    },
+    "fields": [
+      {
+        "name": "covered_amount",
+        "label": "被覆盖金额",
+        "meaning": "抵押或担保保护得住的那一部分本金。货币错配时先按抵押品价值折扣后再填。",
+        "source": "column",
+        "type": "number"
+      },
+      {
+        "name": "uncovered_amount",
+        "label": "未覆盖金额",
+        "meaning": "没有抵押或担保保护的那一部分本金。",
+        "source": "column",
+        "type": "number"
+      },
+      {
+        "name": "protection_weight",
+        "label": "保护方权重",
+        "meaning": "抵押品或担保人自己的风险权重，用比值。20% 写成 0.2。",
+        "source": "column",
+        "type": "number"
+      },
+      {
+        "name": "debtor_weight",
+        "label": "原债务人权重",
+        "meaning": "原债务人已经确定的风险权重。拆分时原样使用，不在这里改。",
+        "source": "calc",
+        "type": "number"
+      },
+      {
+        "name": "same_currency",
+        "label": "抵押品与债权是否同币种",
+        "meaning": "抵押品币种和债权币种相同填 yes，不同填 no。",
+        "source": "column",
+        "type": "enum",
+        "options": [
+          {
+            "label": "是",
+            "code": "yes"
+          },
+          {
+            "label": "否",
+            "code": "no"
+          }
+        ]
+      },
+      {
+        "name": "collateral_kind",
+        "label": "抵押品类型",
+        "meaning": "现金存款、极优质主权债，或其他。",
+        "source": "column",
+        "type": "enum",
+        "options": [
+          {
+            "label": "现金存款",
+            "code": "cash_deposit"
+          },
+          {
+            "label": "极优质主权债",
+            "code": "sovereign_debt"
+          },
+          {
+            "label": "其他",
+            "code": "other"
+          }
+        ]
+      },
+      {
+        "name": "sovereign_market_haircut",
+        "label": "主权债市值折扣",
+        "meaning": "极优质主权债用作抵押时，市值已经按八折计入则填 0.8。不是主权债就不要填。",
+        "source": "column",
+        "type": "number"
+      }
+    ],
+    "children": [
+      {
+        "name": "crm_currency_mismatch",
+        "label": "货币错配折扣",
+        "note": "抵押品与债权币种不同时，抵押品价值乘 0.5，再用折后价值确定被覆盖金额。",
+        "when": {
+          "all": [
+            {
+              "field": "same_currency",
+              "op": "eq",
+              "match": "no"
+            }
+          ]
+        },
+        "collateral_value_factor": 0.5
+      },
+      {
+        "name": "crm_zero_exemption",
+        "label": "被覆盖部分 0% 豁免",
+        "note": "同币种，且抵押品是现金存款或极优质主权债。主权债还要市值已经按 0.8 计入。满足时被覆盖部分权重用 0，不再套 0.2 下限。现金存款不要求这个八折。",
+        "when": {
+          "all": [
+            {
+              "field": "same_currency",
+              "op": "eq",
+              "match": "yes"
+            },
+            {
+              "field": "collateral_kind",
+              "op": "in",
+              "match": [
+                "cash_deposit",
+                "sovereign_debt"
+              ]
+            }
+          ]
+        },
+        "if_collateral_kind": {
+          "match": "sovereign_debt",
+          "requires": {
+            "field": "sovereign_market_haircut",
+            "op": "eq",
+            "match": 0.8
+          }
+        },
+        "value": 0
+      }
+    ]
+  },
+  "extensions": [
+    {
+      "example": true,
+      "note": "可删除。挂在 fi_other_general 下再拆。",
+      "attach_to": "fi_other_general",
+      "fields": [
+        {
+          "name": "intra_group",
+          "label": "是否集团成员",
+          "meaning": "例子。这家企业集团财务公司是不是本集团成员。",
+          "source": "column",
+          "type": "enum",
+          "options": [
+            {
+              "label": "是",
+              "code": "yes"
+            },
+            {
+              "label": "否",
+              "code": "no"
+            }
+          ]
+        }
+      ],
+      "children": [
+        {
+          "name": "fi_intra_group_finance_co",
+          "label": "集团内的企业集团财务公司",
+          "when": {
+            "all": [
+              {
+                "field": "fi_subtype",
+                "op": "eq",
+                "match": "group_finance_company"
+              },
+              {
+                "field": "intra_group",
+                "op": "eq",
+                "match": "yes"
+              }
+            ]
+          }
+        },
+        {
+          "name": "fi_extra_group_finance_co",
+          "label": "集团外的企业集团财务公司",
+          "when": {
+            "all": [
+              {
+                "field": "fi_subtype",
+                "op": "eq",
+                "match": "group_finance_company"
+              },
+              {
+                "field": "intra_group",
+                "op": "eq",
+                "match": "no"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "example": true,
+      "note": "可删除。挂在 corporate_general 上，小微、投资级、中小、其他一般公司命中后都可再按产品拆。产品取值在 options 里加。",
+      "attach_to": "corporate_general",
+      "fields": [
+        {
+          "name": "product_name",
+          "label": "产品",
+          "meaning": "例子。银行内部的产品名称。新增值先加在 options，再把 Excel 里的产品名对到 code。",
+          "source": "column",
+          "type": "enum",
+          "extensible": true,
+          "options": [
+            {
+              "label": "贸易融资",
+              "code": "trade_finance"
+            },
+            {
+              "label": "流动资金贷款",
+              "code": "working_capital"
+            },
+            {
+              "label": "银团贷款",
+              "code": "syndicated"
+            }
+          ]
+        }
+      ],
+      "children": [
+        {
+          "name": "product_trade_finance",
+          "label": "贸易融资",
+          "when": {
+            "all": [
+              {
+                "field": "product_name",
+                "op": "eq",
+                "match": "trade_finance"
+              }
+            ]
+          },
+          "fields": [
+            {
+              "name": "sight_lc",
+              "label": "是否即期信用证",
+              "meaning": "例子。这笔贸易融资是不是即期信用证。只在贸易融资这一支使用。",
+              "source": "column",
+              "type": "enum",
+              "note": "例子。只在贸易融资这一支使用，流动资金贷款不填这个字段。",
+              "options": [
+                {
+                  "label": "是",
+                  "code": "yes"
+                },
+                {
+                  "label": "否",
+                  "code": "no"
+                }
+              ]
+            }
+          ],
+          "children": [
+            {
+              "name": "tf_sight_lc",
+              "label": "即期信用证",
+              "when": {
+                "all": [
+                  {
+                    "field": "sight_lc",
+                    "op": "eq",
+                    "match": "yes"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "product_working_capital",
+          "label": "流动资金贷款",
+          "when": {
+            "all": [
+              {
+                "field": "product_name",
+                "op": "eq",
+                "match": "working_capital"
+              }
+            ]
+          },
+          "fields": [
+            {
+              "name": "revolving",
+              "label": "是否循环额度",
+              "meaning": "例子。这笔流动资金贷款是不是循环额度。只在流动资金贷款这一支使用。",
+              "source": "column",
+              "type": "enum",
+              "note": "例子。只在流动资金贷款这一支使用。",
+              "options": [
+                {
+                  "label": "是",
+                  "code": "yes"
+                },
+                {
+                  "label": "否",
+                  "code": "no"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "excel": [
+    {
+      "example": true,
+      "note": "可删除。大模型按这个样子写。field 填字段 name。columns 填 Excel 表头。单元格原文作 values 的键，值必须是该字段的 code。数字字段不写 values。",
+      "field": "is_defaulted",
+      "columns": [
+        "是否违约"
+      ],
+      "values": {
+        "是": "yes",
+        "否": "no"
+      }
+    },
+    {
+      "example": true,
+      "note": "可删除。一个字段来自多列时，把表头都写进 columns，在 how 里写怎么得到字段值。",
+      "field": "ltv",
+      "columns": [
+        "贷款余额",
+        "押品评估价值"
+      ],
+      "how": "贷款余额 / 押品评估价值，结果用比值，50% 写成 0.5"
+    }
+  ]
+}

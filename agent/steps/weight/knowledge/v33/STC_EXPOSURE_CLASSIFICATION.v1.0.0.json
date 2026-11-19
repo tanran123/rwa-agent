@@ -1,0 +1,873 @@
+{
+  "$schema": "https://example.org/schemas/stc-exposure-risk-weight-v3.3.schema.json",
+  "domain": "STC",
+  "version": "1.0.0",
+  "status": "DRAFT",
+  "regulatory_basis": {
+    "instrument": "《商业银行资本管理办法》",
+    "note": "权重法信用风险暴露分类与风险权重；由仓库原 权重法风险暴露分类.json 整份迁移，数值和条件不变。"
+  },
+  "scope": {
+    "description": "信用风险权重法下，按交易对手、产品和监管条件判断风险暴露类别及适用风险权重。不含敞口金额、CCF、缓释拆分和 RWA 汇总。",
+    "jurisdictions": [
+      "CN"
+    ]
+  },
+  "settings": {
+    "matching_mode": "first_match",
+    "unknown_policy": "manual_review"
+  },
+  "name": "STC_EXPOSURE_CLASSIFICATION",
+  "title": "信用风险权重法风险暴露分类规则集",
+  "rule_type": "exposure_classification",
+  "fields": [
+    {
+      "name": "counterparty_type",
+      "label": "交易对手",
+      "meaning": "债务人属于哪一类主体。财政部对 cn_central_government，人民银行对 cn_central_bank。农村合作银行、村镇银行、农村信用合作社对 commercial_bank。表头可能叫客户类型、发行人类型。",
+      "note": "财政部填 cn_central_government，人民银行填 cn_central_bank。农村合作银行、村镇银行、农村信用合作社填 commercial_bank。要加新种类，在 options 加一项，规则里的 match 写它的 code。",
+      "type": "enum",
+      "source": "column",
+      "required": false,
+      "missing_policy": "not_applicable",
+      "extensible": true,
+      "options": [
+        {
+          "label": "我国中央政府",
+          "code": "cn_central_government"
+        },
+        {
+          "label": "我国中央银行",
+          "code": "cn_central_bank"
+        },
+        {
+          "label": "其他主权国家或经济实体",
+          "code": "foreign_sovereign"
+        },
+        {
+          "label": "其他中央银行",
+          "code": "foreign_central_bank"
+        },
+        {
+          "label": "国际清算银行",
+          "code": "bis"
+        },
+        {
+          "label": "国际货币基金组织",
+          "code": "imf"
+        },
+        {
+          "label": "欧洲中央银行",
+          "code": "ecb"
+        },
+        {
+          "label": "欧盟",
+          "code": "eu"
+        },
+        {
+          "label": "欧洲稳定机制",
+          "code": "esm"
+        },
+        {
+          "label": "欧洲金融稳定机制",
+          "code": "efsm"
+        },
+        {
+          "label": "公共部门实体",
+          "code": "pse"
+        },
+        {
+          "label": "多边开发银行",
+          "code": "mdb"
+        },
+        {
+          "label": "商业银行",
+          "code": "commercial_bank"
+        },
+        {
+          "label": "其他金融机构",
+          "code": "other_fi"
+        },
+        {
+          "label": "开发性金融机构",
+          "code": "development_fi"
+        },
+        {
+          "label": "政策性银行",
+          "code": "policy_bank"
+        },
+        {
+          "label": "公司",
+          "code": "corporate"
+        },
+        {
+          "label": "合伙制企业",
+          "code": "partnership"
+        },
+        {
+          "label": "独资企业",
+          "code": "sole_proprietorship"
+        },
+        {
+          "label": "特殊目的实体",
+          "code": "spe"
+        },
+        {
+          "label": "其他非自然人",
+          "code": "other_non_individual"
+        },
+        {
+          "label": "自然人",
+          "code": "individual"
+        }
+      ]
+    },
+    {
+      "name": "covered_disclosure_ok",
+      "label": "是否至少每半年能取得披露信息",
+      "meaning": "是否至少每半年能取得资产池和债券的披露信息。披露内容见附件2第十部分。",
+      "type": "enum",
+      "source": "column",
+      "required": false,
+      "missing_policy": "not_applicable",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "covered_oc_ratio",
+      "label": "资产池名义价值 / 未偿还债券名义价值",
+      "meaning": "资产池名义价值除以未偿还债券名义价值。110% 写成 1.1。可以是一列比率，也可以由资产池名义价值和债券名义价值两列相除。",
+      "note": "110% 写成 1.1。",
+      "type": "number",
+      "source": "column",
+      "unit": "RATIO",
+      "required": false,
+      "missing_policy": "not_applicable"
+    },
+    {
+      "name": "covered_pool_eligible",
+      "label": "资产池是否只含合格资产",
+      "meaning": "资产担保债券的资产池是否只含合格资产。合格范围是附件2第十部分列出的那几类。",
+      "type": "enum",
+      "source": "column",
+      "required": false,
+      "missing_policy": "not_applicable",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "fi_bank_applicable",
+      "label": "是否适用",
+      "meaning": "这个产品会不会形成对商业银行的债权。贷款不能贷给银行时填不适用，商业银行这一支整段跳过，也不要落到其他金融机构。没填视为适用。按产品填，不是每一笔从 Excel 对。",
+      "type": "enum",
+      "source": "manual",
+      "required": false,
+      "missing_policy": "default",
+      "default_value": "applicable",
+      "options": [
+        {
+          "label": "适用",
+          "code": "applicable"
+        },
+        {
+          "label": "不适用",
+          "code": "not_applicable"
+        }
+      ]
+    },
+    {
+      "name": "has_property_collateral",
+      "label": "是否有房地产抵押",
+      "meaning": "这笔是否有房地产抵押。",
+      "type": "enum",
+      "source": "column",
+      "required": false,
+      "missing_policy": "not_applicable",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "instrument_type",
+      "label": "工具",
+      "meaning": "这一笔是现金、黄金、其他资产、股权、资产担保债券，还是普通债权。表头可能叫业务品种、资产类型。单元格原文要在映射里对到 cash、gold、other_asset、equity、covered_bond、claim。库存现金和黄金不是债权。固定资产、无形资产、递延费用没有交易对手，填 other_asset。存放中央银行仍填 claim，再按交易对手走主权。",
+      "type": "enum",
+      "source": "column",
+      "required": false,
+      "missing_policy": "not_applicable",
+      "options": [
+        {
+          "label": "现金",
+          "code": "cash"
+        },
+        {
+          "label": "黄金",
+          "code": "gold"
+        },
+        {
+          "label": "其他资产",
+          "code": "other_asset"
+        },
+        {
+          "label": "股权",
+          "code": "equity"
+        },
+        {
+          "label": "资产担保债券",
+          "code": "covered_bond"
+        },
+        {
+          "label": "债权",
+          "code": "claim"
+        }
+      ]
+    },
+    {
+      "name": "is_defaulted",
+      "label": "是否已违约",
+      "meaning": "是否已违约：逾期超过 90 天，或不处置押品就可能无法全额偿还。自然人按这一笔，其他按这个债务人。表里若是逾期天数或五级分类，在映射的 how 里写成 yes 或 no。",
+      "note": "逾期超过 90 天，或不处置押品就可能无法全额偿还。自然人按债项填，其他按债务人填。",
+      "type": "enum",
+      "source": "column",
+      "required": false,
+      "missing_policy": "not_applicable",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "is_subordinated",
+      "label": "是否次级债权",
+      "meaning": "是否次级债权，受偿顺序在普通债权之后。金融机构风险暴露不含次级债权。",
+      "type": "enum",
+      "source": "column",
+      "required": false,
+      "missing_policy": "not_applicable",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "lender_controls_asset",
+      "label": "银行对资产及其收入有相当控制权",
+      "meaning": "银行对资产及其收入是否有相当控制权。判断专业贷款的三个特征之三。三条同时为 yes 才是专业贷款。",
+      "type": "enum",
+      "source": "column",
+      "required": false,
+      "missing_policy": "not_applicable",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "loan_purpose",
+      "label": "融资用途",
+      "meaning": "这笔融资的用途。地产开发、房屋建设、项目建设、购买实物资产、商品融资或其他，对到 land_development、housing_construction、project、object_purchase、commodity、other。",
+      "type": "enum",
+      "source": "column",
+      "required": false,
+      "missing_policy": "not_applicable",
+      "extensible": true,
+      "options": [
+        {
+          "label": "地产开发",
+          "code": "land_development"
+        },
+        {
+          "label": "房屋建设",
+          "code": "housing_construction"
+        },
+        {
+          "label": "项目建设",
+          "code": "project"
+        },
+        {
+          "label": "购买实物资产",
+          "code": "object_purchase"
+        },
+        {
+          "label": "商品融资",
+          "code": "commodity"
+        },
+        {
+          "label": "其他",
+          "code": "other"
+        }
+      ]
+    },
+    {
+      "name": "no_independent_repayment",
+      "label": "除资产收入外没有独立还款能力",
+      "meaning": "除该资产产生的收入外，债务人是否没有独立还款能力。判断专业贷款的三个特征之二。",
+      "type": "enum",
+      "source": "column",
+      "required": false,
+      "missing_policy": "not_applicable",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "property_uses",
+      "label": "抵押物用途",
+      "meaning": "抵押房地产的用途，可以多选。居住 residential，商用 commercial，商住两用 mixed_use。表里若是一个文本列，把原文对到 code。",
+      "type": "list",
+      "source": "column",
+      "required": false,
+      "missing_policy": "not_applicable",
+      "options": [
+        {
+          "label": "居住",
+          "code": "residential"
+        },
+        {
+          "label": "商用",
+          "code": "commercial"
+        },
+        {
+          "label": "商住两用",
+          "code": "mixed_use"
+        }
+      ]
+    },
+    {
+      "name": "spe_for_physical_asset",
+      "label": "是否为实物资产设立的特殊目的实体",
+      "meaning": "债务人是否为某一实物资产设立的特殊目的实体。判断专业贷款的三个特征之一。",
+      "type": "enum",
+      "source": "column",
+      "required": false,
+      "missing_policy": "not_applicable",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    },
+    {
+      "name": "treat_as_equity",
+      "label": "是否应视同股权",
+      "meaning": "债权是否应视同股权。收益主要靠资本利得、不可赎回、有剩余索取权，或与一级资本同样结构，或约定用股票清偿。监管已认可按债务处理的为 no。",
+      "note": "收益主要靠资本利得、不可赎回、有剩余索取权，或与一级资本同样结构，或约定用股票清偿。监管已认可按债务处理的填 no。",
+      "type": "enum",
+      "source": "column",
+      "required": false,
+      "missing_policy": "not_applicable",
+      "options": [
+        {
+          "label": "是",
+          "code": "yes"
+        },
+        {
+          "label": "否",
+          "code": "no"
+        }
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "id": "cash",
+      "label": "现金及现金等价物",
+      "note": "《商业银行资本管理办法》第五十七条。存放中央银行不在本条，按主权风险暴露划分。",
+      "when": {
+        "all": [
+          {
+            "field": "instrument_type",
+            "op": "in",
+            "match": [
+              "cash",
+              "gold"
+            ]
+          }
+        ]
+      },
+      "result": {
+        "exposure_class": "cash",
+        "label": "现金及现金等价物"
+      }
+    },
+    {
+      "id": "equity",
+      "label": "股权风险暴露",
+      "note": "已违约的股权仍归本类。",
+      "when": {
+        "any": [
+          {
+            "field": "instrument_type",
+            "op": "eq",
+            "match": "equity"
+          },
+          {
+            "field": "treat_as_equity",
+            "op": "eq",
+            "match": "yes"
+          }
+        ]
+      },
+      "result": {
+        "exposure_class": "equity",
+        "label": "股权风险暴露"
+      }
+    },
+    {
+      "id": "defaulted",
+      "label": "已违约风险暴露",
+      "when": {
+        "all": [
+          {
+            "field": "is_defaulted",
+            "op": "eq",
+            "match": "yes"
+          }
+        ]
+      },
+      "result": {
+        "exposure_class": "defaulted",
+        "label": "已违约风险暴露"
+      }
+    },
+    {
+      "id": "covered_bond",
+      "label": "合格资产担保债券风险暴露",
+      "note": "未满足合格条件时本条不命中，继续按交易对手划分。《商业银行资本管理办法》第七十九条。",
+      "when": {
+        "all": [
+          {
+            "field": "instrument_type",
+            "op": "eq",
+            "match": "covered_bond"
+          },
+          {
+            "field": "covered_pool_eligible",
+            "op": "eq",
+            "match": "yes"
+          },
+          {
+            "field": "covered_oc_ratio",
+            "op": "gte",
+            "match": 1.1
+          },
+          {
+            "field": "covered_disclosure_ok",
+            "op": "eq",
+            "match": "yes"
+          }
+        ]
+      },
+      "result": {
+        "exposure_class": "covered_bond",
+        "label": "合格资产担保债券风险暴露"
+      }
+    },
+    {
+      "id": "subordinated",
+      "label": "次级债权",
+      "note": "附件未单列。先单独成类，避免进入金融机构或一般公司。",
+      "when": {
+        "all": [
+          {
+            "field": "is_subordinated",
+            "op": "eq",
+            "match": "yes"
+          }
+        ]
+      },
+      "result": {
+        "exposure_class": "subordinated",
+        "label": "次级债权"
+      }
+    },
+    {
+      "id": "sovereign",
+      "label": "主权风险暴露（主权国家/央行/国际组织）",
+      "when": {
+        "all": [
+          {
+            "field": "counterparty_type",
+            "op": "in",
+            "match": [
+              "cn_central_government",
+              "cn_central_bank",
+              "foreign_sovereign",
+              "foreign_central_bank",
+              "bis",
+              "imf",
+              "ecb",
+              "eu",
+              "esm",
+              "efsm"
+            ]
+          }
+        ]
+      },
+      "result": {
+        "exposure_class": "sovereign",
+        "label": "主权风险暴露（主权国家/央行/国际组织）"
+      }
+    },
+    {
+      "id": "pse",
+      "label": "公共部门实体风险暴露",
+      "when": {
+        "all": [
+          {
+            "field": "counterparty_type",
+            "op": "eq",
+            "match": "pse"
+          }
+        ]
+      },
+      "result": {
+        "exposure_class": "pse",
+        "label": "公共部门实体风险暴露"
+      }
+    },
+    {
+      "id": "mdb",
+      "label": "多边开发银行风险暴露",
+      "when": {
+        "all": [
+          {
+            "field": "counterparty_type",
+            "op": "eq",
+            "match": "mdb"
+          }
+        ]
+      },
+      "result": {
+        "exposure_class": "mdb",
+        "label": "多边开发银行风险暴露"
+      }
+    },
+    {
+      "id": "fi",
+      "label": "金融机构风险暴露",
+      "when": {
+        "any": [
+          {
+            "field": "counterparty_type",
+            "op": "in",
+            "match": [
+              "other_fi",
+              "development_fi",
+              "policy_bank"
+            ]
+          },
+          {
+            "all": [
+              {
+                "field": "counterparty_type",
+                "op": "eq",
+                "match": "commercial_bank"
+              },
+              {
+                "not": {
+                  "field": "fi_bank_applicable",
+                  "op": "eq",
+                  "match": "not_applicable"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "fields": [
+        "fi_bank_applicable"
+      ],
+      "note": "对商业银行的债权按 FI 归类；fi_bank_applicable 为 not_applicable 时这一支整段不适用，继续往下看房地产等后续类别，不落入其他金融机构。",
+      "result": {
+        "exposure_class": "fi",
+        "label": "金融机构风险暴露"
+      }
+    },
+    {
+      "id": "re_dev",
+      "label": "房地产开发风险暴露",
+      "when": {
+        "all": [
+          {
+            "field": "counterparty_type",
+            "op": "in",
+            "match": [
+              "corporate",
+              "spe"
+            ]
+          },
+          {
+            "field": "loan_purpose",
+            "op": "in",
+            "match": [
+              "land_development",
+              "housing_construction"
+            ]
+          }
+        ]
+      },
+      "result": {
+        "exposure_class": "re_dev",
+        "label": "房地产开发风险暴露"
+      }
+    },
+    {
+      "id": "specialized",
+      "label": "专业贷款",
+      "when": {
+        "all": [
+          {
+            "field": "spe_for_physical_asset",
+            "op": "eq",
+            "match": "yes"
+          },
+          {
+            "field": "no_independent_repayment",
+            "op": "eq",
+            "match": "yes"
+          },
+          {
+            "field": "lender_controls_asset",
+            "op": "eq",
+            "match": "yes"
+          }
+        ]
+      },
+      "result": {
+        "exposure_class": "specialized",
+        "label": "专业贷款"
+      }
+    },
+    {
+      "id": "re_mixed",
+      "label": "居住用房地产和商用房地产共同抵押",
+      "note": "先选定再归入居住用或商用。 选定居住用或商用后，再用对应类别的权重。",
+      "when": {
+        "all": [
+          {
+            "field": "has_property_collateral",
+            "op": "eq",
+            "match": "yes"
+          },
+          {
+            "field": "property_uses",
+            "op": "contains",
+            "match": "residential"
+          },
+          {
+            "any": [
+              {
+                "field": "property_uses",
+                "op": "contains",
+                "match": "commercial"
+              },
+              {
+                "field": "property_uses",
+                "op": "contains",
+                "match": "mixed_use"
+              }
+            ]
+          }
+        ]
+      },
+      "result": {
+        "exposure_class": "re_mixed",
+        "label": "居住用房地产和商用房地产共同抵押"
+      }
+    },
+    {
+      "id": "re_residential",
+      "label": "居住用房地产风险暴露",
+      "when": {
+        "all": [
+          {
+            "field": "has_property_collateral",
+            "op": "eq",
+            "match": "yes"
+          },
+          {
+            "field": "property_uses",
+            "op": "contains",
+            "match": "residential"
+          }
+        ]
+      },
+      "result": {
+        "exposure_class": "re_residential",
+        "label": "居住用房地产风险暴露"
+      }
+    },
+    {
+      "id": "re_commercial",
+      "label": "商用房地产风险暴露",
+      "when": {
+        "all": [
+          {
+            "field": "has_property_collateral",
+            "op": "eq",
+            "match": "yes"
+          },
+          {
+            "any": [
+              {
+                "field": "property_uses",
+                "op": "contains",
+                "match": "commercial"
+              },
+              {
+                "field": "property_uses",
+                "op": "contains",
+                "match": "mixed_use"
+              }
+            ]
+          }
+        ]
+      },
+      "result": {
+        "exposure_class": "re_commercial",
+        "label": "商用房地产风险暴露"
+      }
+    },
+    {
+      "id": "retail",
+      "label": "个人风险暴露",
+      "when": {
+        "all": [
+          {
+            "field": "counterparty_type",
+            "op": "eq",
+            "match": "individual"
+          }
+        ]
+      },
+      "result": {
+        "exposure_class": "retail",
+        "label": "个人风险暴露"
+      }
+    },
+    {
+      "id": "corporate_general",
+      "label": "一般公司风险暴露",
+      "when": {
+        "all": [
+          {
+            "field": "counterparty_type",
+            "op": "in",
+            "match": [
+              "corporate",
+              "partnership",
+              "sole_proprietorship",
+              "spe",
+              "other_non_individual"
+            ]
+          }
+        ]
+      },
+      "result": {
+        "exposure_class": "corporate_general",
+        "label": "一般公司风险暴露"
+      }
+    },
+    {
+      "id": "other_asset",
+      "label": "其他资产",
+      "note": "《商业银行资本管理办法》第八十一条。没有交易对手的表内资产，如固定资产、无形资产和递延费用。",
+      "when": {
+        "all": [
+          {
+            "field": "instrument_type",
+            "op": "eq",
+            "match": "other_asset"
+          }
+        ]
+      },
+      "result": {
+        "exposure_class": "other_asset",
+        "label": "其他资产"
+      }
+    }
+  ],
+  "otherwise": {
+    "exposure_class": "unclassified",
+    "label": "未归类",
+    "attributes": {
+      "review_required": true
+    },
+    "note": "没有命中任何分类规则，转人工复核。"
+  },
+  "output_schema": {
+    "fields": [
+      {
+        "name": "exposure_class",
+        "type": "string",
+        "description": "风险暴露类别代码"
+      },
+      {
+        "name": "label",
+        "type": "string",
+        "description": "命中的风险暴露类别或子类名称"
+      },
+      {
+        "name": "attributes",
+        "type": "object",
+        "description": "分类附加信息，含命中的子类标识"
+      }
+    ],
+    "additionalProperties": false
+  },
+  "note": "本规则集只输出风险暴露类别，不输出风险权重。规则按原 权重法风险暴露分类.json 的大类顺序排列，采用首条命中语义。原文件里挂在各大类下的评级、贷款价值比等细分只影响权重，移到 STC_RISK_WEIGHT。"
+}

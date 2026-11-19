@@ -1049,6 +1049,30 @@ def hqla_parse():
         return jsonify({"error": f"解析失败：{exc}"}), 500
 
 
+@app.post("/api/hqla/inspect-workbook")
+def hqla_inspect_workbook():
+    from agent.core.hqla import inspect_workbook
+
+    try:
+        return jsonify(inspect_workbook(_hqla_payload()))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": f"解析失败：{exc}"}), 500
+
+
+@app.post("/api/hqla/parse-workbook")
+def hqla_parse_workbook():
+    from agent.core.hqla import parse_workbook
+
+    try:
+        return jsonify(parse_workbook(_hqla_payload()))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": f"解析失败：{exc}"}), 500
+
+
 @app.post("/api/hqla/compute")
 def hqla_compute():
     from agent.core.hqla import compute
@@ -1057,6 +1081,16 @@ def hqla_compute():
         return jsonify(compute(_hqla_payload()))
     except Exception as exc:
         return jsonify({"error": f"计算失败：{exc}"}), 500
+
+
+@app.post("/api/hqla/lcr-compute")
+def hqla_lcr_compute():
+    from agent.core.hqla import lcr_compute
+
+    try:
+        return jsonify(lcr_compute(_hqla_payload()))
+    except Exception as exc:
+        return jsonify({"error": f"LCR 计算失败：{exc}"}), 500
 
 
 @app.post("/api/hqla/sample")

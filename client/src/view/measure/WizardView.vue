@@ -1,9 +1,10 @@
 <script setup>
 import { computed, onMounted, ref, watch, watchEffect } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { applyMeasureChoices, classifyMeasure, detectMeasureProducts, fetchMeasure, mapMeasureFields, saveMeasureRun, uploadWorkbook } from "@/api/batch";
+import { applyMeasureChoices, classifyMeasure, detectMeasureProducts, fetchMeasure, mapMeasureFields, saveMeasureRun, uploadWorkbook, weightMeasure } from "@/api/batch";
 import { archiveSubtask, fetchTask } from "@/api/tasks";
-import { fetchProducts } from "@/api/product";
+import Drawer from "@/components/Drawer.vue";
+import { fetchProductStandardProducts } from "@/api/product";
 import { useContext } from "@/composables/useContext";
 import { askConfirm } from "@/utils/confirm";
 
@@ -23,11 +24,14 @@ const sheet = ref("term-Loan");
 const headerRow = ref(14);
 const fileName = ref("");
 const classified = ref(false);
+const weighted = ref(false);
 const mapOk = ref(false);
 const eadProduct = ref("");
 const batchName = ref("");
 const saving = ref(false);
 const savedId = ref("");
+const traceRow = ref(null);
+function openTrace(row) { traceRow.value = row; }
 const saveError = ref("");
 const uploadId = ref("");
 const reading = ref(false);
@@ -47,10 +51,10 @@ const steps = [
   "识别产品类型",
   "字段映射确认",
   "执行暴露分类",
+  "执行风险权重",
   "执行 EAD 计算",
   "执行信用风险缓释",
-  "确定风险权重并计算 RWA",
-  "查看计量结果及审计证据"
+  "计算 RWA 并查看结果"
 ];
 
 const intake = computed(() => (pack.value && pack.value.intake) || null);
@@ -96,6 +100,14 @@ function pct(value) {
   if (value == null || Number.isNaN(Number(value))) return "—";
   return +(Number(value) * 100).toFixed(2) + "%";
 }
+function phaseStatus(row, phase) {
+  if (!row) return "exception";
+  return phase === "classification" ? (row.classificationStatus || row.status) : (row.weightStatus || row.status);
+}
+function phaseExceptions(row, phase) {
+  if (!row) return [];
+  return phase === "classification" ? (row.classificationExceptions || row.exceptions || []) : (row.weightExceptions || row.exceptions || []);
+}
 function productLabel(code) {
   const configured = configuredProducts.value.find((item) => item.code === code);
   return (configured && configured.label) || (pack.value && pack.value.products[code]) || code || "未识别";
@@ -111,7 +123,7 @@ const versionProducts = computed(() => {
   if (!version) return [];
   return configuredProducts.value.filter((item) => item.ruleVersion === version);
 });
-const productFieldCount = computed(() => versionProducts.value.reduce((sum, item) => sum + Number(item.fieldCount || 0), 0));
+const productFieldCount = computed(() => versionProducts.value.reduce((sum, item) => sum + ((item.fields || []).length || Number(item.fieldCount || 0)), 0));
 const productChoices = computed(() => (versionProducts.value.length ? versionProducts.value : configuredProducts.value));
 const unrecognizedLoans = computed(() => ((intake.value && intake.value.loans) || []).filter((loan) => !loan.product));
 const loansForProduct = computed(() => {
@@ -123,7 +135,8 @@ const eadRules = computed(() => {
   return rules.filter((rule) => rule.product === eadProduct.value);
 });
 const crmConfigRows = computed(() => (pack.value && pack.value.rules && pack.value.rules.crm) || []);
-const classificationDocs = computed(() => Object.values((pack.value && pack.value.classification && pack.value.classification.documents) || {}));
+const classificationRule = computed(() => (pack.value && pack.value.classification && pack.value.classification.rule) || null);
+const weightRule = computed(() => (pack.value && pack.value.weight && pack.value.weight.rule) || null);
 function orgName() {
   if (!orgsHere.value.length && institutionText.value) return institutionText.value;
   return (session.orgs.find((item) => item.id === session.orgId) || {}).name || "";
@@ -292,6 +305,8 @@ async function applyChoices() {
       uploadId: uploadId.value,
       sheet: sheet.value,
       headerRow: headerRow.value,
+      version: (currentVersion.value && currentVersion.value.version) || "",
+      jurisdiction: session.jurisdiction,
       products: productsBody,
       columns
     }));
@@ -318,7 +333,14 @@ async function fillMappings() {
   try {
     const headers = intake.value.headers || [];
     const samples = uploadId.value ? [] : intake.value.loans.slice(0, 120).map((loan) => loan.raw || {});
-    const mapped = await mapMeasureFields({ products: codes, headers, samples, uploadId: uploadId.value });
+    const mapped = await mapMeasureFields({
+      products: codes,
+      headers,
+      samples,
+      uploadId: uploadId.value,
+      version: (currentVersion.value && currentVersion.value.version) || "",
+      jurisdiction: session.jurisdiction
+    });
     if (pack.value && pack.value.intake) pack.value.intake.mappings = mapped.mappings || {};
     const products = {};
     intake.value.loans.forEach((loan) => {
@@ -336,6 +358,8 @@ async function fillMappings() {
       uploadId: uploadId.value,
       sheet: sheet.value,
       headerRow: headerRow.value,
+      version: (currentVersion.value && currentVersion.value.version) || "",
+      jurisdiction: session.jurisdiction,
       products,
       columns
     }));
@@ -372,12 +396,36 @@ async function runClassification() {
     const data = await classifyMeasure(uploadId.value, version);
     pack.value = { ...pack.value, ...data };
     classified.value = true;
+    weighted.value = false;
   } catch (err) {
     stepError.value = err.message || "暴露分类没有跑完";
   } finally {
     applying.value = false;
   }
 }
+async function runWeight() {
+  if (!uploadId.value) {
+    stepError.value = "请先上传工作簿。";
+    return;
+  }
+  if (!classified.value) {
+    stepError.value = "请先完成暴露分类。";
+    return;
+  }
+  applying.value = true;
+  stepError.value = "";
+  try {
+    const version = (currentVersion.value && currentVersion.value.version) || "";
+    const data = await weightMeasure(uploadId.value, version);
+    pack.value = { ...pack.value, ...data };
+    weighted.value = true;
+  } catch (err) {
+    stepError.value = err.message || "风险权重没有算完";
+  } finally {
+    applying.value = false;
+  }
+}
+
 async function finish(n) {
   if (n === 2) {
     if (uploadId.value && !sheetScopeMatches()) {
@@ -393,8 +441,9 @@ async function finish(n) {
       try { await fillMappings(); } catch (err) { return; }
     }
     classified.value = false;
+    weighted.value = false;
   }
-  if (n === 8) {
+  if (n === 9) {
     if (saving.value) return;
     saving.value = true;
     saveError.value = "";
@@ -420,7 +469,7 @@ async function finish(n) {
           archiveError.value = err.message || "归档到子任务失败";
         }
       }
-      done.value = { ...done.value, 8: true };
+      done.value = { ...done.value, 9: true };
       step.value = 9;
     } catch (err) {
       saveError.value = err.message || "没有写入";
@@ -469,7 +518,9 @@ function applyBook(book) {
     missing: loans.filter((loan) => !loan.product || loan.anomaly).length
   };
   classified.value = false;
+  weighted.value = false;
   mapOk.value = false;
+  savedId.value = "";
 }
 async function loadFile(event) {
   const file = event.target.files && event.target.files[0];
@@ -480,7 +531,13 @@ async function loadFile(event) {
   resetMemory();
   try {
     const content = await fileToBase64(file);
-    applyBook(await uploadWorkbook({ filename: file.name, content, headerRow: 1 }));
+    applyBook(await uploadWorkbook({
+      filename: file.name,
+      content,
+      headerRow: 1,
+      version: (currentVersion.value && currentVersion.value.version) || "",
+      jurisdiction: session.jurisdiction
+    }));
   } catch (err) {
     readError.value = err.message || "工作簿没有读出来";
   } finally {
@@ -495,7 +552,9 @@ async function rereadSheet() {
     applyBook(await uploadWorkbook({
       uploadId: uploadId.value,
       sheet: sheet.value,
-      headerRow: headerRow.value
+      headerRow: headerRow.value,
+      version: (currentVersion.value && currentVersion.value.version) || "",
+      jurisdiction: session.jurisdiction
     }));
     return true;
   } catch (err) {
@@ -558,18 +617,28 @@ const mapSummary = computed(() => {
     fields: all.length,
     high: all.filter((item) => item.confidence >= 0.95).length,
     review: all.filter((item) => item.needsReview).length,
-    none: all.filter((item) => !item.column).length
+    none: all.filter((item) => !item.column && !item.constant).length
   };
 });
 
 watch(() => [session.orgId, session.baseDate, session.orgs.length], () => {
   if (!nameTouched.value) batchName.value = suggestedName();
 });
+
+watch(scopeVersion, async (version) => {
+  if (!version) return;
+  try {
+    const list = await fetchProductStandardProducts(version);
+    configuredProducts.value = (list || []).filter((item) => item.ruleVersion === version);
+  } catch (err) {
+    stepError.value = "该版本的产品标准字段没有读到";
+  }
+});
 onMounted(async () => {
   batchName.value = suggestedName();
   await loadTaskContext();
   try {
-    const [book, list] = await Promise.all([fetchMeasure(), fetchProducts()]);
+    const [book, list] = await Promise.all([fetchMeasure(), fetchProductStandardProducts(scopeVersion.value)]);
     configuredProducts.value = (list || []).filter((item) => item.ruleVersion === scopeVersion.value);
     replacePack(book);
   } catch (err) {
@@ -642,7 +711,7 @@ onMounted(async () => {
           <div class="kpi"><div class="k-label">计量基准日</div><div class="k-value sm">{{ session.baseDate }}</div><div class="k-foot">写入批次时使用这一天</div></div>
           <div class="kpi"><div class="k-label">该版本产品字段</div><div class="k-value sm">{{ productFieldCount }}</div><div class="k-foot">{{ versionProducts.length }} 个产品</div></div>
         </div>
-        <div class="notice ok"><span class="ni">✓</span><div>已加载分类页签 {{ intake.exposureTabs.map((item) => item.label).join("、") }}。执行分类时按识别出的产品对应。EAD 规则表内 {{ intake.eadOn }} 条、表外 {{ intake.eadOff }} 条。信用风险缓释已启用 {{ intake.crmOn }} 个产品。</div></div>
+        <div class="notice ok"><span class="ni">✓</span><div>该版本已加载 {{ versionProducts.length }} 个产品族、{{ productFieldCount }} 个标准字段。分类、风险权重、EAD 和缓释都按当前监管版本的产品配置和规则文档执行。</div></div>
         <button type="button" class="btn primary" @click="finish(1)">确认范围，下一步 →</button>
       </div>
     </div>
@@ -806,7 +875,8 @@ onMounted(async () => {
                   <td class="mono">{{ item.stdCode }}</td>
                   <td>{{ item.stdField }}<span v-if="item.required" class="tag danger" style="margin-left: 6px">必填</span></td>
                   <td>
-                    <select v-if="intake.headers.length" :value="item.column || ''" @change="item.column = $event.target.value || null">
+                    <span v-if="item.constant" class="tag muted">常量</span>
+                    <select v-else-if="intake.headers.length" :value="item.column || ''" @change="item.column = $event.target.value || null">
                       <option value="">未匹配</option>
                       <option v-if="item.column && !intake.headers.includes(item.column)" :value="item.column">{{ item.column }}</option>
                       <option v-for="name in intake.headers" :key="name" :value="name">{{ name }}</option>
@@ -831,10 +901,10 @@ onMounted(async () => {
     </div>
 
     <div v-else-if="step === 5" class="panel">
-      <div class="panel-head"><h3>第五步：执行信用风险暴露分类</h3><span class="sub">按产品从数据库取风险暴露划分规则，逐笔解析大类、子类和权重</span></div>
+      <div class="panel-head"><h3>第五步：执行信用风险暴露分类</h3><span class="sub">按当前监管版本的 V3.5 分类规则逐笔解析暴露类别，不计算风险权重</span></div>
       <div class="panel-body">
-        <div class="notice info"><span class="ni">i</span><div>对第二步上传的每一笔债项，用第三步确定的产品类型找到数据库里的风险暴露划分规则，再按第四步确认的字段映射取值，逐条解析后给出建议的暴露大类、暴露子类和风险权重。每笔都会在 output/traces/step5/ 下生成一份 Markdown 留痕。</div></div>
-        <div v-if="classificationDocs.length" class="notice info"><span class="ni">i</span><div><span v-for="doc in classificationDocs" :key="doc.id" style="margin-right: 14px">{{ doc.productLabel }} → {{ doc.title }}（{{ doc.label || "通用" }}，{{ doc.ruleVersion || "—" }}）</span></div></div>
+        <div class="notice info"><span class="ni">i</span><div>对第二步上传的每一笔债项，用第三步确定的产品族取产品注册中的候选暴露类型，再按第四步确认的标准字段和规则输入字段，执行当前监管版本的 exposure_classification 规则。结果只给出暴露类别、命中节点和条件求值过程。</div></div>
+        <div v-if="classificationRule" class="notice info"><span class="ni">i</span><div>分类规则集：{{ classificationRule.name }} · {{ classificationRule.title }} · v{{ classificationRule.version }}</div></div>
         <div v-if="applying" class="loading"><span class="spin"></span>正在读取</div>
         <div v-if="stepError" class="notice danger"><span class="ni">!</span><div>{{ stepError }}</div></div>
         <button v-if="!classified" type="button" class="btn primary" :disabled="applying" @click="runClassification">开始逐笔执行分类</button>
@@ -847,33 +917,73 @@ onMounted(async () => {
           </div>
           <div class="table-wrap">
             <table class="tbl compact">
-              <thead><tr><th>债项编号</th><th>客户名称</th><th>产品类型</th><th>暴露分类</th><th>暴露大类</th><th>暴露子类</th><th>命中规则</th><th>风险权重</th><th>状态</th><th>分类过程</th></tr></thead>
+              <thead><tr><th>债项编号</th><th>客户名称</th><th>产品族</th><th>暴露类别</th><th>类别名称</th><th>命中节点</th><th>命中路径</th><th>状态</th><th>异常</th><th>过程</th></tr></thead>
               <tbody>
                 <tr v-for="row in results" :key="row.loanId">
                   <td class="mono">{{ row.loanId }}</td>
                   <td>{{ row.name }}</td>
                   <td>{{ productLabel(row.product) }}</td>
-                  <td>{{ row.rulesetLabel || "—" }}</td>
                   <td><span class="tag" :class="row.exposureClass ? 'brand' : 'danger'">{{ row.exposureClass || "未分类" }}</span></td>
                   <td>{{ row.exposureSubClass || "—" }}</td>
-                  <td class="mono">{{ row.matchedRule || "—" }}</td>
-                  <td class="num">{{ pct(row.riskWeight) }}</td>
-                  <td><span class="tag" :class="row.status === 'ok' ? 'ok' : row.status === 'warning' ? 'warn' : 'danger'">{{ row.status === "ok" ? "正常" : row.status === "warning" ? "待复核" : "异常" }}</span></td>
-                  <td><a v-if="row.traceUrl" :href="row.traceUrl" target="_blank" rel="noopener">查看 MD</a><span v-else class="dim">—</span></td>
+                  <td class="mono">{{ row.matchedRuleId || "—" }}</td>
+                  <td class="mono dim">{{ row.matchedRule || "—" }}</td>
+                  <td><span class="tag" :class="phaseStatus(row, 'classification') === 'ok' ? 'ok' : phaseStatus(row, 'classification') === 'warning' ? 'warn' : 'danger'">{{ phaseStatus(row, "classification") === "ok" ? "正常" : phaseStatus(row, "classification") === "warning" ? "待复核" : "异常" }}</span></td>
+                  <td class="dim" style="max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap" :title="phaseExceptions(row, 'classification').map((item) => item.text).join('；')">{{ phaseExceptions(row, "classification").map((item) => item.text).join("；") || "—" }}</td>
+                  <td><button type="button" class="btn sm" @click="openTrace(row)">查看</button></td>
                 </tr>
               </tbody>
             </table>
           </div>
           <div v-if="pack.traceDir" class="notice info"><span class="ni">i</span><div>逐笔 Markdown 留痕在 output/traces/{{ pack.traceDir }}/，每笔一份，记录字段映射、原值、逐条判定和结论。</div></div>
           <div class="btn-group" style="margin-top: 12px">
-            <button type="button" class="btn primary" @click="finish(5)">下一步：执行 EAD 计算 →</button>
+            <button type="button" class="btn primary" @click="finish(5)">下一步：执行风险权重 →</button>
           </div>
         </template>
       </div>
     </div>
 
     <div v-else-if="step === 6" class="panel">
-      <div class="panel-head"><h3>第六步：执行 EAD 计算</h3><span class="sub">默认选中一组有 EAD 规则的产品，可以改选</span></div>
+      <div class="panel-head"><h3>第六步：执行风险权重</h3><span class="sub">用第五步的暴露类别执行当前监管版本的 risk_weight 规则集</span></div>
+      <div class="panel-body">
+        <div class="notice info"><span class="ni">i</span><div>风险权重只来自 V3.5 风险权重规则集，不再从分类规则里顺带取值。分类异常或分类结果不在候选暴露类型中的债项，本步骤不计算权重。</div></div>
+        <div v-if="weightRule" class="notice info"><span class="ni">i</span><div>风险权重规则集：{{ weightRule.name }} · {{ weightRule.title }} · v{{ weightRule.version }}</div></div>
+        <div v-if="applying" class="loading"><span class="spin"></span>正在计算</div>
+        <div v-if="stepError" class="notice danger"><span class="ni">!</span><div>{{ stepError }}</div></div>
+        <button v-if="!weighted" type="button" class="btn primary" :disabled="applying" @click="runWeight">开始逐笔执行风险权重</button>
+        <template v-else>
+          <div class="grid c4" style="margin: 14px 0">
+            <div class="kpi accent"><div class="k-label">处理总数</div><div class="k-value">{{ pack.summary.total }}</div></div>
+            <div class="kpi"><div class="k-label">已确定权重</div><div class="k-value">{{ pack.weight ? pack.weight.summary.determined : 0 }}</div></div>
+            <div class="kpi"><div class="k-label">人工复核</div><div class="k-value sm">{{ pack.weight ? pack.weight.summary.manual : 0 }}</div></div>
+            <div class="kpi"><div class="k-label">阻断</div><div class="k-value sm">{{ pack.weight ? pack.weight.summary.blocked : 0 }}</div></div>
+          </div>
+          <div class="table-wrap">
+            <table class="tbl compact">
+              <thead><tr><th>债项编号</th><th>产品族</th><th>暴露类别</th><th>风险权重</th><th>命中节点</th><th>命中路径</th><th>状态</th><th>异常</th><th>过程</th></tr></thead>
+              <tbody>
+                <tr v-for="row in results" :key="row.loanId">
+                  <td class="mono">{{ row.loanId }}</td>
+                  <td>{{ productLabel(row.product) }}</td>
+                  <td>{{ row.exposureClass || "未分类" }}</td>
+                  <td class="num">{{ row.riskWeight == null ? "人工复核" : pct(row.riskWeight) }}</td>
+                  <td class="mono">{{ row.weight && row.weight.ruleId ? row.weight.ruleId : "—" }}</td>
+                  <td class="mono dim">{{ row.weight && row.weight.path ? row.weight.path : "—" }}</td>
+                  <td><span class="tag" :class="phaseStatus(row, 'weight') === 'ok' ? 'ok' : phaseStatus(row, 'weight') === 'warning' ? 'warn' : 'danger'">{{ phaseStatus(row, "weight") === "ok" ? "正常" : phaseStatus(row, "weight") === "warning" ? "待复核" : "异常" }}</span></td>
+                  <td class="dim" style="max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap" :title="phaseExceptions(row, 'weight').map((item) => item.text).join('；')">{{ phaseExceptions(row, "weight").map((item) => item.text).join("；") || "—" }}</td>
+                  <td><button type="button" class="btn sm" @click="openTrace(row)">查看</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="btn-group" style="margin-top: 12px">
+            <button type="button" class="btn primary" @click="finish(6)">下一步：执行 EAD 计算 →</button>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <div v-else-if="step === 7" class="panel">
+      <div class="panel-head"><h3>第七步：执行 EAD 计算</h3><span class="sub">默认选中一组有 EAD 规则的产品，可以改选</span></div>
       <div class="panel-body">
         <div class="notice info"><span class="ni">i</span><div>EAD 按产品计算。表内 EAD、表外 EAD 与风险加权资产是不同阶段，不会套用其他产品的公式。</div></div>
         <div class="section-tabs" style="margin-bottom: 12px">
@@ -898,15 +1008,15 @@ onMounted(async () => {
               </tbody>
             </table>
           </div>
-          <div class="btn-group" style="margin-top: 12px">
-            <button type="button" class="btn primary" @click="finish(6)">下一步：执行信用风险缓释 →</button>
-          </div>
         </template>
+        <div class="btn-group" style="margin-top: 12px">
+          <button type="button" class="btn primary" @click="finish(7)">下一步：执行信用风险缓释 →</button>
+        </div>
       </div>
     </div>
 
-    <div v-else-if="step === 7" class="panel">
-      <div class="panel-head"><h3>第七步：执行信用风险缓释</h3><span class="sub">按产品读取缓释配置。缺拆分字段时不改原债务人权重</span></div>
+    <div v-else-if="step === 8" class="panel">
+      <div class="panel-head"><h3>第八步：执行信用风险缓释</h3><span class="sub">按产品读取缓释配置。缺拆分字段时不改原债务人权重</span></div>
       <div class="panel-body">
         <div class="notice info"><span class="ni">i</span><div>缓释配置来自当前库。启用的产品会按已绑定的列读取缓释物；类型不在合格字典里不予认定。覆盖金额、未覆盖金额、保护方权重、币种和抵押品类型缺任何一项时不拆分，RWA 仍按原债务人权重计算。</div></div>
         <div class="table-wrap" style="margin-bottom: 12px">
@@ -934,12 +1044,12 @@ onMounted(async () => {
             </tbody>
           </table>
         </div>
-        <button type="button" class="btn primary" style="margin-top: 12px" @click="finish(7)">下一步：确定风险权重并计算 RWA →</button>
+        <button type="button" class="btn primary" style="margin-top: 12px" @click="finish(8)">下一步：计算 RWA 并查看结果 →</button>
       </div>
     </div>
 
-    <div v-else-if="step === 8" class="panel">
-      <div class="panel-head"><h3>第八步：确定风险权重并计算 RWA</h3><span class="sub">未拆分时 RWA = EAD × 原债务人风险权重</span></div>
+    <div v-else-if="step === 9" class="panel">
+      <div class="panel-head"><h3>第九步：计算 RWA 并查看结果</h3><span class="sub">未拆分时 RWA = EAD × 风险权重；风险权重来自第六步</span></div>
       <div class="panel-body">
         <div class="grid c4" style="margin-bottom: 14px">
           <div class="kpi accent"><div class="k-label">EAD 合计</div><div class="k-value">{{ shortMoney(pack.summary.ead) }}</div></div>
@@ -964,37 +1074,42 @@ onMounted(async () => {
         <div v-if="pack.workbookError" class="notice danger"><span class="ni">!</span><div>{{ pack.workbookError }}</div></div>
         <div v-else-if="uploadId && pack.workbookReady" class="notice ok"><span class="ni">✓</span><div>风险权重、EAD、RWA 和计算过程已写在上传工作簿每一行的后面。</div></div>
         <div v-if="saveError" class="notice danger"><span class="ni">!</span><div>{{ saveError }}</div></div>
-        <div class="btn-group" style="margin-top: 12px">
-          <a v-if="uploadId && pack.workbookReady" class="btn" :href="'/api/measure/workbook.xlsx?uploadId=' + uploadId">下载写回的工作簿</a>
-          <button type="button" class="btn primary" :disabled="saving" @click="finish(8)">{{ saving ? "正在写入" : "写入数据库并查看结果 →" }}</button>
-        </div>
-      </div>
-    </div>
-
-    <div v-else class="panel">
-      <div class="panel-head"><h3>第九步：查看计量结果及审计证据</h3></div>
-      <div class="panel-body">
-        <div class="notice ok"><span class="ni">✓</span><div>批次「{{ batchName }}」已写入结果明细。分类、EAD、缓释和 RWA 都记在这个名称下。<template v-if="uploadId && pack.workbookReady"> 上传的工作簿每一行后面也写了风险权重、EAD、RWA 和计算过程。</template></div></div>
-        <div v-if="taskCtx && !archiveError" class="notice ok"><span class="ni">✓</span><div>本次计算已归档到主任务「{{ taskCtx.task.name }}」的子任务「{{ taskCtx.sub.name }}」。</div></div>
+        <div v-if="savedId" class="notice ok" style="margin-top: 12px"><span class="ni">✓</span><div>批次「{{ batchName }}」已写入结果明细。分类、风险权重、EAD、缓释和 RWA 都记在这个名称下。</div></div>
+        <div v-if="savedId && taskCtx && !archiveError" class="notice ok"><span class="ni">✓</span><div>本次计算已归档到主任务「{{ taskCtx.task.name }}」的子任务「{{ taskCtx.sub.name }}」。</div></div>
         <div v-if="archiveError" class="notice danger">
           <span class="ni">!</span>
           <div>批次已写入，但归档到子任务失败：{{ archiveError }}
             <button type="button" class="btn sm" @click="retryArchive">重试归档</button>
           </div>
         </div>
-        <div class="grid c4">
-          <div class="kpi accent"><div class="k-label">债项</div><div class="k-value">{{ pack.summary.total }}</div></div>
-          <div class="kpi"><div class="k-label">EAD</div><div class="k-value">{{ shortMoney(pack.summary.ead) }}</div></div>
-          <div class="kpi"><div class="k-label">RWA</div><div class="k-value">{{ shortMoney(pack.summary.rwa) }}</div></div>
-          <div class="kpi"><div class="k-label">异常 / 待复核</div><div class="k-value sm">{{ pack.summary.exception }} / {{ pack.summary.warning }}</div></div>
-        </div>
-        <div class="btn-group">
-          <button type="button" class="btn primary" @click="router.push('/results?batch=' + savedId)">打开结果明细</button>
-          <button v-if="taskCtx" type="button" class="btn" @click="router.push('/tasks/' + taskCtx.task.id)">返回任务详情</button>
+        <div class="btn-group" style="margin-top: 12px">
           <a v-if="uploadId && pack.workbookReady" class="btn" :href="'/api/measure/workbook.xlsx?uploadId=' + uploadId">下载写回的工作簿</a>
+          <button v-if="!savedId" type="button" class="btn primary" :disabled="saving" @click="finish(9)">{{ saving ? "正在写入" : "写入数据库并查看结果 →" }}</button>
+          <button v-if="savedId" type="button" class="btn primary" @click="router.push('/results?batch=' + savedId)">打开结果明细</button>
+          <button v-if="savedId && taskCtx" type="button" class="btn" @click="router.push('/tasks/' + taskCtx.task.id)">返回任务详情</button>
         </div>
       </div>
     </div>
 
   </template>
+
+  <Drawer :open="!!traceRow" wide :title="traceRow ? '债项 ' + traceRow.loanId + ' · 规则执行过程' : '规则执行过程'" @close="traceRow = null">
+    <template v-if="traceRow">
+      <div class="grid c2" style="margin-bottom: 12px">
+        <div class="kpi"><div class="k-label">产品族</div><div class="k-value sm">{{ productLabel(traceRow.product) }}</div></div>
+        <div class="kpi"><div class="k-label">暴露类别</div><div class="k-value sm">{{ traceRow.exposureClass || "未分类" }}</div></div>
+        <div class="kpi"><div class="k-label">风险权重</div><div class="k-value sm">{{ traceRow.riskWeight == null ? "人工复核" : pct(traceRow.riskWeight) }}</div></div>
+        <div class="kpi"><div class="k-label">状态</div><div class="k-value sm">{{ traceRow.status === "ok" ? "正常" : traceRow.status === "warning" ? "待复核" : "异常" }}</div></div>
+      </div>
+      <p v-if="(traceRow.exceptions || []).length" class="notice warn">
+        <span class="ni">!</span><div>{{ traceRow.exceptions.map((item) => item.text).join("；") }}</div>
+      </p>
+      <h4>暴露分类命中</h4>
+      <pre class="codeblock">{{ JSON.stringify(traceRow.classification || null, null, 2) }}</pre>
+      <h4>风险权重命中</h4>
+      <pre class="codeblock">{{ JSON.stringify(traceRow.weight || null, null, 2) }}</pre>
+      <h4>字段值</h4>
+      <pre class="codeblock">{{ JSON.stringify(traceRow.facts || {}, null, 2) }}</pre>
+    </template>
+  </Drawer>
 </template>

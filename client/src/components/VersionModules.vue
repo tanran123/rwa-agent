@@ -66,8 +66,12 @@ defineEmits(["open"]);
             <span class="go">进入 →</span>
           </button>
         </div>
-        <p class="notice" style="margin: 12px 0 0">
-          流动性暂未单独建配置页，明细、清单和判定标准在 HQLA 任务里维护。
+        <p v-if="disabled" class="notice" style="margin: 12px 0 0">
+          保存版本后即可进入这些配置。
+        </p>
+        <p v-else class="notice" style="margin: 12px 0 0">
+          流动性产品、标准字段、参数表和监管名单都在「流动性产品管理」里按这一版维护；
+          HQLA 计算任务按七个步骤完成导入、识别、映射、检查、计算和复核。
         </p>
       </div>
     </div>
