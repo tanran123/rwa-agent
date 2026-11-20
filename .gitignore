@@ -10,6 +10,14 @@ __pycache__/
 *.xlsm
 output/
 决策树对话.json
+# Docker 相关内容只在本地/服务器上使用，不提交仓库
+# （镜像 tar 由 release/ 忽略）。如需在其它机器部署，单独拷贝这些文件。
+Dockerfile
+.dockerignore
+docker-compose.yml
+docker-compose.local.yml
+docker/
+# Docker 部署用的环境变量文件（含密码/密钥），任何情况下都不提交
 docker/deploy.env
 docker/app.env
 docker/mysql.env
