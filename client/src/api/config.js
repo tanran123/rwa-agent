@@ -2,6 +2,8 @@ import request from './request'
 
 const codeOf = (id) => encodeURIComponent(id)
 
+export const fetchExposureOverview = (params = {}) => request.get('/exposure-overview', { params, timeout: 60000 })
+
 export const fetchRuleDocuments = (params = {}) => request.get('/rule-documents', { params })
 
 export const fetchRuleDocument = (id) => request.get('/rule-documents/' + codeOf(id))
@@ -15,10 +17,6 @@ export const deleteRuleDocument = (id) => request.delete('/rule-documents/' + co
 export const validateRuleDocument = (id) => request.post('/rule-documents/' + codeOf(id) + '/validate')
 
 export const validateRuleBody = (body) => request.post('/rule-documents/validate', body)
-
-export const importRuleDocuments = (body) => request.post('/rule-documents/import', body, { timeout: 180000 })
-
-export const previewRuleDocumentsImport = (body) => request.post('/rule-documents/import/preview', body, { timeout: 60000 })
 
 export const fetchParameterTables = (jurisdiction = '', version = '') =>
   request.get('/parameter-tables', { params: { jurisdiction, version } })

@@ -51,7 +51,7 @@ const RULE_VERSIONS = [
   {
     id: 'rv-cn-2026-review', jurisdiction: 'CN', version: 'CN-SA-2026.1-review',
     name: '内地资本管理办法（修订送审稿）', ruleType: '资本充足率',
-    effectiveFrom: '2026-10-01', effectiveTo: null, status: 'reviewing',
+    effectiveFrom: '2026-10-01', effectiveTo: null, status: 'draft',
     institution: '总行（法人）', rulesetFile: 'ruleset_cn.json',
     publishedAt: '—', author: '规则管理员 · 李伟',
     changelog: '审核中：投资级公司认定条件拟收紧，等待风险条线会签。',
@@ -77,7 +77,6 @@ const RULE_VERSIONS = [
 const RULE_TYPES = ['资本充足率', '信用风险', '风险暴露分类', '风险权重', '表内 EAD', '表外 EAD'];
 const RULE_STATUS = {
   draft: { label: '草稿', tone: 'muted' },
-  reviewing: { label: '审核中', tone: 'warn' },
   published: { label: '已发布', tone: 'ok' },
   superseded: { label: '已被取代', tone: 'muted' },
   disabled: { label: '已停用', tone: 'danger' },

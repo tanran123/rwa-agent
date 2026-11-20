@@ -17,7 +17,7 @@ const saving = ref(false);
 const view = ref(null);
 const pick = usePick();
 const batch = useBatchNote();
-const labels = { draft: "草稿", reviewing: "审核中", published: "已发布", superseded: "已被取代", disabled: "已停用" };
+const labels = { draft: "草稿", published: "已发布", superseded: "已被取代", disabled: "已停用" };
 
 const listed = ref([]);
 function load() {

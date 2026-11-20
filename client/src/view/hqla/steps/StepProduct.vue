@@ -59,8 +59,17 @@ function candidatesText(row) {
   return list.slice(0, 3).map((item) => productName(item.productCode) + " " + item.score).join(" / ");
 }
 
+function suggestCode(row) {
+  if (row.suggestedProductCode) return row.suggestedProductCode;
+  if (row.productCode) return row.productCode;
+  const list = Array.isArray(row.candidates) ? row.candidates : [];
+  const top = list.find((item) => item && item.productCode);
+  return top ? String(top.productCode) : "";
+}
+
 function rowCode(row) {
-  return changed.value[row.recordId] != null ? changed.value[row.recordId] : row.productCode || "";
+  if (changed.value[row.recordId] != null) return changed.value[row.recordId];
+  return row.productCode || suggestCode(row);
 }
 
 function setRowCode(row, value) {
@@ -113,7 +122,9 @@ async function load() {
     total.value = Number(result.total) || 0;
     const next = { ...changed.value };
     rows.value.forEach((row) => {
-      if (next[row.recordId] == null) next[row.recordId] = row.productCode || "";
+      if (next[row.recordId] == null || next[row.recordId] === "") {
+        next[row.recordId] = row.productCode || suggestCode(row);
+      }
     });
     changed.value = next;
   } catch (err) {
@@ -267,7 +278,7 @@ onMounted(async () => {
             </td>
             <td class="small" style="max-width: 320px">{{ excerpt(row.raw) }}</td>
             <td>
-              {{ row.suggestedProductCode ? productName(row.suggestedProductCode) : "—" }}
+              {{ suggestCode(row) ? productName(suggestCode(row)) : "—" }}
               <div v-if="row.candidates && row.candidates.length" class="dim" style="font-size: 10.5px">
                 候选：{{ candidatesText(row) }}
               </div>

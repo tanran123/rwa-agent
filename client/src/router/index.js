@@ -20,7 +20,6 @@ import EadView from '../view/ead/EadView.vue'
 import CcfView from '../view/ead/CcfView.vue'
 import CrmConfigView from '../view/crm/CrmConfigView.vue'
 import WizardView from '../view/measure/WizardView.vue'
-import EngineView from '../view/measure/EngineView.vue'
 import ResultsView from '../view/measure/ResultsView.vue'
 import BatchesView from '../view/measure/BatchesView.vue'
 import TasksView from '../view/measure/TasksView.vue'
@@ -52,11 +51,11 @@ const classTabs = [
 ]
 const routes = [
   { path: '/login', name: 'login', component: LoginView, meta: { public: true, title: '登录', full: true } },
-  { path: '/', name: 'dashboard', component: DashboardView, meta: { group: '总览', title: '首页 / 计量工作台', blurb: '按菜单顺序走：规则配置，然后计量。' } },
-  { path: '/versions', name: 'versions', component: VersionsView, meta: { group: '规则配置', title: '监管规则版本管理', blurb: '香港监管规则集中维护。在已有版本上复制后再改，避免互相覆盖。' } },
+  { path: '/', name: 'dashboard', component: DashboardView, meta: { group: '总览', title: '首页 / 计量工作台', blurb: '监管要求配置和任务计算的入口：先配规则并发布，再按季度建任务计量。' } },
+  { path: '/versions', name: 'versions', component: VersionsView, meta: { group: '规则配置', title: '银行 Bank Return 监管规则配置管理', blurb: '统一维护银行 Bank Return 相关监管规则配置。资本充足率和流动性配置在同一版本维护，不再保留历史版本副本。' } },
   { path: '/versions/new/workbench', name: 'version-new-workbench', component: RuleWorkbenchView, meta: { group: '规则配置', title: '监管规则维护工作台', blurb: '先填写版本信息，创建后进入这一版的配置。' } },
   { path: '/versions/:id/workbench', name: 'version-workbench', component: RuleWorkbenchView, meta: { group: '规则配置', title: '监管规则维护工作台', blurb: '资本充足率和流动性两大模块，各自链接到这一版的具体配置。' } },
-  { path: '/orgs', name: 'orgs', component: OrgsView, meta: { group: '规则配置', title: '机构', blurb: '左上角机构和版本的适用机构都用这份名单。按当前地区列出。' } },
+  { path: '/orgs', name: 'orgs', component: OrgsView, meta: { group: '规则配置', title: '机构', blurb: '机构和版本的适用机构都用这份名单。按地区筛选查看，非当前地区的机构也能直接维护。' } },
   { path: '/clauses', name: 'clauses', component: ClausesView, meta: { group: '规则配置', title: '监管条款库', blurb: '条款和引用它的规则放在同一张表里。点一行看原文和引用。', versionContext: true } },
   { path: '/fields', name: 'fields', component: FieldsView, meta: { group: '规则配置', title: '产品标准字段管理', blurb: '规则写字段 name，不写 Excel 表头。手工字段不要从表格对齐。', sections: fieldTabs, versionContext: true } },
   { path: '/mappings', name: 'mappings', component: MappingsView, meta: { group: '规则配置', title: '字段映射', blurb: '源系统字段对到标准字段。', sections: fieldTabs, versionContext: true } },
@@ -80,7 +79,7 @@ const routes = [
   { path: '/tasks/new', name: 'task-create', component: TaskCreateView, meta: { group: '任务运行', title: '新建主任务', blurb: '选择季度、监管版本和机构，检查规则配置后创建主任务及初始子任务。' } },
   { path: '/tasks/:id', name: 'task-detail', component: TaskDetailView, meta: { group: '任务运行', title: '任务详情工作台', blurb: '在资本充足率和流动性两个模块下新增子任务，并进入各自的计算。' } },
   { path: '/wizard', name: 'wizard', component: WizardView, meta: { group: '任务运行', title: '信用风险 RWA 计量向导', blurb: '分步骤完成从计量范围选择、数据导入到计量结果查看的全过程' } },
-  { path: '/engine', name: 'engine', component: EngineView, meta: { group: '任务运行', title: '底稿计算', blurb: '映射、计算、追溯。逐笔结果写入计量明细后在结果页查看。' } },
+  { path: '/engine', redirect: '/tasks' },
   { path: '/results', name: 'results', component: ResultsView, meta: { group: '任务运行', title: '计量结果明细', blurb: '逐笔债项计量结果与审计证据；点击任意债项进入该笔的完整计量详情页' } },
   { path: '/batches', name: 'batches', component: BatchesView, meta: { group: '任务运行', title: '计量批次管理', blurb: '每个批次固定当时的规则版本。规则更新后，历史批次不改。' } },
   { path: '/export', name: 'export', component: ExportView, meta: { group: '任务运行', title: 'Excel 审计底稿导出', blurb: '导出真实的 xlsx。底稿里的业务数据是模拟数据。' } },
@@ -88,7 +87,8 @@ const routes = [
   { path: '/liquidity-products/:code/:tab?', name: 'liquidity-product', component: LiquidityProductView, meta: { group: '规则配置', title: '流动性产品配置工作台', blurb: '单个产品的产品组、标准字段、规则配置和规则预览。', versionContext: true } },
   { path: '/liquidity-params', name: 'liquidity-params', component: LiquidityParamsView, meta: { group: '规则配置', title: '清单与参数', blurb: '跨产品共享的参数表、系数表和监管名单。', versionContext: true } },
   { path: '/hqla', redirect: '/tasks' },
-  { path: '/hqla/:id', name: 'hqla-wizard', component: HqlaWizardView, meta: { group: '任务运行', title: 'LCR 计量任务向导', blurb: '从流动性子任务进入：基本信息 → Excel 数据导入 → 产品自动识别 → 标准字段 Mapping → 数据质量检查 → 自动计量计算 → 结果复核与输出。', versionContext: true } },
+  { path: '/hqla/:id', name: 'hqla-wizard', component: HqlaWizardView, meta: { group: '任务运行', title: 'LCR 计量任务向导', blurb: '从流动性子任务进入：基本信息 → Excel 数据导入 → 产品自动识别 → 标准字段 Mapping → 数据质量检查 → 自动计量计算 → 结果复核与输出。' } },
+  { path: '/system', redirect: '/system/users' },
   { path: '/system/users', name: 'sys-users', component: UsersView, meta: { group: '系统管理', title: '用户管理', blurb: '管理平台账号、角色与授权机构。账号停用后立即失去访问权限；当前登录账号不可停用。', menu: 'sys-users' } },
   { path: '/system/roles', name: 'sys-roles', component: RolesView, meta: { group: '系统管理', title: '角色管理', blurb: '角色是菜单权限与授权机构的模板。角色停用后，其下账号保留数据但无法登录。', menu: 'sys-roles' } },
   { path: '/system/permissions', name: 'sys-perms', component: PermissionsView, meta: { group: '系统管理', title: '权限管理', blurb: '按角色配置可见菜单。这里控制的是「能否看到入口」，机构级数据权限仍由用户授权机构控制。', menu: 'sys-perms' } },
@@ -109,6 +109,8 @@ router.beforeEach((to) => {
     return true
   }
   if (!user) return { path: '/login', query: { redirect: to.fullPath } }
+  if (to.path === '/wizard' && (!to.query.task || !to.query.sub)) return { path: '/tasks' }
+  if (to.path === '/results' && !to.query.batch) return { path: '/tasks' }
   const menu = to.meta.menu || menuIdFor(to.path)
   if (menu && !can(menu)) return { path: '/' }
   return true

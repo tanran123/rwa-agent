@@ -1,6 +1,6 @@
 <script setup>
-import { computed, onMounted, ref, watch, watchEffect } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { computed, onBeforeUnmount, onMounted, ref, watch, watchEffect } from "vue";
+import { onBeforeRouteLeave, useRoute, useRouter } from "vue-router";
 import { applyMeasureChoices, classifyMeasure, detectMeasureProducts, fetchMeasure, mapMeasureFields, saveMeasureRun, uploadWorkbook, weightMeasure } from "@/api/batch";
 import { archiveSubtask, fetchTask } from "@/api/tasks";
 import Drawer from "@/components/Drawer.vue";
@@ -8,7 +8,7 @@ import { fetchProductStandardProducts } from "@/api/product";
 import { useContext } from "@/composables/useContext";
 import { askConfirm } from "@/utils/confirm";
 
-const STATUS = { draft: "草稿", reviewing: "审核中", published: "已发布", superseded: "已被取代", disabled: "已停用" };
+const STATUS = { draft: "草稿", published: "已发布", superseded: "已被取代", disabled: "已停用" };
 const route = useRoute();
 const router = useRouter();
 const { session, currentVersion, scopeVersion, versionOptions, setOrg, setJurisdiction } = useContext();
@@ -22,7 +22,7 @@ const step = ref(1);
 const done = ref({});
 const imported = ref(null);
 const sheet = ref("term-Loan");
-const headerRow = ref(14);
+const headerRow = ref(0);
 const fileName = ref("");
 const classified = ref(false);
 const weighted = ref(false);
@@ -38,6 +38,14 @@ const uploadId = ref("");
 const reading = ref(false);
 const readError = ref("");
 const truncated = ref(false);
+const pendingFile = ref(null);
+const pendingSheets = ref([]);
+const pendingCandidates = ref([]);
+const amountColumn = ref("");
+const productModelError = ref("");
+const mappingModelError = ref("");
+const mappingDiagnostics = ref(null);
+const importBlocked = computed(() => !imported.value || imported.value.rows === 0 || imported.value.amountMatched === false);
 const configuredProducts = ref([]);
 const choiceId = ref("");
 const autoProduct = ref({});
@@ -46,6 +54,11 @@ const applying = ref(false);
 const stepError = ref("");
 const nameTouched = ref(false);
 const institutionText = ref("");
+const restoreNotice = ref("");
+const restoreTone = ref("info");
+let restoring = false;
+let draftReady = false;
+let draftTimer = null;
 const steps = [
   "选择计量范围",
   "导入 Excel 债项明细",
@@ -65,11 +78,22 @@ const sheetsLabel = computed(() => {
 });
 const productRulesets = computed(() => (pack.value && pack.value.productRulesets) || []);
 const results = computed(() => (pack.value && pack.value.results) || []);
+const resultGap = computed(() => {
+  const rows = results.value;
+  const missingEad = rows.filter((row) => row.ead == null || row.ead === "" || Number.isNaN(Number(row.ead)));
+  const missingWeight = rows.filter((row) => row.riskWeight == null || Number.isNaN(Number(row.riskWeight)));
+  return {
+    missingEad: missingEad.length,
+    missingWeight: missingWeight.length,
+    blocked: !rows.length || missingEad.length > 0 || missingWeight.length > 0
+  };
+});
 const maxStep = computed(() => {
   let next = 1;
   for (let i = 1; i <= 9; i += 1) if (done.value[i]) next = i + 1;
   return Math.min(next, 9);
 });
+const hasProgress = computed(() => !savedId.value && (!!uploadId.value || step.value > 1 || Object.keys(done.value).length > 0));
 
 // 开发环境专用：浏览器 Console 里用 __rwaWizard 查看每一步的中间结果。
 // 生产构建不会执行这段。
@@ -276,6 +300,7 @@ async function detectProducts() {
       loan.product = hit.product;
       loan.basis = "模型识别：" + (hit.reason || productLabel(hit.product));
     });
+    productModelError.value = detected.modelError || "";
     if (detected.modelError) stepError.value = detected.modelError;
   } catch (err) {
     stepError.value = err.message || "模型没有识别产品";
@@ -369,6 +394,8 @@ async function fillMappings() {
     }));
     if (pack.value && pack.value.intake) pack.value.intake.mappings = mapped.mappings || {};
     acceptMappedColumns(mapped.mappings);
+    mappingModelError.value = mapped.modelError || "";
+    mappingDiagnostics.value = mapped.diagnostics || null;
     if (mapped.modelError) stepError.value = mapped.modelError;
   } catch (err) {
     stepError.value = err.message || "字段没有对上";
@@ -388,6 +415,15 @@ function crmLabel(row) {
   if (crm.status === "off") return "未启用";
   return "不拆分";
 }
+async function acceptAllMappings() {
+  const yes = await askConfirm(
+    "确认后会接受当前全部映射结果，未匹配的必填字段将带着缺失进入后续分类、权重、EAD 和缓释计算。是否继续？",
+    { title: "接受缺失并继续", confirmText: "接受并继续", danger: true }
+  );
+  if (!yes) return;
+  mapOk.value = true;
+}
+
 async function runClassification() {
   if (!uploadId.value) {
     stepError.value = "请先上传工作簿。暴露分类交给权重计算。";
@@ -449,6 +485,14 @@ async function finish(n) {
   }
   if (n === 9) {
     if (saving.value) return;
+    if (resultGap.value.blocked) {
+      saveError.value = resultGap.value.missingEad
+        ? "还有 " + resultGap.value.missingEad + " 笔没有 EAD。请在第七步核对产品 EAD 配置后再写入正式批次。"
+        : resultGap.value.missingWeight
+          ? "还有 " + resultGap.value.missingWeight + " 笔没有风险权重。请在第六步核对后再写入正式批次。"
+          : "这批数据还没有计量结果，不能写入正式批次。";
+      return;
+    }
     saving.value = true;
     saveError.value = "";
     archiveError.value = "";
@@ -515,14 +559,23 @@ function fileToBase64(file) {
 function applyBook(book) {
   truncated.value = !!book.truncated;
   replacePack(book);
+  if (book.headerRow) headerRow.value = Number(book.headerRow);
+  if (book.amountColumn) amountColumn.value = book.amountColumn;
   const loans = (book.intake && book.intake.loans) || [];
   imported.value = {
     source: book.filename || book.sourceFile || fileName.value || "上传的工作簿",
     rows: loans.length,
     cols: book.intake.headers.length,
     ok: loans.filter((loan) => loan.product).length,
-    missing: loans.filter((loan) => !loan.product || loan.anomaly).length
+    productMissing: loans.filter((loan) => !loan.product).length,
+    fieldAnomaly: loans.filter((loan) => loan.anomaly).length,
+    missing: loans.filter((loan) => !loan.product || loan.anomaly).length,
+    amountColumn: book.amountColumn || "",
+    amountMatched: book.amountMatched !== false
   };
+  pendingFile.value = null;
+  pendingSheets.value = [];
+  pendingCandidates.value = [];
   classified.value = false;
   weighted.value = false;
   mapOk.value = false;
@@ -537,16 +590,58 @@ async function loadFile(event) {
   resetMemory();
   try {
     const content = await fileToBase64(file);
+    pendingFile.value = { filename: file.name, content };
     applyBook(await uploadWorkbook({
       filename: file.name,
       content,
-      headerRow: 1,
+      headerRow: 0,
+      amountColumn: "",
       version: (currentVersion.value && currentVersion.value.version) || "",
       jurisdiction: session.jurisdiction,
       snapshotId: snapshotId.value
     }));
   } catch (err) {
     readError.value = err.message || "工作簿没有读出来";
+    const data = err.data || {};
+    pendingSheets.value = data.sheets || [];
+    pendingCandidates.value = data.headerCandidates || [];
+    if (data.headerRow) headerRow.value = Number(data.headerRow);
+    if (data.sheet) sheet.value = data.sheet;
+    else if (pendingSheets.value.length) sheet.value = pendingSheets.value[0];
+    if (data.amountColumn) amountColumn.value = data.amountColumn;
+  } finally {
+    reading.value = false;
+  }
+}
+
+const pendingHeaders = computed(() => {
+  if (!pendingCandidates.value.length) return [];
+  const hit = pendingCandidates.value.find((item) => Number(item.row) === Number(headerRow.value));
+  return (hit || pendingCandidates.value[0]).headers || [];
+});
+
+async function rereadPending() {
+  if (!pendingFile.value || reading.value) return false;
+  reading.value = true;
+  readError.value = "";
+  try {
+    applyBook(await uploadWorkbook({
+      filename: pendingFile.value.filename,
+      content: pendingFile.value.content,
+      sheet: sheet.value,
+      headerRow: headerRow.value,
+      amountColumn: amountColumn.value,
+      version: (currentVersion.value && currentVersion.value.version) || "",
+      jurisdiction: session.jurisdiction,
+      snapshotId: snapshotId.value
+    }));
+    return true;
+  } catch (err) {
+    readError.value = err.message || "工作簿没有读出来";
+    const data = err.data || {};
+    if (data.headerCandidates) pendingCandidates.value = data.headerCandidates;
+    if (data.sheet) sheet.value = data.sheet;
+    return false;
   } finally {
     reading.value = false;
   }
@@ -560,6 +655,7 @@ async function rereadSheet() {
       uploadId: uploadId.value,
       sheet: sheet.value,
       headerRow: headerRow.value,
+      amountColumn: amountColumn.value,
       version: (currentVersion.value && currentVersion.value.version) || "",
       jurisdiction: session.jurisdiction,
       snapshotId: snapshotId.value
@@ -574,6 +670,12 @@ async function rereadSheet() {
 }
 async function onSheetPick(value) {
   sheet.value = value;
+  if (!uploadId.value) return;
+  await rereadSheet();
+}
+
+async function onAmountPick(value) {
+  amountColumn.value = value;
   if (!uploadId.value) return;
   await rereadSheet();
 }
@@ -633,6 +735,171 @@ watch(() => [session.orgId, session.baseDate, session.orgs.length], () => {
   if (!nameTouched.value) batchName.value = suggestedName();
 });
 
+function draftKey() {
+  const task = route.query.task ? String(route.query.task) : "";
+  const sub = route.query.sub ? String(route.query.sub) : "";
+  return "rwa-wizard-draft:" + (task ? task + ":" + sub : "standalone");
+}
+function draftPayload() {
+  return {
+    at: Date.now(),
+    versionId: session.versionId || "",
+    step: step.value,
+    done: done.value,
+    batchName: batchName.value,
+    uploadId: uploadId.value,
+    choiceId: choiceId.value,
+    mapOk: mapOk.value,
+    classified: classified.value,
+    weighted: weighted.value,
+    fileName: fileName.value,
+    sheet: sheet.value,
+    headerRow: headerRow.value,
+    amountColumn: amountColumn.value,
+    eadProduct: eadProduct.value,
+    autoProduct: autoProduct.value,
+    autoColumn: autoColumn.value
+  };
+}
+function persistDraft() {
+  if (!draftReady || restoring) return;
+  if (!hasProgress.value) {
+    try { sessionStorage.removeItem(draftKey()); } catch { /* 忽略 */ }
+    return;
+  }
+  try { sessionStorage.setItem(draftKey(), JSON.stringify(draftPayload())); } catch { /* 忽略容量不足 */ }
+}
+function scheduleDraft() {
+  if (!draftReady || restoring) return;
+  if (draftTimer) clearTimeout(draftTimer);
+  draftTimer = setTimeout(persistDraft, 400);
+}
+watch(
+  [step, done, batchName, uploadId, choiceId, mapOk, classified, weighted, fileName, sheet, headerRow, amountColumn, eadProduct, autoProduct, autoColumn],
+  scheduleDraft,
+  { deep: true }
+);
+function clearDraft() {
+  try { sessionStorage.removeItem(draftKey()); } catch { /* 忽略 */ }
+}
+function resetAfterLostUpload() {
+  uploadId.value = "";
+  choiceId.value = "";
+  step.value = 1;
+  done.value = {};
+  mapOk.value = false;
+  classified.value = false;
+  weighted.value = false;
+  autoProduct.value = {};
+  autoColumn.value = {};
+}
+async function restoreDraft() {
+  let draft = null;
+  try {
+    draft = JSON.parse(sessionStorage.getItem(draftKey()) || "null");
+  } catch {
+    draft = null;
+  }
+  if (!draft) return;
+  if (String(draft.versionId || "") !== String(session.versionId || "")) {
+    clearDraft();
+    return;
+  }
+  const ok = await askConfirm("发现上次未完成的计量向导进度（第 " + (Number(draft.step) || 1) + " 步）。恢复后可以继续上次的操作。", {
+    title: "恢复计量向导",
+    detail: "进度只保留在当前浏览器会话中；如果不恢复，将从头开始。",
+    confirmText: "恢复进度",
+    cancelText: "从头开始"
+  });
+  if (!ok) {
+    clearDraft();
+    return;
+  }
+  restoring = true;
+  try {
+    step.value = Math.min(Math.max(Number(draft.step) || 1, 1), 9);
+    done.value = draft.done && typeof draft.done === "object" ? draft.done : {};
+    if (draft.batchName) {
+      batchName.value = draft.batchName;
+      nameTouched.value = true;
+    }
+    uploadId.value = draft.uploadId || "";
+    choiceId.value = draft.choiceId || "";
+    mapOk.value = !!draft.mapOk;
+    classified.value = !!draft.classified;
+    weighted.value = !!draft.weighted;
+    fileName.value = draft.fileName || "";
+    if (draft.sheet != null) sheet.value = String(draft.sheet);
+    headerRow.value = Number(draft.headerRow) || 0;
+    amountColumn.value = draft.amountColumn || "";
+    eadProduct.value = draft.eadProduct || "";
+    autoProduct.value = draft.autoProduct && typeof draft.autoProduct === "object" ? draft.autoProduct : {};
+    autoColumn.value = draft.autoColumn && typeof draft.autoColumn === "object" ? draft.autoColumn : {};
+    if (uploadId.value) {
+      try {
+        await restoreUploadedBook();
+        restoreTone.value = "info";
+        restoreNotice.value = "已恢复上次的导入文件和向导进度（第 " + step.value + " 步）。";
+      } catch (err) {
+        resetAfterLostUpload();
+        clearDraft();
+        restoreTone.value = "warn";
+        restoreNotice.value = "上次上传的工作簿已经失效，已回到第一步重新开始。";
+      }
+    }
+  } finally {
+    restoring = false;
+  }
+}
+async function restoreUploadedBook() {
+  const productsBody = {};
+  Object.entries(autoProduct.value || {}).forEach(([id, code]) => {
+    if (code) productsBody[id] = code;
+  });
+  const columns = {};
+  Object.entries(autoColumn.value || {}).forEach(([key, column]) => {
+    if (!column) return;
+    const index = key.indexOf("\n");
+    if (index < 0) return;
+    const code = key.slice(0, index);
+    const stdCode = key.slice(index + 1);
+    if (!columns[code]) columns[code] = {};
+    columns[code][stdCode] = column;
+  });
+  const book = await applyMeasureChoices({
+    uploadId: uploadId.value,
+    sheet: sheet.value,
+    headerRow: headerRow.value,
+    amountColumn: amountColumn.value,
+    version: (currentVersion.value && currentVersion.value.version) || "",
+    jurisdiction: session.jurisdiction,
+    snapshotId: snapshotId.value,
+    products: productsBody,
+    columns
+  });
+  replacePack(book);
+}
+function onBeforeUnload(event) {
+  if (!hasProgress.value) return;
+  persistDraft();
+  event.preventDefault();
+  event.returnValue = "";
+}
+onBeforeRouteLeave(async () => {
+  if (!hasProgress.value) return true;
+  persistDraft();
+  return askConfirm("计量向导还没有写入结果。离开后进度会保留在当前浏览器会话，下次打开可以恢复。", {
+    title: "离开计量向导",
+    confirmText: "离开",
+    cancelText: "继续留在本页"
+  });
+});
+onBeforeUnmount(() => {
+  if (draftTimer) clearTimeout(draftTimer);
+  persistDraft();
+  window.removeEventListener("beforeunload", onBeforeUnload);
+});
+
 watch(scopeVersion, async (version) => {
   if (!version) return;
   try {
@@ -649,9 +916,12 @@ onMounted(async () => {
     const [book, list] = await Promise.all([fetchMeasure(), fetchProductStandardProducts(scopeVersion.value)]);
     configuredProducts.value = (list || []).filter((item) => item.ruleVersion === scopeVersion.value);
     replacePack(book);
+    await restoreDraft();
   } catch (err) {
     error.value = (err.response && err.response.data && err.response.data.error) || "计量数据没有读到";
   }
+  draftReady = true;
+  window.addEventListener("beforeunload", onBeforeUnload);
 });
 </script>
 
@@ -664,6 +934,7 @@ onMounted(async () => {
       <div>本次向导由主任务「{{ taskCtx.task.name }}」的子任务「{{ taskCtx.sub.name }}」触发。监管规则版本 {{ taskCtx.task.version }}、机构 {{ taskCtx.task.institution }} 继承主任务，本次不能修改。正式计量绑定配置快照 <span class="mono">{{ taskCtx.task.snapshotId || "未绑定" }}</span>，计量写入数据库后自动归档到这个子任务。</div>
     </div>
     <div v-if="taskError" class="notice danger"><span class="ni">!</span><div>{{ taskError }}</div></div>
+    <div v-if="restoreNotice" class="notice" :class="restoreTone"><span class="ni">{{ restoreTone === "warn" ? "!" : "i" }}</span><div>{{ restoreNotice }}</div></div>
     <div class="panel" style="margin-bottom: 12px">
       <div class="panel-head">
         <h3>计量向导</h3>
@@ -739,9 +1010,37 @@ onMounted(async () => {
         </template>
         <template v-else>
           <div v-if="readError" class="notice danger"><span class="ni">!</span><div>{{ readError }}</div></div>
+          <div v-if="readError && pendingFile" class="panel" style="margin-bottom: 12px">
+            <div class="panel-head">
+              <h3>调整读取方式后重试</h3>
+              <span class="sub">{{ pendingFile.filename }}</span>
+            </div>
+            <div class="panel-body">
+              <div class="grid c3">
+                <label class="field">工作表
+                  <select v-model="sheet">
+                    <option v-for="name in pendingSheets" :key="name" :value="name">{{ name }}</option>
+                  </select>
+                </label>
+                <label class="field">表头所在行
+                  <input v-model.number="headerRow" type="number" min="1" />
+                </label>
+                <label class="field">金额列
+                  <select v-model="amountColumn">
+                    <option value="">自动识别</option>
+                    <option v-for="name in pendingHeaders" :key="name" :value="name">{{ name }}</option>
+                  </select>
+                </label>
+              </div>
+              <div class="btn-group" style="margin-top: 10px">
+                <button type="button" class="btn primary" :disabled="reading" @click="rereadPending">{{ reading ? "正在读取" : "按当前设置重新读取" }}</button>
+                <label class="btn">换一个文件<input type="file" accept=".xlsx,.xlsm" hidden @change="loadFile" /></label>
+              </div>
+            </div>
+          </div>
           <div v-if="truncated" class="notice warn"><span class="ni">!</span><div>这个工作表超过 2000 行，这次只读了前 2000 行。</div></div>
           <div class="notice ok"><span class="ni">✓</span><div>已从「{{ sheetsLabel || "全部明细" }}」读取 {{ imported.rows }} 行，表头 {{ imported.cols }} 列。来源：{{ imported.source }}。识别产品只用这次读入的工作表。</div></div>
-          <div v-if="uploadId" class="grid c2" style="margin-bottom: 12px">
+          <div v-if="uploadId" class="grid c3" style="margin-bottom: 12px">
             <div class="field"><label>工作表</label>
               <select v-if="intake.sheets.length" :value="sheet" :disabled="reading" @change="onSheetPick($event.target.value)">
                 <option v-if="intake.sheets.length > 1" value="">全部明细</option>
@@ -750,6 +1049,12 @@ onMounted(async () => {
               <input v-else v-model="sheet" />
             </div>
             <div class="field"><label>表头所在行</label><input v-model.number="headerRow" type="number" /></div>
+            <div class="field"><label>金额列</label>
+              <select :value="amountColumn" @change="onAmountPick($event.target.value)">
+                <option value="">自动识别</option>
+                <option v-for="name in intake.headers" :key="name" :value="name">{{ name }}</option>
+              </select>
+            </div>
             <div class="btn-group">
               <button type="button" class="btn" :disabled="reading" @click="rereadSheet">{{ reading ? "正在读取" : "按当前工作表和表头重新读取" }}</button>
               <label class="btn">换一个文件<input type="file" accept=".xlsx,.xlsm" hidden @change="loadFile" /></label>
@@ -758,8 +1063,9 @@ onMounted(async () => {
           <div class="grid c4" style="margin-bottom: 14px">
             <div class="kpi accent"><div class="k-label">导入总记录数</div><div class="k-value">{{ imported.rows }}</div><div class="k-foot">工作表 {{ sheetsLabel }}</div></div>
             <div class="kpi"><div class="k-label">字段映射成功</div><div class="k-value">{{ imported.ok }}</div><div class="k-foot">覆盖率 {{ Math.round(imported.ok / imported.rows * 100) }}%</div></div>
-            <div class="kpi"><div class="k-label">必填字段缺失</div><div class="k-value sm">{{ imported.missing }}</div><div class="k-foot">{{ imported.missing ? "需处理后才能继续" : "无缺失" }}</div></div>
-            <div class="kpi"><div class="k-label">待处理记录</div><div class="k-value sm">{{ imported.missing }}</div><div class="k-foot">将进入异常清单</div></div>
+            <div class="kpi"><div class="k-label">产品待识别</div><div class="k-value sm">{{ imported.productMissing }}</div><div class="k-foot">在第 3 步处理</div></div>
+            <div class="kpi"><div class="k-label">字段异常</div><div class="k-value sm">{{ imported.fieldAnomaly }}</div><div class="k-foot">在第 4 步处理</div></div>
+            <div class="kpi"><div class="k-label">待处理记录</div><div class="k-value sm">{{ imported.missing }}</div><div class="k-foot">{{ imported.amountMatched === false ? "金额列未识别，需调整读取方式" : "产品未识别或字段异常，可继续处理" }}</div></div>
           </div>
           <div class="panel">
             <div class="panel-head"><h3>原始债项数据预览</h3><span class="sub">显示前 12 行</span></div>
@@ -798,12 +1104,12 @@ onMounted(async () => {
               <table class="tbl compact">
                 <thead><tr><th>债项编号</th><th>客户</th><th>异常类型</th><th>具体问题</th><th>处理方式</th></tr></thead>
                 <tbody>
-                  <tr v-for="loan in intake.loans.filter((item) => item.anomaly)" :key="loan.id">
+                  <tr v-for="loan in intake.loans.filter((item) => !item.product || item.anomaly)" :key="loan.id">
                     <td class="mono">{{ loan.id }}</td>
                     <td>{{ loan.name }}</td>
-                    <td><span class="tag warn">{{ loan.anomaly }}</span></td>
-                    <td>{{ loan.anomalyDetail }}</td>
-                    <td>继续计量，走到兜底或标记待复核</td>
+                    <td><span class="tag warn">{{ !loan.product ? "产品未识别" : loan.anomaly }}</span></td>
+                    <td>{{ !loan.product ? "未识别到产品，请在第 3 步选择产品" : loan.anomalyDetail }}</td>
+                    <td>{{ !loan.product ? "第 3 步选择产品" : "继续计量，走到兜底或标记待复核" }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -812,7 +1118,7 @@ onMounted(async () => {
           <div v-if="applying" class="loading"><span class="spin"></span>正在读取</div>
           <div v-if="stepError" class="notice danger"><span class="ni">!</span><div>{{ stepError }}</div></div>
           <div class="btn-group" style="margin-top: 12px">
-            <button type="button" class="btn primary" :disabled="applying" @click="finish(2)">{{ applying ? "正在识别产品" : "下一步：识别产品类型 →" }}</button>
+            <button type="button" class="btn primary" :disabled="applying || importBlocked" @click="finish(2)">{{ applying ? "正在识别产品" : "下一步：识别产品类型 →" }}</button>
             <button type="button" class="btn" @click="imported = null">重新导入</button>
           </div>
         </template>
@@ -824,6 +1130,10 @@ onMounted(async () => {
       <div class="panel-body">
         <div v-if="applying" class="loading"><span class="spin"></span>正在读取</div>
         <div v-if="unrecognizedLoans.length" class="notice warn"><span class="ni">!</span><div>有 {{ unrecognizedLoans.length }} 笔模型没有对上已配置产品。请在「识别结果」里选择，选完才能进入字段映射。</div></div>
+        <div v-if="productModelError" class="notice warn">
+          <span class="ni">!</span>
+          <div>{{ productModelError }}<button type="button" class="btn xs" style="margin-left: 8px" :disabled="applying" @click="detectProducts">重试识别</button></div>
+        </div>
         <div v-else class="notice ok"><span class="ni">✓</span><div>已识别全部 {{ intake.loans.length }} 笔。识别错了可以在「识别结果」里改选。</div></div>
         <div class="grid c4" style="margin-bottom: 14px">
           <div v-for="(count, code) in productStats" :key="code" class="kpi">
@@ -867,6 +1177,14 @@ onMounted(async () => {
       <div class="panel-body">
         <div v-if="applying" class="loading"><span class="spin"></span>正在读取</div>
         <div class="notice info"><span class="ni">i</span><div>先读取该产品的标准字段，用字段名称、字段编码和来源列对表头。对不上的再交给模型，并附上各列抽样值，说明这些列用来做信用风险 RWA。模型给出的列可以改。仍然空着的字段视为没填。</div></div>
+        <div v-if="mappingModelError" class="notice warn">
+          <span class="ni">!</span>
+          <div>{{ mappingModelError }}<button type="button" class="btn xs" style="margin-left: 8px" :disabled="applying" @click="fillMappings">重试字段建议</button></div>
+        </div>
+        <div v-if="mappingDiagnostics" class="notice info">
+          <span class="ni">i</span>
+          <div>标准字段 {{ mappingDiagnostics.standardFieldCount }} 个，已匹配 {{ mappingDiagnostics.matchedCount }} 个，待匹配 {{ mappingDiagnostics.pendingCount }} 个；映射文档 {{ mappingDiagnostics.mappingDoc || "—" }}{{ mappingDiagnostics.mappingDocFound ? " 已加载" : " 未找到" }}。</div>
+        </div>
         <div class="grid c4" style="margin-bottom: 14px">
           <div class="kpi accent"><div class="k-label">产品分组</div><div class="k-value sm">{{ mapSummary.groups }}</div><div class="k-foot">覆盖 {{ mapSummary.fields }} 个字段映射</div></div>
           <div class="kpi"><div class="k-label">高置信度建议</div><div class="k-value sm">{{ mapSummary.high }}</div><div class="k-foot">可直接采纳</div></div>
@@ -901,7 +1219,7 @@ onMounted(async () => {
         <div v-if="mapOk" class="notice ok"><span class="ni">✓</span><div>全部产品的字段映射均已确认，可以进入下一步执行暴露分类。</div></div>
         <div v-else class="notice warn"><span class="ni">!</span><div>确认映射后即可放行。未匹配的必填字段会带着缺失进入计量。</div></div>
         <div class="btn-group">
-          <button v-if="!mapOk" type="button" class="btn primary" @click="mapOk = true">一键确认全部（含接受缺失）</button>
+          <button v-if="!mapOk" type="button" class="btn primary" @click="acceptAllMappings">一键确认全部（含接受缺失）</button>
           <button v-else type="button" class="btn primary" @click="finish(4)">下一步：执行暴露分类 →</button>
           <button type="button" class="btn" @click="step = 3">← 返回产品识别</button>
         </div>
@@ -1079,6 +1397,12 @@ onMounted(async () => {
             </tbody>
           </table>
         </div>
+        <div v-if="resultGap.blocked" class="notice warn">
+          <span class="ni">!</span>
+          <div>
+            计量结果不完整：{{ resultGap.missingEad }} 笔没有 EAD，{{ resultGap.missingWeight }} 笔没有风险权重。补齐后才能写入正式批次。
+          </div>
+        </div>
         <div v-if="pack.workbookError" class="notice danger"><span class="ni">!</span><div>{{ pack.workbookError }}</div></div>
         <div v-else-if="uploadId && pack.workbookReady" class="notice ok"><span class="ni">✓</span><div>风险权重、EAD、RWA 和计算过程已写在上传工作簿每一行的后面。</div></div>
         <div v-if="saveError" class="notice danger"><span class="ni">!</span><div>{{ saveError }}</div></div>
@@ -1092,7 +1416,7 @@ onMounted(async () => {
         </div>
         <div class="btn-group" style="margin-top: 12px">
           <a v-if="uploadId && pack.workbookReady" class="btn" :href="'/api/measure/workbook.xlsx?uploadId=' + uploadId">下载写回的工作簿</a>
-          <button v-if="!savedId" type="button" class="btn primary" :disabled="saving" @click="finish(9)">{{ saving ? "正在写入" : "写入数据库并查看结果 →" }}</button>
+          <button v-if="!savedId" type="button" class="btn primary" :disabled="saving || resultGap.blocked" @click="finish(9)">{{ saving ? "正在写入" : "写入数据库并查看结果 →" }}</button>
           <button v-if="savedId" type="button" class="btn primary" @click="router.push('/results?batch=' + savedId)">打开结果明细</button>
           <button v-if="savedId && taskCtx" type="button" class="btn" @click="router.push('/tasks/' + taskCtx.task.id)">返回任务详情</button>
         </div>

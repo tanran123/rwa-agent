@@ -8,6 +8,7 @@ import {
 } from "./refData.js";
 import { resolveVersionRef } from "./ruleVersion.js";
 import { assertRevision, assertVersionWritable, recordRevision } from "./configAudit.js";
+import { clearExposureCache } from "./exposureCache.js";
 import { createRuleConfigSnapshot } from "./ruleGovernance.js";
 import {
   validateDataMapping, validateProductRegistry, validateRuleDocument, validateRulePair
@@ -182,6 +183,7 @@ export async function createRuleDocument(input) {
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
     [id, jurisdiction, ruleVersion, kind, meta.name, row.docVersion, meta.status, meta.title, JSON.stringify(body), stamp(), versionId, hashOf(body)]
   );
+  clearExposureCache(versionId);
   await recordRevision({
     ruleVersionId: versionId, objectType: "rule_document", objectKey: kind + "|" + meta.name,
     action: "CREATE", after: { status: meta.status, docVersion: row.docVersion, hash: hashOf(body) }, actor: input.actor || ""
@@ -231,6 +233,7 @@ export async function saveRuleDocument(id, input) {
       id
     ]
   );
+  clearExposureCache(versionId);
   await recordRevision({
     ruleVersionId: versionId, objectType: "rule_document", objectKey: rows[0].kind + "|" + nextName,
     action: "UPDATE", before: { status: rows[0].status, docVersion: rows[0].doc_version, hash: rows[0].content_hash },
@@ -243,6 +246,7 @@ export async function deleteRuleDocument(id, actor = "") {
   const rows = await query(DOC_SQL + " WHERE id = ?", [id]);
   if (!rows[0]) bad("没有这份规则文档");
   await query("DELETE FROM rule_document WHERE id = ?", [id]);
+  clearExposureCache(rows[0].rule_version_id || "");
   await recordRevision({
     ruleVersionId: rows[0].rule_version_id || "", objectType: "rule_document",
     objectKey: rows[0].kind + "|" + rows[0].name, action: "DELETE",
@@ -411,12 +415,20 @@ function productRegistry(classDoc, weightDoc, mappingBodies) {
     }
   }
 
-  const levels = {};
+  const groupMeta = {};
   [classDoc, weightDoc].forEach((doc) => {
     (doc.field_groups || []).forEach((group) => {
-      if (group.group_id) levels[group.group_id] = group.level;
+      if (!group || !group.group_id || groupMeta[group.group_id]) return;
+      groupMeta[group.group_id] = {
+        label: group.label || group.group_id,
+        label_en: group.label_en || "",
+        level: group.level || "FACILITY",
+        description: group.description || "",
+        order: typeof group.order === "number" ? group.order : null
+      };
     });
   });
+  const readable = (code) => String(code || "").split("_").map((word) => word ? word.charAt(0) + word.slice(1).toLowerCase() : "").join(" ").trim();
   const mappingByFamily = {};
   (mappingBodies || []).forEach((body) => {
     if (body && body.product_family) mappingByFamily[body.product_family] = body;
@@ -425,24 +437,41 @@ function productRegistry(classDoc, weightDoc, mappingBodies) {
   const businessGroups = readProductGroups();
   const productMappings = Object.keys(families).map((family) => {
     const mapping = mappingByFamily[family] || {};
-    const fields = (mapping.mappings || [])
-      .filter((item) => item && item.source_field && item.target_field)
-      .map((item) => ({
+    const fieldMap = new Map();
+    (mapping.mappings || []).forEach((item) => {
+      if (!item || !item.source_field || !item.target_field || fieldMap.has(item.source_field)) return;
+      fieldMap.set(item.source_field, {
         name: item.source_field,
         label: item.description || item.source_field,
+        label_en: "",
         type: item.source_type || "string",
         group: item.target_group || "PRODUCT_TRANSACTION",
-        level: levels[item.target_group] || "FACILITY",
         required: item.required !== false,
-        maps_to: [item.target_field]
-      }));
+        status: "ACTIVE",
+        unit: item.unit || "",
+        precision: null,
+        scale: null,
+        format: "",
+        default_value: "",
+        description: item.description || item.source_field,
+        description_en: "",
+        dictionary: "",
+        enum_values: [],
+        source_hint: item.source_field,
+        aliases: []
+      });
+    });
+    const fields = [...fieldMap.values()];
     const groups = {};
     fields.forEach((field) => {
       if (!groups[field.group]) {
+        const meta = groupMeta[field.group] || {};
         groups[field.group] = {
           group_id: field.group,
-          label: field.group,
-          level: field.level,
+          label: meta.label || field.group,
+          label_en: meta.label_en || readable(field.group),
+          description: meta.description || "",
+          order: meta.order == null ? 999 : meta.order,
           field_count: 0
         };
       }
@@ -466,7 +495,7 @@ function productRegistry(classDoc, weightDoc, mappingBodies) {
       candidate_exposure_classes: mapping.candidate_exposure_classes || [],
       target_profile_ref: mapping.target_profile_ref || family,
       standard_fields: fields,
-      standard_field_groups: Object.keys(groups).map((key) => groups[key])
+      standard_field_groups: Object.keys(groups).map((key) => groups[key]).sort((left, right) => (left.order || 999) - (right.order || 999))
     };
   }).filter((mapping) => mapping.candidate_exposure_classes.length && mapping.standard_fields.length);
 
@@ -477,6 +506,8 @@ function productRegistry(classDoc, weightDoc, mappingBodies) {
     status: "DRAFT",
     jurisdiction: "HK",
     framework: "STC",
+    field_schema_version: 2,
+    dictionaries: [],
     effective_from: classDoc.effective_from || null,
     default_rule_sets: {
       classification_rule_ref: classDoc.name,
@@ -515,6 +546,7 @@ async function upsertRuleDocument(input) {
        revision = revision + 1, content_hash = VALUES(content_hash)`,
     [id, row.jurisdiction, row.ruleVersion, row.kind, row.name, row.docVersion, meta.status, meta.title, JSON.stringify(input.body), stamp(), versionId, hashOf(input.body)]
   );
+  clearExposureCache(versionId);
   await recordRevision({
     ruleVersionId: versionId, objectType: "rule_document", objectKey: row.kind + "|" + row.name,
     action: "IMPORT", after: { status: meta.status, docVersion: row.docVersion, hash: hashOf(input.body) }, actor: input.actor || ""

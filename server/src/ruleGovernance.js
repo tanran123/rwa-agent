@@ -8,6 +8,7 @@ import { ruleView as eadRuleView } from "./eadConfig.js";
 import { declaredRefs } from "./refData.js";
 import { resolveVersionRef } from "./ruleVersion.js";
 import { assertRevision, latestConfigRevision, recordRevision } from "./configAudit.js";
+import { clearExposureCache } from "./exposureCache.js";
 export { assertRevision, latestConfigRevision, recordRevision };
 
 const require = createRequire(import.meta.url);
@@ -123,9 +124,9 @@ function presentVersion(row) {
 }
 
 async function rawConfig(row) {
-  const lcr = (row.framework || "CAR") === "LCR";
   const [documents, tables, lists, eadConfigs, eadRules, crmConfigs, crmSlots, crmTypes, clauses, relations, products] = await Promise.all([
-    query("SELECT * FROM rule_document WHERE rule_version_id = ? ORDER BY kind, name", [row.id]),
+    query("SELECT * FROM rule_document WHERE rule_version_id = ?", [row.id])
+      .then((rows) => rows.sort((left, right) => (left.kind + "|" + left.name).localeCompare(right.kind + "|" + right.name))),
     query("SELECT * FROM rule_parameter_table WHERE rule_version_id = ? ORDER BY table_id, table_version", [row.id]),
     query("SELECT * FROM rule_list WHERE rule_version_id = ? ORDER BY list_id, list_version", [row.id]),
     query("SELECT * FROM ead_product_config WHERE rule_version_id = ? ORDER BY product_code", [row.id]),
@@ -138,16 +139,14 @@ async function rawConfig(row) {
       [row.id, row.jurisdiction]
     ),
     query("SELECT * FROM rule_clause_relation WHERE rule_version_id = ? ORDER BY clause_id, rule_node_id", [row.id]),
-    lcr ? Promise.resolve([]) : configProducts(row.version)
+    configProducts(row.version)
   ]);
   const liquidity = {};
-  if (lcr) {
-    for (const table of LIQUIDITY_TABLES) {
-      liquidity[table] = await query(
-        `SELECT * FROM ${table} WHERE jurisdiction = ? AND rule_version = ?`,
-        [row.jurisdiction, row.version]
-      );
-    }
+  for (const table of LIQUIDITY_TABLES) {
+    liquidity[table] = await query(
+      `SELECT * FROM ${table} WHERE jurisdiction = ? AND rule_version = ?`,
+      [row.jurisdiction, row.version]
+    );
   }
   return { row, documents, tables, lists, eadConfigs, eadRules, crmConfigs, crmSlots, crmTypes, clauses, relations, products, liquidity };
 }
@@ -246,22 +245,6 @@ function modulesOf(raw, framework) {
   const errors = [];
   const warnings = [];
 
-  if (framework === "LCR") {
-    const liquidityCount = ((raw.liquidity && raw.liquidity.liquidity_product) || []).length;
-    if (!liquidityCount) errors.push("流动性配置尚未建立");
-    modules.push({
-      key: "liquidity", label: MODULE_LABELS.liquidity, status: liquidityCount ? "ok" : "error",
-      count: liquidityCount, errors: liquidityCount ? [] : ["流动性配置尚未建立"], warnings: [], updatedAt: ""
-    });
-    if (!raw.clauses.length) warnings.push("当前版本还没有监管条款");
-    modules.push({
-      key: "clauses", label: MODULE_LABELS.clauses, status: raw.clauses.length ? "ok" : "warning",
-      count: raw.clauses.length, errors: [], warnings: raw.clauses.length ? [] : ["当前版本还没有监管条款"],
-      updatedAt: raw.clauses.reduce((latest, item) => (item.updated_at > latest ? item.updated_at : latest), "")
-    });
-    const done = modules.filter((item) => item.status === "ok").length;
-    return { modules, errors, warnings, completeness: Math.round((done / Math.max(modules.length, 1)) * 100) };
-  }
 
   const docErrors = [];
   raw.documents.forEach((row) => {
@@ -314,7 +297,7 @@ function modulesOf(raw, framework) {
   raw.products.forEach((product) => {
     const config = raw.eadConfigs.find((item) => item.product_code === product.code);
     if (!config) {
-      eadWarnings.push(product.label + "：尚未决定是否配置 EAD");
+      eadErrors.push(product.label + "：尚未决定是否配置 EAD");
       return;
     }
     if (!Number(config.needed)) return;
@@ -370,6 +353,19 @@ function modulesOf(raw, framework) {
     errors: [],
     warnings: raw.clauses.length ? [] : ["当前版本还没有监管条款"],
     updatedAt: raw.clauses.reduce((latest, item) => (item.updated_at > latest ? item.updated_at : latest), "")
+  });
+
+  const liquidityCount = ((raw.liquidity && raw.liquidity.liquidity_product) || []).length;
+  const liquidityWarnings = liquidityCount ? [] : ["当前版本还没有流动性产品配置"];
+  liquidityWarnings.forEach((text) => warnings.push(text));
+  modules.push({
+    key: "liquidity",
+    label: MODULE_LABELS.liquidity,
+    status: liquidityCount ? "ok" : "warning",
+    count: liquidityCount,
+    errors: [],
+    warnings: liquidityWarnings,
+    updatedAt: ""
   });
 
   const done = modules.filter((item) => item.status === "ok").length;
@@ -439,21 +435,6 @@ export async function ruleVersionOverview(id) {
   };
 }
 
-export async function submitRuleVersionReview(id, actor = "") {
-  const row = await versionRow(id);
-  if (!["draft", "reviewing"].includes(row.status)) throw fail(409, "只有草稿或审核中的版本可以提交审核");
-  const validation = await validateRuleVersion(id);
-  if (!validation.ok) throw fail(400, "版本配置还有阻断问题：" + validation.errors.slice(0, 5).join("；"));
-  const now = nowText();
-  await query(
-    `UPDATE rule_version SET status = 'reviewing', config_status = 'VALIDATED', validated_at = ?,
-       revision = revision + 1, updated_by = ?, updated_at = ? WHERE id = ?`,
-    [now, actor, now, id]
-  );
-  await recordRevision({ ruleVersionId: id, objectType: "rule_version", objectKey: id, action: "SUBMIT_REVIEW", before: { status: row.status }, after: { status: "reviewing" }, actor });
-  return ruleVersionOverview(id);
-}
-
 export async function createRuleConfigSnapshot(ruleVersionId, actor = "", status = "PUBLISHED") {
   const row = await versionRow(ruleVersionId);
   const raw = await rawConfig(row);
@@ -519,6 +500,7 @@ export async function createRuleConfigSnapshot(ruleVersionId, actor = "", status
 export async function publishRuleVersion(id, actor = "") {
   const row = await versionRow(id);
   if (row.status === "published") throw fail(409, "这个版本已经发布");
+  if (row.status !== "draft") throw fail(409, "只有草稿版本可以发布");
   const validation = await validateRuleVersion(id);
   if (!validation.ok) throw fail(400, "版本配置还有阻断问题，不能发布：" + validation.errors.slice(0, 5).join("；"));
   const snapshot = await createRuleConfigSnapshot(id, actor, "PUBLISHED");
@@ -529,11 +511,35 @@ export async function publishRuleVersion(id, actor = "") {
      WHERE id = ?`,
     [now, now, snapshot.id, actor, now, id]
   );
+  clearExposureCache(id);
   await recordRevision({
     ruleVersionId: id, objectType: "rule_version", objectKey: id, action: "PUBLISH",
     before: { status: row.status }, after: { status: "published", snapshotId: snapshot.id }, actor
   });
   return { ...(await ruleVersionOverview(id)), snapshot };
+}
+
+export async function withdrawRuleVersion(id, actor = "") {
+  const row = await versionRow(id);
+  if (row.status !== "published") throw fail(409, "只有已发布版本可以撤回发布");
+  const now = nowText();
+  await query(
+    "UPDATE rule_config_snapshot SET status = 'SUPERSEDED' WHERE rule_version_id = ? AND status = 'PUBLISHED'",
+    [id]
+  );
+  await query(
+    `UPDATE rule_version SET status = 'draft', config_status = 'CONFIGURING', validated_at = '',
+       published_snapshot_id = '', revision = revision + 1, updated_by = ?, updated_at = ?
+     WHERE id = ?`,
+    [actor, now, id]
+  );
+  clearExposureCache(id);
+  await recordRevision({
+    ruleVersionId: id, objectType: "rule_version", objectKey: id, action: "WITHDRAW_PUBLISH",
+    before: { status: "published", snapshotId: row.published_snapshot_id || "" },
+    after: { status: "draft", configStatus: "CONFIGURING" }, actor
+  });
+  return ruleVersionOverview(id);
 }
 
 export async function latestPublishedSnapshot(ruleVersionId) {
@@ -638,175 +644,6 @@ export async function loadRwaConfig({ version = "", ruleVersionId = "", jurisdic
   };
 }
 
-export async function cloneRuleVersion(sourceId, input = {}, actor = "") {
-  const source = await versionRow(sourceId);
-  const id = String(input.id || "").trim();
-  const version = String(input.version || "").trim();
-  const name = String(input.name || source.name).trim();
-  if (!id) throw fail(400, "请填写新版本编号");
-  if (!version) throw fail(400, "请填写新版本号");
-  const exists = await query("SELECT id FROM rule_version WHERE id = ? OR (jurisdiction = ? AND version = ?)", [id, source.jurisdiction, version]);
-  if (exists[0]) throw fail(400, "新版本编号或版本号已存在");
-  const raw = await rawConfig(source);
-  const now = nowText();
-  const conn = await pool.getConnection();
-  try {
-    await conn.beginTransaction();
-    await conn.query(
-      `INSERT INTO rule_version
-         (id, jurisdiction, version, name, rule_type, effective_from, effective_to, status, institution, ruleset_file,
-          published_at, author, changelog, framework, source_version_id, revision, created_by, updated_by, created_at, updated_at, config_status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, '', ?, ?, ?, ?, 1, ?, ?, ?, ?, 'CONFIGURING')`,
-      [id, source.jurisdiction, version, name, source.rule_type, source.effective_from, source.effective_to,
-        source.institution, source.ruleset_file, source.author, "继承自 " + source.version, source.framework || "CAR",
-        source.id, actor, actor, now, now]
-    );
-    for (const row of raw.documents) {
-      const docId = [row.jurisdiction, row.kind, row.name, row.doc_version, version].map(slug).join("-");
-      await conn.query(
-        `INSERT INTO rule_document
-           (id, jurisdiction, rule_version, kind, name, doc_version, status, title, body, updated_at,
-            rule_version_id, revision, updated_by, content_hash)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
-        [docId, row.jurisdiction, version, row.kind, row.name, row.doc_version, row.status, row.title,
-          jsonText(row.body), now, id, actor, row.content_hash || hashOf(documentOf(row.body))]
-      );
-    }
-    for (const row of raw.tables) {
-      const tableId = [row.jurisdiction, id, row.table_id, row.table_version].join("-");
-      await conn.query(
-        `INSERT INTO rule_parameter_table
-           (id, jurisdiction, table_id, table_version, title, purpose, columns_json, rows_json, note, updated_at, rule_version_id, revision, updated_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
-        [tableId, row.jurisdiction, row.table_id, row.table_version, row.title, row.purpose, jsonText(row.columns_json), jsonText(row.rows_json), row.note, now, id, actor]
-      );
-    }
-    for (const row of raw.lists) {
-      const listId = [row.jurisdiction, id, row.list_id, row.list_version].join("-");
-      await conn.query(
-        `INSERT INTO rule_list
-           (id, jurisdiction, list_id, list_version, title, list_type, columns_json, rows_json, note, updated_at, rule_version_id, revision, updated_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
-        [listId, row.jurisdiction, row.list_id, row.list_version, row.title, row.list_type, jsonText(row.columns_json), jsonText(row.rows_json), row.note, now, id, actor]
-      );
-    }
-    for (const row of raw.eadConfigs) {
-      await conn.query(
-        `INSERT INTO ead_product_config
-           (rule_version_id, product_code, needed, reason, side, version, decision_status, revision, status, updated_by, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
-        [id, row.product_code, row.needed, row.reason, row.side, version, row.decision_status, row.status, actor, now]
-      );
-    }
-    for (const row of raw.eadRules) {
-      await conn.query(
-        `INSERT INTO ead_product_rule
-           (rule_version_id, id, product_code, seq, name, condition_text, conditions_json, formula, fields_json, structured_json,
-            precision_digits, rounding, result_field, clause_id, status, ccf, params_json, revision)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
-        [id, row.id, row.product_code, row.seq, row.name, row.condition_text, jsonText(row.conditions_json), row.formula, jsonText(row.fields_json), jsonText(row.structured_json),
-          row.precision_digits, row.rounding, row.result_field, row.clause_id, row.status, row.ccf, jsonText(row.params_json)]
-      );
-    }
-    for (const row of raw.crmConfigs) {
-      await conn.query(
-        `INSERT INTO crm_product_config
-           (rule_version_id, product_code, needed, reason, max_slots, decision_status, revision, status, updated_by, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
-        [id, row.product_code, row.needed, row.reason, row.max_slots, row.decision_status, row.status, actor, now]
-      );
-    }
-    for (const row of raw.crmSlots) {
-      await conn.query(
-        `INSERT INTO crm_slot_column (rule_version_id, product_code, attr, slot, column_name, target_fact_code)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [id, row.product_code, row.attr, row.slot, row.column_name, row.target_fact_code]
-      );
-    }
-    for (const row of raw.crmTypes) {
-      await conn.query(
-        `INSERT INTO crm_eligible_type (rule_version_id, product_code, code, name, note, seq, clause_id, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, row.product_code, row.code, row.name, row.note, row.seq, row.clause_id, row.status]
-      );
-    }
-    if ((source.framework || "CAR") === "LCR" && raw.liquidity) {
-      const autoIncRows = await conn.query(
-        `SELECT TABLE_NAME FROM information_schema.COLUMNS
-          WHERE TABLE_SCHEMA = DATABASE() AND EXTRA LIKE '%auto_increment%'
-            AND TABLE_NAME IN (${LIQUIDITY_TABLES.map(() => "?").join(",")})`,
-        LIQUIDITY_TABLES
-      );
-      const autoInc = new Set(autoIncRows[0].map((item) => item.TABLE_NAME));
-      for (const table of LIQUIDITY_TABLES) {
-        for (const row of raw.liquidity[table] || []) {
-          const next = { ...row, rule_version: version };
-          if (autoInc.has(table)) delete next.id;
-          else if (typeof next.id === "string" && next.id.includes(source.version)) {
-            next.id = next.id.split(source.version).join(version);
-          }
-          await conn.query(`INSERT INTO ${table} SET ?`, [sqlRow(next)]);
-        }
-      }
-    }
-    await conn.commit();
-  } catch (err) {
-    await conn.rollback();
-    throw err;
-  } finally {
-    conn.release();
-  }
-  await recordRevision({
-    ruleVersionId: id, objectType: "rule_version", objectKey: id, action: "CLONE",
-    after: { sourceVersionId: source.id, version }, actor
-  });
-  return ruleVersionOverview(id);
-}
-
-export async function diffRuleVersion(id, sourceId) {
-  const current = await rawConfig(await versionRow(id));
-  const source = await rawConfig(await versionRow(sourceId));
-  const compare = (left, right, keyOf, type) => {
-    const a = new Map(left.map((item) => [keyOf(item), item]));
-    const b = new Map(right.map((item) => [keyOf(item), item]));
-    const keys = Array.from(new Set(Array.from(a.keys()).concat(Array.from(b.keys())))).sort();
-    const changes = [];
-    keys.forEach((key) => {
-      const x = a.get(key);
-      const y = b.get(key);
-      const hashX = x ? hashOf(x) : "";
-      const hashY = y ? hashOf(y) : "";
-      if (!x) changes.push({ key, change: "added" });
-      else if (!y) changes.push({ key, change: "removed" });
-      else if (hashX !== hashY) changes.push({ key, change: "changed" });
-    });
-    return { type, changes, added: changes.filter((item) => item.change === "added").length, removed: changes.filter((item) => item.change === "removed").length, changed: changes.filter((item) => item.change === "changed").length };
-  };
-  const groups = [
-    compare(current.documents, source.documents, (item) => item.kind + "|" + item.name, "rule_document"),
-    compare(current.tables, source.tables, (item) => item.table_id + "|" + item.table_version, "rule_parameter_table"),
-    compare(current.lists, source.lists, (item) => item.list_id + "|" + item.list_version, "rule_list"),
-    compare(current.eadConfigs, source.eadConfigs, (item) => item.product_code, "ead_product_config"),
-    compare(current.crmConfigs, source.crmConfigs, (item) => item.product_code, "crm_product_config"),
-    compare(
-      (current.liquidity && current.liquidity.liquidity_product) || [],
-      (source.liquidity && source.liquidity.liquidity_product) || [],
-      (item) => item.code || item.id,
-      "liquidity_product"
-    )
-  ];
-  return {
-    version: current.row.version,
-    sourceVersion: source.row.version,
-    summary: {
-      added: groups.reduce((sum, item) => sum + item.added, 0),
-      removed: groups.reduce((sum, item) => sum + item.removed, 0),
-      changed: groups.reduce((sum, item) => sum + item.changed, 0)
-    },
-    groups
-  };
-}
-
 export async function compareSnapshots(leftId, rightId) {
   const [left, right] = await Promise.all([snapshotById(leftId), snapshotById(rightId)]);
   const [leftItems, rightItems] = await Promise.all([snapshotItems(leftId), snapshotItems(rightId)]);
@@ -873,7 +710,7 @@ export async function rollbackSnapshot(snapshotId, actor = "") {
         await conn.query(`INSERT INTO ${table} SET ?`, [sqlRow(row)]);
       }
     }
-    if ((snapshot.framework || "CAR") === "LCR") {
+    if (items.some((item) => String(item.objectType).startsWith("liquidity_"))) {
       const autoIncRows = await conn.query(
         `SELECT TABLE_NAME FROM information_schema.COLUMNS
           WHERE TABLE_SCHEMA = DATABASE() AND EXTRA LIKE '%auto_increment%'

@@ -348,7 +348,7 @@ export async function saveRoleMenus(id, body, actor) {
 }
 
 export async function listLoginLogs(limit = 200) {
-  const rows = await query("SELECT * FROM login_log ORDER BY id DESC LIMIT ?", [Number(limit) || 200]);
+  const rows = await query("SELECT * FROM login_log ORDER BY at DESC, id DESC LIMIT ?", [Number(limit) || 200]);
   return rows.map((row) => ({
     id: row.id,
     at: row.at,
@@ -362,7 +362,7 @@ export async function listLoginLogs(limit = 200) {
 }
 
 export async function listOperationLogs(limit = 200) {
-  const rows = await query("SELECT * FROM operation_log ORDER BY id DESC LIMIT ?", [Number(limit) || 200]);
+  const rows = await query("SELECT * FROM operation_log ORDER BY at DESC, id DESC LIMIT ?", [Number(limit) || 200]);
   return rows.map((row) => ({ id: row.id, at: row.at, actor: row.actor, action: row.action, target: row.target, note: row.note }));
 }
 
@@ -566,6 +566,7 @@ export async function listTokenLogs(filters = {}) {
   const to = String(filters.to || "");
   const user = String(filters.user || "");
   const model = String(filters.model || "");
+  if (from && to && from > to) throw fail(400, "开始日期不能晚于结束日期");
   const where = [];
   const params = [];
   if (from) { where.push("at >= ?"); params.push(from + " 00:00:00"); }

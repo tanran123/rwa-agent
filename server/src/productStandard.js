@@ -52,7 +52,7 @@ function legacyProducts(products, fields) {
 
 export async function configProducts(version = "") {
   const [registryRows, legacyRows, legacyFieldRows, mappingRows] = await Promise.all([
-    query("SELECT rule_version, body FROM rule_document WHERE kind = 'product_registry' ORDER BY rule_version"),
+    query("SELECT rule_version, body FROM rule_document WHERE kind = 'product_registry'"),
     query("SELECT code, label, icon, color, rule_version FROM product_type ORDER BY code"),
     query(
       `SELECT product_code, code, name, meaning, std_field, required, source_system, source_field
@@ -85,6 +85,11 @@ export async function configProducts(version = "") {
         label: entry.product_family, icon: "产", color: "#64748b"
       };
       const mapping = mappingByRef.get(row.rule_version + "|" + entry.data_mapping_ref) || {};
+      const targetBySource = {};
+      (mapping.mappings || []).forEach((item) => {
+        if (!item || !item.source_field || !item.target_field) return;
+        if (!targetBySource[item.source_field]) targetBySource[item.source_field] = item.target_field;
+      });
       const fields = [];
       const seenFields = new Set();
       (entry.standard_fields || []).forEach((field) => {
@@ -93,11 +98,23 @@ export async function configProducts(version = "") {
         fields.push({
           code: field.name,
           name: field.label || field.name,
-          meaning: field.label || field.name,
-          stdField: (Array.isArray(field.maps_to) && field.maps_to[0]) || field.name,
+          labelEn: field.label_en || "",
+          meaning: field.description || field.label || field.name,
+          description: field.description || field.label || field.name,
+          descriptionEn: field.description_en || "",
+          stdField: targetBySource[field.name] || field.name,
           group: field.group || "",
-          level: field.level || "",
           required: !!field.required,
+          status: field.status || "ACTIVE",
+          unit: field.unit || "",
+          precision: field.precision == null ? null : field.precision,
+          scale: field.scale == null ? null : field.scale,
+          format: field.format || "",
+          defaultValue: field.default_value || "",
+          dictionary: field.dictionary || "",
+          enumValues: Array.isArray(field.enum_values) ? field.enum_values : [],
+          sourceHint: field.source_hint || "",
+          aliases: Array.isArray(field.aliases) ? field.aliases : [],
           sourceSystem: mapping.source_system || "",
           sourceField: field.name
         });
@@ -109,7 +126,15 @@ export async function configProducts(version = "") {
         color: meta.color,
         ruleVersion: row.rule_version,
         dataMappingRef: entry.data_mapping_ref || "",
-        standardFieldGroups: (entry.standard_field_groups || []).slice(),
+        standardFieldGroups: (entry.standard_field_groups || []).map((group) => ({
+          id: group.group_id,
+          group_id: group.group_id,
+          label: group.label || group.group_id,
+          labelEn: group.label_en || "",
+          description: group.description || "",
+          order: typeof group.order === "number" ? group.order : null,
+          fieldCount: (entry.standard_fields || []).filter((field) => field.group === group.group_id).length
+        })),
         businessGroups: Object.entries(entry.product_profiles || {}).map(([code, profile]) => ({
           code,
           candidateExposureClasses: (profile.candidate_exposure_classes || []).slice(),
@@ -150,7 +175,7 @@ function newer(left, right) {
 export async function versionRuleDocuments(version) {
   if (!version) return { registry: null, classification: null, weight: null, mappings: [] };
   const rows = await query(
-    "SELECT * FROM rule_document WHERE rule_version = ? ORDER BY kind, name",
+    "SELECT * FROM rule_document WHERE rule_version = ?",
     [version]
   );
   const registryRow = rows.find((row) => row.kind === "product_registry") || null;

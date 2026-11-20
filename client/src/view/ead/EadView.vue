@@ -34,6 +34,39 @@ const product = computed(() => {
   return data.value.products.find((item) => item.code === active.value) || null;
 });
 
+const EAD_ALL_FIELDS = "__all__";
+const eadFieldGroup = ref(EAD_ALL_FIELDS);
+const eadFieldQuery = ref("");
+function eadGroupKey(field) {
+  return field.group || field.level || "其他";
+}
+const eadFieldGroups = computed(() => {
+  const list = (product.value && product.value.fields) || [];
+  const map = new Map();
+  list.forEach((field) => {
+    const key = eadGroupKey(field);
+    map.set(key, (map.get(key) || 0) + 1);
+  });
+  return [
+    { code: EAD_ALL_FIELDS, label: "全部字段", count: list.length },
+    ...Array.from(map.entries()).map(([code, count]) => ({ code, label: code, count }))
+  ];
+});
+const filteredEadFields = computed(() => {
+  const list = (product.value && product.value.fields) || [];
+  const query = eadFieldQuery.value.trim().toLowerCase();
+  return list.filter((field) => {
+    if (eadFieldGroup.value !== EAD_ALL_FIELDS && eadGroupKey(field) !== eadFieldGroup.value) return false;
+    if (!query) return true;
+    return [field.name, field.code, field.stdField, field.meaning]
+      .filter(Boolean).join(" ").toLowerCase().includes(query);
+  });
+});
+watch(() => active.value, () => {
+  eadFieldGroup.value = EAD_ALL_FIELDS;
+  eadFieldQuery.value = "";
+});
+
 function ping(text) {
   toast.value = text;
   clearTimeout(ping.timer);
@@ -631,30 +664,48 @@ async function rerun() {
                           </template>
 
                           <div class="fx-picker">
-                            <div class="fx-pk-title">
-                              本产品标准字段（点击插入公式）
-                              <span class="tag muted" style="margin-left: 7px">{{ product.fields.length }} 个</span>
-                            </div>
-                            <div class="fx-pk-list">
-                              <div v-if="!product.fields.length" class="empty">
-                                该产品在产品标准字段配置里还没有标准字段，无法编写公式。
+                            <div class="fx-pk-head">
+                              <div class="fx-pk-title">
+                                本产品标准字段（点击插入公式）
+                                <span class="tag muted" style="margin-left: 7px">{{ filteredEadFields.length }} / {{ product.fields.length }} 个</span>
                               </div>
-                              <button
-                                v-for="field in product.fields"
-                                :key="field.code"
-                                type="button"
-                                class="fx-fld"
-                                :title="(field.meaning || '') + '（编码 ' + field.code + '，标准字段 ' + (field.stdField || '—') + '）'"
-                                @click="insert(product, rule, field.name)"
-                              >
-                                <span class="fx-fld-n">{{ field.name }}</span>
-                                <span class="fx-fld-c mono">{{ field.stdField || field.code }}</span>
-                                <span v-if="field.required" class="fx-req">必填</span>
-                              </button>
-                              <button v-if="product.side === 'off'" type="button" class="fx-fld ccf" title="信用转换系数，由本规则配置" @click="insert(product, rule, 'CCF')">
-                                <span class="fx-fld-n">CCF</span>
-                                <span class="fx-fld-c mono">系数</span>
-                              </button>
+                              <input v-model="eadFieldQuery" class="fx-pk-search" type="search" placeholder="搜索字段名称 / 编码" />
+                            </div>
+                            <div class="fx-picker-body">
+                              <nav class="fx-pk-nav">
+                                <button
+                                  v-for="group in eadFieldGroups"
+                                  :key="group.code"
+                                  type="button"
+                                  class="fx-pk-nav-item"
+                                  :class="{ on: eadFieldGroup === group.code }"
+                                  @click="eadFieldGroup = group.code"
+                                >
+                                  <span>{{ group.label }}</span><b>{{ group.count }}</b>
+                                </button>
+                              </nav>
+                              <div class="fx-pk-list">
+                                <div v-if="!product.fields.length" class="empty">
+                                  该产品在产品标准字段配置里还没有标准字段，无法编写公式。
+                                </div>
+                                <div v-else-if="!filteredEadFields.length" class="empty">没有匹配的标准字段。</div>
+                                <button
+                                  v-for="field in filteredEadFields"
+                                  :key="field.code"
+                                  type="button"
+                                  class="fx-fld"
+                                  :title="(field.meaning || '') + '（编码 ' + field.code + '，标准字段 ' + (field.stdField || '—') + '）'"
+                                  @click="insert(product, rule, field.name)"
+                                >
+                                  <span class="fx-fld-n">{{ field.name }}</span>
+                                  <span class="fx-fld-c mono">{{ field.stdField || field.code }}</span>
+                                  <span v-if="field.required" class="fx-req">必填</span>
+                                </button>
+                                <button v-if="product.side === 'off' && (!eadFieldQuery || 'ccf'.includes(eadFieldQuery.trim().toLowerCase()))" type="button" class="fx-fld ccf" title="信用转换系数，由本规则配置" @click="insert(product, rule, 'CCF')">
+                                  <span class="fx-fld-n">CCF</span>
+                                  <span class="fx-fld-c mono">系数</span>
+                                </button>
+                              </div>
                             </div>
                           </div>
                         </div>

@@ -300,41 +300,34 @@ onBeforeUnmount(() => document.removeEventListener("click", closeMenu));
       <h2>流动性产品管理</h2>
       <p>管理当前 LCR 规则版本下的产品及其配置</p>
     </div>
-    <div class="lq-version-chip">
-      <span>当前版本</span>
-      <b>{{ version }}</b>
+    <div class="lq-hero-actions">
+      <div class="lq-version-chip">
+        <span>当前版本</span>
+        <b>{{ version }}</b>
+      </div>
+      <button type="button" class="btn primary" @click="openCreate">＋ 新建产品</button>
     </div>
   </div>
 
-  <div class="panel lq-filters">
-    <div class="panel-head">
-      <h3>产品筛选</h3>
-      <span class="sub">按产品名称、编码、产品组及业务属性查找产品。</span>
-      <span class="spacer"></span>
-      <button type="button" class="btn sm primary" @click="openCreate">＋ 新建产品</button>
-    </div>
-    <div class="panel-body">
-      <div class="lq-filter-row">
-        <input v-model="filters.q" type="search" placeholder="搜索产品名称或编码" />
-        <select v-model="filters.category">
-          <option value="">全部业务大类</option>
-          <option v-for="item in categories" :key="item" :value="item">{{ item }}</option>
-        </select>
-        <select v-model="filters.side">
-          <option value="">全部侧别</option>
-          <option value="ASSET">资产端</option>
-          <option value="INFLOW">现金流入</option>
-          <option value="OUTFLOW">现金流出</option>
-        </select>
-        <select v-model="filters.status">
-          <option value="">全部状态</option>
-          <option value="LIVE">已启用</option>
-          <option value="DRAFT">草稿</option>
-          <option value="DISABLED">已停用</option>
-        </select>
-        <button type="button" class="btn sm" @click="resetFilters">重置</button>
-      </div>
-    </div>
+  <div class="lq-toolbar">
+    <input v-model="filters.q" class="lq-search" type="search" placeholder="搜索产品名称或编码" />
+    <select v-model="filters.category">
+      <option value="">全部业务大类</option>
+      <option v-for="item in categories" :key="item" :value="item">{{ item }}</option>
+    </select>
+    <select v-model="filters.side">
+      <option value="">全部侧别</option>
+      <option value="ASSET">资产端</option>
+      <option value="INFLOW">现金流入</option>
+      <option value="OUTFLOW">现金流出</option>
+    </select>
+    <select v-model="filters.status">
+      <option value="">全部状态</option>
+      <option value="LIVE">已启用</option>
+      <option value="DRAFT">草稿</option>
+      <option value="DISABLED">已停用</option>
+    </select>
+    <button type="button" class="btn sm" @click="resetFilters">重置</button>
   </div>
 
   <div class="lq-list-head">
@@ -540,8 +533,8 @@ onBeforeUnmount(() => document.removeEventListener("click", closeMenu));
 }
 .lq-version-chip span { font-size: 11px; color: var(--muted); }
 .lq-version-chip b { font-size: 15px; font-family: var(--mono); }
-.lq-list-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin: 14px 0 10px; }
-.lq-list-head h3 { margin: 0 0 2px; font-size: 15px; }
+.lq-list-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; margin: 4px 0 8px; }
+.lq-list-head h3 { margin: 0 0 1px; font-size: 14px; }
 .lq-list-head .sub { font-size: 11.5px; color: var(--muted); }
 .lq-pager {
   display: flex;
@@ -558,11 +551,44 @@ onBeforeUnmount(() => document.removeEventListener("click", closeMenu));
 .lq-page-size select { width: auto; min-width: 70px; }
 .lq-pager-btns { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .lq-pager-btns .btn { padding: 2px 8px; font-size: 11px; }
-.lq-filter-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-.lq-filter-row input[type="search"] { flex: 1 1 260px; max-width: 360px; width: auto; }
-.lq-filter-row select { flex: 0 0 auto; min-width: 140px; width: auto; }
-.lq-filters .panel-head { padding-bottom: 6px; }
-.lq-filters .panel-body { padding: 10px 12px; }
+.lq-hero { margin-bottom: 8px; }
+.lq-hero-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.lq-version-chip { padding: 5px 10px; border-radius: 8px; }
+.lq-version-chip span { font-size: 9.5px; }
+.lq-version-chip b { font-size: 13px; }
+.lq-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding: 2px 0 8px;
+}
+.lq-toolbar .lq-search {
+  flex: 1 1 220px;
+  min-width: 150px;
+  height: 34px;
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #fff;
+  font-size: 12px;
+  line-height: normal;
+}
+.lq-toolbar select {
+  flex: 0 0 150px;
+  width: 150px;
+  height: 34px;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #fff;
+  font-size: 11.5px;
+  line-height: normal;
+  box-sizing: border-box;
+}
+.lq-toolbar .btn { flex: 0 0 auto; height: 34px; padding: 0 12px; }
 .lq-cards {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
@@ -669,4 +695,43 @@ onBeforeUnmount(() => document.removeEventListener("click", closeMenu));
   .lq-version-chip { align-items: flex-start; }
   .lq-pager-btns { width: 100%; }
 }
+
+/* 产品卡片紧凑化 */
+.lq-cards {
+  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  gap: 8px;
+}
+.lq-card {
+  gap: 4px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  box-shadow: none;
+}
+.lq-card:hover { border-color: #c7d2fe; box-shadow: none; }
+.lq-card-head { gap: 6px; }
+.lq-card-head b { font-size: 12.5px; }
+.lq-card-head .tag { padding: 0 6px; font-size: 9.5px; }
+.lq-card-meta { gap: 5px; font-size: 10.5px; }
+.lq-card-desc {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; min-height: 0; font-size: 10.5px; line-height: 1.4;
+}
+.lq-card-metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding-top: 5px;
+}
+.lq-card-metrics span { gap: 0; }
+.lq-card-metrics em { font-size: 9px; }
+.lq-card-metrics b { font-size: 12px; line-height: 1.2; }
+.lq-completeness { gap: 2px; padding: 3px 0 1px; }
+.lq-completeness-head { gap: 6px; font-size: 10px; }
+.lq-completeness-head b { font-size: 10.5px; }
+.lq-completeness-head em { font-size: 9.5px; }
+.lq-progress-bar { height: 5px; }
+.lq-card-links { gap: 8px; padding-top: 5px; }
+.lq-card-links button { font-size: 10.5px; }
+.lq-more { right: 8px; bottom: 7px; }
+.lq-more-btn { width: 22px; height: 20px; font-size: 12px; }
+.lq-card-open { font-size: 9.5px; line-height: 1.3; min-height: 13px; padding-right: 26px; }
 </style>

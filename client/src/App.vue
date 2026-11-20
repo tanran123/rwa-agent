@@ -7,6 +7,7 @@ import { fetchSession, logoutSession } from "@/api/admin";
 import { useContext } from "@/composables/useContext";
 import SectionTabs from "@/components/SectionTabs.vue";
 import VersionContext from "@/components/VersionContext.vue";
+import PagePath from "@/components/PagePath.vue";
 import AgentDock from "@/components/AgentDock.vue";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import { provideAgentForms } from "@/composables/useAgentForm";
@@ -36,6 +37,12 @@ const viewKey = computed(() => {
   return route.meta.chart ? "tree" : route.path + "|" + session.jurisdiction + "|" + session.versionId + "|" + scopeVersion.value;
 });
 const isLogin = computed(() => route.path === "/login");
+const trailShown = computed(() => {
+  if (route.meta.versionContext) return true;
+  if (route.name === "version-workbench" || route.name === "version-new-workbench") return true;
+  if (route.meta.group === "任务运行") return route.path !== "/tasks";
+  return false;
+});
 const user = computed(() => auth.user);
 
 const visibleNav = computed(() =>
@@ -181,7 +188,8 @@ async function logout() {
         <AgentDock />
         <ConfirmDialog />
         <div id="auditBody">
-          <VersionContext v-if="route.meta.versionContext" />
+          <PagePath v-if="trailShown" />
+          <VersionContext v-if="route.meta.versionContext && !session.versionContextHidden" />
           <p v-if="session.error" class="notice danger">{{ session.error }}</p>
           <router-view :key="viewKey" />
         </div>

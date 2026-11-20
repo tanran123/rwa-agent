@@ -25,6 +25,7 @@ const store = createStore({
       jurisdiction: 'HK',
       versionId: 'rv-hk-2026-1',
       baseDate: '2026-09-30',
+      versionContextHidden: false,
     }
   },
   getters: {
@@ -52,6 +53,9 @@ const store = createStore({
     },
     setError(state, message) {
       state.error = message || ''
+    },
+    setVersionContextHidden(state, hidden) {
+      state.versionContextHidden = !!hidden
     },
     setJurisdiction(state, code) {
       state.jurisdiction = code

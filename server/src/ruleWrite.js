@@ -1,7 +1,8 @@
 import { pool, query } from "./db.js";
 import { assertRevision, assertVersionWritable, recordRevision } from "./configAudit.js";
+import { clearExposureCache } from "./exposureCache.js";
 
-const VERSION_STATUS = ["draft", "reviewing", "published", "superseded", "disabled"];
+const VERSION_STATUS = ["draft", "published", "superseded", "disabled"];
 const ONBOARDING = ["column", "manual"];
 const FIELD_TYPES = ["number", "enum"];
 const MAP_STATUS = ["ok", "warn", "missing"];
@@ -180,6 +181,7 @@ export async function createRuleVersion(body) {
     );
     return versionRow(q, id);
   }), "编号已存在");
+  clearExposureCache(id);
   await recordRevision({
     ruleVersionId: id, objectType: "rule_version", objectKey: id, action: "CREATE",
     after: { version: fields.version, framework: fields.framework, status: fields.status }, actor: fields.actor
@@ -209,6 +211,7 @@ export async function updateRuleVersion(id, body) {
     );
     return versionRow(q, key);
   }), "版本编号已存在");
+  clearExposureCache(key);
   await recordRevision({
     ruleVersionId: key, objectType: "rule_version", objectKey: key, action: "UPDATE",
     before: { version: saved.version, status: saved.status }, after: { name: fields.name, status: fields.status }, actor: fields.actor
@@ -308,6 +311,7 @@ export async function deleteRuleVersion(id, actor = "") {
     if (products[0] || ead[0] || rules[0] || batches[0] || docs[0] || versionedEad[0] || snapshots[0] || tasks[0]) {
       fail(400, "这个版本还被规则文档、EAD、专属规则、快照、任务或计量批次引用");
     }
+    clearExposureCache(key);
     await q("DELETE FROM config_revision WHERE rule_version_id = ?", [key]);
     await q("DELETE FROM rule_version WHERE id = ?", [key]);
     await q(

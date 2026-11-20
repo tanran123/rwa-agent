@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { createTask, deleteTask, fetchTasks, updateTask } from "@/api/tasks";
 import { useContext } from "@/composables/useContext";
@@ -14,6 +14,9 @@ const busy = ref(false);
 const form = ref(null);
 const editingId = ref("");
 const tasks = ref([]);
+const total = ref(0);
+const page = ref(1);
+const pageSize = ref(20);
 const filters = ref({ q: "", jurisdiction: "", version: "", institution: "", status: "", from: "", to: "" });
 
 const TASK_STATUS = {
@@ -70,41 +73,28 @@ function openCreate() {
 
 function clearFilters() {
   filters.value = { q: "", jurisdiction: "", version: "", institution: "", status: "", from: "", to: "" };
+  page.value = 1;
 }
 
 const filterOptions = computed(() => ({
-  jurisdictions: [...new Set(tasks.value.map((item) => item.jurisdiction).filter(Boolean))],
-  versions: [...new Set(tasks.value.map((item) => item.version).filter(Boolean))],
-  institutions: [...new Set(tasks.value.map((item) => item.institution).filter(Boolean))]
+  jurisdictions: (session.jurisdictions || []).map((item) => item.code),
+  versions: [...new Set((session.versions || []).map((item) => item.version).filter(Boolean))],
+  institutions: [...new Set((session.orgs || []).map((item) => item.name).filter(Boolean))]
 }));
-
-const filteredTasks = computed(() => {
-  const f = filters.value;
-  const text = f.q.trim().toLowerCase();
-  return tasks.value.filter((task) => {
-    if (f.jurisdiction && task.jurisdiction !== f.jurisdiction) return false;
-    if (f.version && task.version !== f.version) return false;
-    if (f.institution && task.institution !== f.institution) return false;
-    if (f.status && task.status !== f.status) return false;
-    if (f.from && String(task.baseDate || "") < f.from) return false;
-    if (f.to && String(task.baseDate || "") > f.to) return false;
-    if (!text) return true;
-    return [task.name, task.id, task.version, task.institution, task.jurisdiction, task.baseDate]
-      .join(" ").toLowerCase().includes(text);
-  });
+const dateError = computed(() => {
+  if (!filters.value.from || !filters.value.to) return "";
+  return filters.value.from > filters.value.to ? "开始基准日不能晚于结束基准日，请调整日期范围。" : "";
+});
+const pageCount = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)));
+const duplicateNames = computed(() => {
+  const counts = new Map();
+  tasks.value.forEach((task) => counts.set(task.name, (counts.get(task.name) || 0) + 1));
+  return new Set(Array.from(counts.entries()).filter(([, count]) => count > 1).map(([name]) => name));
 });
 
-const summary = computed(() => {
-  const rows = filteredTasks.value;
-  return {
-    total: rows.length,
-    doing: rows.filter((item) => item.status === "doing").length,
-    done: rows.filter((item) => item.status === "done").length,
-    draft: rows.filter((item) => item.status === "draft").length,
-    ead: rows.reduce((sum, item) => sum + (Number(item.ead) || 0), 0),
-    rwa: rows.reduce((sum, item) => sum + (Number(item.rwa) || 0), 0)
-  };
-});
+
+
+
 
 function openEdit(task) {
   error.value = "";
@@ -120,26 +110,66 @@ function openEdit(task) {
 }
 
 async function load() {
-  const rows = await fetchTasks();
-  tasks.value = rows;
-  return rows;
+  if (dateError.value) {
+    const countResponse = await fetchTasks({
+      page: 1,
+      pageSize: 1,
+      q: filters.value.q || undefined,
+      jurisdiction: filters.value.jurisdiction || undefined,
+      version: filters.value.version || undefined,
+      institution: filters.value.institution || undefined,
+      status: filters.value.status || undefined
+    });
+    total.value = Array.isArray(countResponse) ? countResponse.length : Number(countResponse.total) || 0;
+    tasks.value = [];
+    return tasks.value;
+  }
+  const response = await fetchTasks({
+    page: page.value,
+    pageSize: pageSize.value,
+    q: filters.value.q || undefined,
+    jurisdiction: filters.value.jurisdiction || undefined,
+    version: filters.value.version || undefined,
+    institution: filters.value.institution || undefined,
+    status: filters.value.status || undefined,
+    from: filters.value.from || undefined,
+    to: filters.value.to || undefined
+  });
+  if (Array.isArray(response)) {
+    tasks.value = response;
+    total.value = response.length;
+  } else {
+    tasks.value = response.rows || [];
+    total.value = Number(response.total) || 0;
+    if (page.value > 1 && !tasks.value.length && total.value) {
+      page.value = Math.max(1, page.value - 1);
+      return load();
+    }
+  }
+  return tasks.value;
 }
+
+watch(filters, () => {
+  page.value = 1;
+  if (view.value) view.value.reload();
+}, { deep: true });
+watch([page, pageSize], () => {
+  if (view.value) view.value.reload();
+});
 
 async function refresh() {
   if (view.value) await view.value.reload();
 }
 
-function shortMoney(value) {
-  const n = Number(value);
-  if (!Number.isFinite(n) || n === 0) return "—";
-  const abs = Math.abs(n);
-  if (abs >= 1e8) return (n / 1e8).toFixed(2) + " 亿";
-  if (abs >= 1e4) return (n / 1e4).toFixed(2) + " 万";
-  return n.toFixed(2);
-}
 
 function capitalPercent(task) {
   return task.capitalCount ? Math.round((task.archivedCount / task.capitalCount) * 100) : 0;
+}
+
+function liquidityPercent(task) {
+  const subs = (task.subs || []).filter((item) => item.module === "liquidity");
+  if (!subs.length) return 0;
+  return Math.round(subs.reduce((sum, item) => sum + (Number(item.progress) || 0), 0) / subs.length);
 }
 
 async function saveTask() {
@@ -174,7 +204,7 @@ async function saveTask() {
 }
 
 async function removeTask(task) {
-  const ok = await askConfirm(`将删除主任务「${task.name}」及其全部子任务。已归档的计量批次仍保留在结果明细里。确定继续？`, {
+  const ok = await askConfirm(`将删除主任务「${task.name}」及其全部子任务，关联的 LCR 任务和计算结果也会一并删除。确定继续？`, {
     title: "删除主任务",
     danger: true
   });
@@ -200,14 +230,6 @@ function openTask(task) {
     每个季度是一个主任务。主任务创建时固定监管规则版本和机构；任务清单统计两个工作模块的子任务数量和进度，
     点任务进入详情工作台，再在资本充足率或流动性模块下新增子任务。
   </p>
-
-  <div class="task-summary">
-    <div class="task-summary-item"><span>主任务</span><b>{{ summary.total }}</b><em>当前筛选</em></div>
-    <div class="task-summary-item"><span>进行中</span><b>{{ summary.doing }}</b><em>有待办子任务</em></div>
-    <div class="task-summary-item"><span>已完成</span><b>{{ summary.done }}</b><em>资本充足率全部归档</em></div>
-    <div class="task-summary-item"><span>待开始</span><b>{{ summary.draft }}</b><em>还没有子任务</em></div>
-    <div class="task-summary-item wide"><span>EAD / RWA</span><b>{{ shortMoney(summary.ead) }} / {{ shortMoney(summary.rwa) }}</b><em>只汇总当前筛选的已归档批次</em></div>
-  </div>
 
   <div class="panel task-filters">
     <div class="panel-body">
@@ -236,7 +258,7 @@ function openTask(task) {
         <input v-model="filters.to" type="date" title="基准日止" />
         <button type="button" class="btn sm" @click="clearFilters">清空筛选</button>
         <span class="spacer"></span>
-        <span class="dim" style="font-size: 11.5px">显示 {{ filteredTasks.length }} / {{ tasks.length }}</span>
+        <span class="dim" style="font-size: 11.5px">当前页 {{ tasks.length }} / 共 {{ total }} 个主任务</span>
       </div>
     </div>
   </div>
@@ -292,16 +314,17 @@ function openTask(task) {
       <div class="panel">
         <div class="panel-head">
           <h3>任务清单</h3>
-          <span class="sub">{{ filteredTasks.length }} 个主任务 · 统计资本充足率和流动性子任务的数量与进度</span>
+          <span class="sub">共 {{ total }} 个主任务 · 按基准日从新到旧、同基准日按创建时间排序</span>
           <span class="spacer"></span>
           <button type="button" class="btn sm primary" @click="openCreate">新建主任务</button>
         </div>
         <div class="panel-body tight">
-          <div v-if="!tasks.length" class="empty">
+          <div v-if="dateError" class="notice danger" style="margin: 10px">{{ dateError }}</div>
+          <div v-else-if="!total && !filters.q && !filters.jurisdiction && !filters.version && !filters.institution && !filters.status && !filters.from && !filters.to" class="empty">
             <div class="ei">▤</div>
             <div>还没有主任务。点击「新建主任务」开始一个季度的计量。</div>
           </div>
-          <div v-else-if="!filteredTasks.length" class="empty">
+          <div v-else-if="!tasks.length" class="empty">
             <div class="ei">⌕</div>
             <div>没有符合条件的任务。换个关键词或清空筛选。</div>
           </div>
@@ -309,13 +332,14 @@ function openTask(task) {
             <thead>
               <tr>
                 <th>主任务</th><th>监管版本 · 机构</th><th>状态</th>
-                <th>资本充足率</th><th>流动性</th><th class="num">EAD</th><th class="num">RWA</th><th>更新时间</th><th>操作</th>
+                <th>资本充足率</th><th>流动性</th><th>更新时间</th><th>操作</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="task in filteredTasks" :key="task.id" class="clickable" @click="openTask(task)">
+              <tr v-for="task in tasks" :key="task.id" class="clickable" @click="openTask(task)">
                 <td>
                   <strong>{{ task.name }}</strong>
+                  <span v-if="duplicateNames.has(task.name)" class="tag amber" style="margin-left: 6px">同名</span>
                   <div class="dim" style="font-size: 10.5px">{{ task.id }} · 基准日 {{ task.baseDate }}</div>
                 </td>
                 <td>
@@ -337,12 +361,14 @@ function openTask(task) {
                   <span v-else class="dim">未建子任务</span>
                 </td>
                 <td>
-                  <div v-if="task.liquidityCount">{{ task.liquidityArchived || 0 }} / {{ task.liquidityCount }} 已归档</div>
+                  <div v-if="task.liquidityCount" style="min-width: 110px">
+                    <div class="dim" style="font-size: 11px">{{ task.liquidityArchived || 0 }} / {{ task.liquidityCount }} 已归档 · {{ liquidityPercent(task) }}%</div>
+                    <div class="progress" :class="{ ok: liquidityPercent(task) === 100 }">
+                      <i :style="{ width: liquidityPercent(task) + '%' }"></i>
+                    </div>
+                  </div>
                   <span v-else class="dim">未建子任务</span>
-                  <div v-if="task.liquidityCount" class="dim" style="font-size: 10.5px">在 HQLA 任务执行</div>
                 </td>
-                <td class="num">{{ task.archivedCount ? shortMoney(task.ead) : "—" }}</td>
-                <td class="num">{{ task.archivedCount ? shortMoney(task.rwa) : "—" }}</td>
                 <td class="dim" style="font-size: 11px">{{ task.updatedAt || "—" }}</td>
                 <td @click.stop>
                   <div style="display: flex; gap: 4px; flex-wrap: wrap">
@@ -354,6 +380,18 @@ function openTask(task) {
               </tr>
             </tbody>
           </table>
+          <div class="inline-fields" style="margin-top: 10px; justify-content: flex-end; align-items: center">
+            <label class="field" style="flex: 0 0 auto; min-width: 0">
+              <select v-model.number="pageSize" style="width: 96px">
+                <option :value="20">20 条/页</option>
+                <option :value="50">50 条/页</option>
+                <option :value="100">100 条/页</option>
+              </select>
+            </label>
+            <button type="button" class="btn sm" :disabled="page <= 1" @click="page--">上一页</button>
+            <span class="dim">第 {{ page }} / {{ pageCount }} 页</span>
+            <button type="button" class="btn sm" :disabled="page >= pageCount" @click="page++">下一页</button>
+          </div>
         </div>
       </div>
     </template>

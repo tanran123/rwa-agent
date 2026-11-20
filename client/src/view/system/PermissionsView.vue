@@ -10,22 +10,44 @@ const router = useRouter();
 const view = ref(null);
 const selected = ref(String(route.query.role || ""));
 const checked = ref([]);
+const tree = ref(null);
 const note = ref("");
 const error = ref("");
 const saving = ref(false);
 
 const load = async () => {
-  const [roles, tree] = await Promise.all([fetchRoles(), fetchMenus()]);
+  const [roles, menus] = await Promise.all([fetchRoles(), fetchMenus()]);
+  tree.value = menus;
   if (!selected.value || !roles.some((row) => row.id === selected.value)) {
     const fallback = roles.find((row) => !row.isSuper) || roles[0];
     selected.value = fallback ? fallback.id : "";
   }
   seed(roles.find((row) => row.id === selected.value));
-  return { roles, tree };
+  return { roles, tree: menus };
 };
 
+function menuIds() {
+  const data = tree.value;
+  return data ? data.groups.flatMap((group) => group.items.map((item) => item.id)) : [];
+}
+
 function seed(role) {
-  checked.value = role ? [...(role.menus || [])] : [];
+  if (!role) {
+    checked.value = [];
+    return;
+  }
+  const ids = menuIds();
+  const menus = role.menus || [];
+  checked.value = menus.includes("*") ? ["*"] : menus.filter((id) => ids.includes(id));
+}
+
+function selectedCount() {
+  const ids = menuIds();
+  return checked.value.filter((id) => ids.includes(id)).length;
+}
+
+function countText() {
+  return checked.value.includes("*") ? "已选全部菜单" : "已选 " + selectedCount() + " 个菜单";
 }
 
 function select(role) {
@@ -104,7 +126,7 @@ async function save(roles) {
         <button type="button" class="btn sm ghost" :disabled="isSuperRole(data.roles)" @click="allOn(data.tree.groups, isSuperRole(data.roles))">全选</button>
         <button type="button" class="btn sm ghost" :disabled="isSuperRole(data.roles)" @click="none">清空</button>
         <span class="spacer"></span>
-        <span class="sub">已选 {{ checked.includes("*") ? "全部" : checked.length }} 个菜单</span>
+        <span class="sub">{{ countText() }}</span>
         <button type="button" class="btn sm primary" :disabled="saving || isSuperRole(data.roles)" @click="save(data.roles)">{{ saving ? "正在保存" : "保存权限" }}</button>
       </div>
 

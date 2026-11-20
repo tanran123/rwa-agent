@@ -11,6 +11,10 @@ const step = ref(1);
 const form = ref({ name: "", jurisdiction: "", versionId: "", institution: "", baseDate: "" });
 const readiness = ref(null);
 const loadingReadiness = ref(false);
+const loadingVersions = ref(false);
+const versionChoices = ref([]);
+const versionCheckError = ref("");
+let versionCheckToken = 0;
 const saving = ref(false);
 const error = ref("");
 const includeCapital = ref(true);
@@ -36,30 +40,128 @@ function quarterName(value) {
 
 const selectedVersion = computed(() => (session.versions || []).find((item) => item.id === form.value.versionId) || null);
 const selectedOrg = computed(() => orgsFor(form.value.jurisdiction).find((item) => item.name === form.value.institution) || null);
+const eadReady = computed(() => {
+  const ead = readiness.value && readiness.value.ead;
+  return !!ead && ead.neededCount > 0 && ead.readyCount === ead.neededCount;
+});
+const crmReady = computed(() => {
+  const crm = readiness.value && readiness.value.crm;
+  return !!crm && (crm.neededCount === 0 || crm.readyCount === crm.neededCount);
+});
+const liquidityReady = computed(() => {
+  const liquidity = readiness.value && readiness.value.liquidity;
+  return !!liquidity && liquidity.usableCount > 0 && liquidity.tableCount > 0 && liquidity.paramCount > 0 && liquidity.listCount > 0;
+});
 
-function initialForm() {
-  const code = session.jurisdiction || (session.jurisdictions[0] ? session.jurisdictions[0].code : "");
+const VERSION_STATUS_TEXT = {
+  draft: "草稿",
+  reviewing: "审核中",
+  published: "已发布",
+  superseded: "已取代",
+  disabled: "已停用"
+};
+
+function versionReason(version, read) {
+  if (!version) return "版本不存在";
+  if (version.status === "superseded") return "已取代";
+  if (version.status === "disabled") return "已停用";
+  if (version.status !== "published") {
+    const base = "未发布（" + (VERSION_STATUS_TEXT[version.status] || version.status) + "）";
+    const issues = (read && read.issues ? read.issues : [])
+      .filter((text) => !/版本未发布|正式配置快照/.test(text))
+      .slice(0, 1);
+    return issues.length ? base + " · " + issues[0] : base;
+  }
+  if (!read || !read.snapshotId) return "无正式快照";
+  if (!read.ok) return (read.issues && read.issues[0]) || "规则配置不完整";
+  return "";
+}
+
+const usableVersionCount = computed(() => versionChoices.value.filter((item) => item.state === "usable").length);
+const hasUsableVersion = computed(() => usableVersionCount.value > 0);
+const versionCheckFailed = computed(() =>
+  !loadingVersions.value
+  && !hasUsableVersion.value
+  && versionChoices.value.some((item) => item.state === "check_failed")
+);
+
+async function readinessWithRetry(version, code) {
+  try {
+    return await fetchTaskReadiness(version, code);
+  } catch (first) {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    return fetchTaskReadiness(version, code);
+  }
+}
+
+async function loadVersionChoices(code, preferredId = "") {
+  const token = ++versionCheckToken;
+  loadingVersions.value = true;
+  versionCheckError.value = "";
+  versionChoices.value = [];
+  form.value.versionId = "";
   const versions = versionsFor(code);
-  const current = versions.find((item) => item.id === session.versionId)
-    || versions.find((item) => item.status === "published")
-    || versions[0];
+  try {
+    const reads = await Promise.all(versions.map(async (version) => {
+      try {
+        const read = await readinessWithRetry(version.version, code);
+        const reason = versionReason(version, read);
+        return {
+          version,
+          read,
+          state: reason ? "unavailable" : "usable",
+          reason,
+          error: ""
+        };
+      } catch (err) {
+        return {
+          version,
+          read: null,
+          state: "check_failed",
+          reason: "检查失败",
+          error: err.message || "Network Error"
+        };
+      }
+    }));
+    if (token !== versionCheckToken) return;
+    versionChoices.value = reads;
+    const usable = reads.filter((item) => item.state === "usable");
+    if (!usable.length && reads.some((item) => item.state === "check_failed")) {
+      versionCheckError.value = "版本可用性检查未完成，请重试检查";
+    }
+    const preferred = usable.find((item) => item.version.id === preferredId)
+      || usable.find((item) => item.version.id === session.versionId)
+      || usable[0];
+    form.value.versionId = preferred ? preferred.version.id : "";
+  } finally {
+    if (token === versionCheckToken) loadingVersions.value = false;
+  }
+}
+
+function retryVersionCheck() {
+  readiness.value = null;
+  loadVersionChoices(form.value.jurisdiction, form.value.versionId);
+}
+
+async function initialForm() {
+  const code = session.jurisdiction || (session.jurisdictions[0] ? session.jurisdictions[0].code : "");
   const orgs = orgsFor(code);
   const org = orgs.find((item) => item.id === session.orgId) || orgs[0];
   form.value = {
     name: quarterName(session.baseDate),
     jurisdiction: code,
-    versionId: current ? current.id : "",
+    versionId: "",
     institution: org ? org.name : "",
     baseDate: session.baseDate || new Date().toISOString().slice(0, 10)
   };
+  await loadVersionChoices(code, session.versionId);
 }
 
-function onJurisdiction() {
-  const versions = versionsFor(form.value.jurisdiction);
+async function onJurisdiction() {
   const orgs = orgsFor(form.value.jurisdiction);
-  form.value.versionId = versions[0] ? versions[0].id : "";
   form.value.institution = orgs[0] ? orgs[0].name : "";
   readiness.value = null;
+  await loadVersionChoices(form.value.jurisdiction);
 }
 
 function onBaseDate(value) {
@@ -92,7 +194,12 @@ async function next() {
   if (step.value === 1) {
     if (!form.value.name.trim()) { error.value = "请填写主任务名称"; return; }
     if (!form.value.jurisdiction) { error.value = "请选择司法管辖区"; return; }
-    if (!selectedVersion.value) { error.value = "请选择监管规则版本"; return; }
+    if (!selectedVersion.value) {
+      error.value = versionCheckFailed.value
+        ? "版本可用性检查失败，请先重试检查"
+        : "当前辖区没有可用的监管规则版本，请先完成规则配置和发布";
+      return;
+    }
     if (!form.value.institution) { error.value = "请选择机构"; return; }
     if (!form.value.baseDate) { error.value = "请填写计量基准日"; return; }
     step.value = 2;
@@ -145,7 +252,7 @@ async function create() {
 
 onMounted(async () => {
   if (!session.ready) await loadBootstrap();
-  initialForm();
+  await initialForm();
 });
 </script>
 
@@ -184,11 +291,29 @@ onMounted(async () => {
             </select>
           </label>
           <label class="field">监管规则版本
-            <select v-model="form.versionId" @change="readiness = null">
-              <option v-for="item in versionsFor(form.jurisdiction)" :key="item.id" :value="item.id">
-                {{ item.version }}{{ item.status && item.status !== "published" ? "（" + item.status + "）" : "" }}
-              </option>
+            <select v-model="form.versionId" :disabled="loadingVersions" @change="readiness = null">
+              <option value="" disabled>{{ loadingVersions ? "正在检查可用版本…" : "请选择可用监管规则版本" }}</option>
+              <optgroup label="可用版本">
+                <option v-for="item in versionChoices.filter((entry) => entry.state === 'usable')" :key="item.version.id" :value="item.version.id">
+                  {{ item.version.version }} · 已发布 · 规则完整
+                </option>
+              </optgroup>
+              <optgroup v-if="versionChoices.some((entry) => entry.state === 'unavailable')" label="不可用版本">
+                <option v-for="item in versionChoices.filter((entry) => entry.state === 'unavailable')" :key="item.version.id" :value="item.version.id" disabled>
+                  {{ item.version.version }} · {{ item.reason }}
+                </option>
+              </optgroup>
+              <optgroup v-if="versionChoices.some((entry) => entry.state === 'check_failed')" label="检查失败">
+                <option v-for="item in versionChoices.filter((entry) => entry.state === 'check_failed')" :key="item.version.id" :value="item.version.id" disabled>
+                  {{ item.version.version }} · {{ item.reason }}：{{ item.error }}
+                </option>
+              </optgroup>
             </select>
+            <span v-if="versionCheckError" class="hint">
+              {{ versionCheckError }}
+              <button type="button" class="btn xs" style="margin-left: 6px" :disabled="loadingVersions" @click="retryVersionCheck">重试检查</button>
+            </span>
+            <span v-else-if="!loadingVersions && !hasUsableVersion" class="hint">当前辖区没有可用版本，请先在监管规则维护工作台完成配置、校验和发布。</span>
           </label>
           <label class="field">机构
             <select v-model="form.institution">
@@ -198,7 +323,7 @@ onMounted(async () => {
         </div>
         <p class="hint">机构、司法管辖区和监管规则版本创建后固定，不能修改；主任务名称和基准日可以后续调整。</p>
         <div class="btn-group">
-          <button type="button" class="btn primary" @click="next">下一步：检查规则配置 →</button>
+          <button type="button" class="btn primary" :disabled="loadingVersions || !hasUsableVersion" @click="next">下一步：检查规则配置 →</button>
         </div>
       </div>
     </div>
@@ -206,7 +331,7 @@ onMounted(async () => {
     <div v-else-if="step === 2" class="panel">
       <div class="panel-head">
         <h3>第二步：规则配置检查</h3>
-        <span class="sub">只检查，不在这里修改规则</span>
+        <span class="sub">同时检查资本充足率和流动性两套配置，不在这里修改规则</span>
         <span class="spacer"></span>
         <button type="button" class="btn sm" :disabled="loadingReadiness" @click="checkReadiness">{{ loadingReadiness ? "检查中" : "重新检查" }}</button>
       </div>
@@ -219,12 +344,25 @@ onMounted(async () => {
             <div class="kpi"><div class="k-label">风险权重</div><div class="k-value sm">{{ readiness.weight ? readiness.weight.version : "缺失" }}</div><div class="k-foot">{{ readiness.weight ? readiness.weight.name : "未找到权重规则" }}</div></div>
             <div class="kpi"><div class="k-label">字段映射</div><div class="k-value sm">{{ readiness.mappingCount }} 份</div><div class="k-foot">按产品族映射到规则输入字段</div></div>
           </div>
+          <div class="grid c4" style="margin-bottom: 14px">
+            <div class="kpi"><div class="k-label">EAD 配置</div><div class="k-value sm">{{ readiness.ead ? readiness.ead.readyCount + " / " + readiness.ead.neededCount : "—" }}</div><div class="k-foot">已配置 / 需配置产品</div></div>
+            <div class="kpi"><div class="k-label">缓释配置</div><div class="k-value sm">{{ readiness.crm ? readiness.crm.readyCount + " / " + readiness.crm.neededCount : "—" }}</div><div class="k-foot">已配置 / 需配置产品</div></div>
+            <div class="kpi"><div class="k-label">参数表 / 名单</div><div class="k-value sm">{{ readiness.parameterTableCount }} / {{ readiness.referenceListCount }}</div><div class="k-foot">资本充足率配置</div></div>
+            <div class="kpi"><div class="k-label">流动性配置</div><div class="k-value sm">{{ readiness.liquidity ? readiness.liquidity.usableCount + " / " + readiness.liquidity.productCount : "—" }}</div><div class="k-foot">{{ readiness.liquidity ? readiness.liquidity.tableCount + " 张参数表 · " + readiness.liquidity.listCount + " 份名单" : "未读取" }}</div></div>
+          </div>
           <div class="task-check-list">
+            <div :class="readiness.published ? 'ok' : 'bad'">{{ readiness.published ? "✓" : "✗" }} 监管规则版本已发布</div>
+            <div :class="readiness.snapshotId ? 'ok' : 'bad'">{{ readiness.snapshotId ? "✓" : "✗" }} 正式配置快照</div>
             <div :class="readiness.registry ? 'ok' : 'bad'">{{ readiness.registry ? "✓" : "✗" }} 产品注册 {{ readiness.registry ? "v" + readiness.registry.version : "缺失" }}</div>
             <div :class="readiness.classification ? 'ok' : 'bad'">{{ readiness.classification ? "✓" : "✗" }} 暴露分类规则集</div>
             <div :class="readiness.weight ? 'ok' : 'bad'">{{ readiness.weight ? "✓" : "✗" }} 风险权重规则集</div>
             <div :class="readiness.mappingCount ? 'ok' : 'bad'">{{ readiness.mappingCount ? "✓" : "✗" }} 字段映射文档 {{ readiness.mappingCount }} 份</div>
             <div :class="readiness.fieldCount ? 'ok' : 'bad'">{{ readiness.fieldCount ? "✓" : "✗" }} 产品标准字段 {{ readiness.fieldCount }} 个</div>
+            <div :class="eadReady ? 'ok' : 'bad'">{{ eadReady ? "✓" : "✗" }} EAD 计算规则</div>
+            <div :class="crmReady ? 'ok' : 'bad'">{{ crmReady ? "✓" : "✗" }} 信用风险缓释</div>
+            <div :class="readiness.parameterTableCount ? 'ok' : 'bad'">{{ readiness.parameterTableCount ? "✓" : "✗" }} 规则参数表 {{ readiness.parameterTableCount }} 张</div>
+            <div :class="readiness.referenceListCount ? 'ok' : 'bad'">{{ readiness.referenceListCount ? "✓" : "✗" }} 监管名单 {{ readiness.referenceListCount }} 份</div>
+            <div :class="liquidityReady ? 'ok' : 'bad'">{{ liquidityReady ? "✓" : "✗" }} 流动性产品、参数和名单</div>
           </div>
           <div v-if="!readiness.ok" class="notice danger" style="margin-top: 12px">
             <span class="ni">!</span>
@@ -264,7 +402,7 @@ onMounted(async () => {
             <input v-model="includeLiquidity" type="checkbox" />
             <span>
               <b>流动性子任务</b>
-              <span class="dim">在流动性 HQLA 页面执行</span>
+              <span class="dim">进入 LCR 计量任务向导，执行导入、识别、Mapping、质量检查和 LCR 计算</span>
             </span>
           </label>
           <input v-if="includeLiquidity" v-model="liquidityName" type="text" placeholder="流动性计量" />

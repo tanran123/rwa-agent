@@ -10,19 +10,26 @@ function day(offset = 0) {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
-const filters = ref({ from: day(-30), to: day(), user: "all", model: "all" });
+const filters = ref({ from: day(-29), to: day(), user: "all", model: "all" });
 const query = ref({ ...filters.value });
 const key = ref(JSON.stringify(query.value));
+const error = ref("");
 
 const load = () => fetchTokenLogs(query.value);
 
 function apply() {
+  if (filters.value.from && filters.value.to && filters.value.from > filters.value.to) {
+    error.value = "开始日期不能晚于结束日期";
+    return;
+  }
+  error.value = "";
   query.value = { ...filters.value };
   key.value = JSON.stringify(query.value);
 }
 
 function reset() {
-  filters.value = { from: day(-30), to: day(), user: "all", model: "all" };
+  error.value = "";
+  filters.value = { from: day(-29), to: day(), user: "all", model: "all" };
   apply();
 }
 
@@ -60,6 +67,7 @@ function exportRows(data) {
 </script>
 
 <template>
+  <p v-if="error" class="notice danger">{{ error }}</p>
   <AsyncView :key="key" :load="load">
     <template #default="{ data }">
       <div class="panel" style="margin-bottom: 12px">

@@ -37,7 +37,8 @@ const capital = computed(() => {
 });
 
 const liquidity = computed(() => {
-  if (!props.modules.length) return LIQUIDITY_LINKS;
+  // CAR 版本也要保留流动性入口；只有 LCR 版本才用 overview 返回的流动性模块状态。
+  if (!props.modules.length || !props.modules.some((item) => item.key === "liquidity")) return LIQUIDITY_LINKS;
   return props.modules
     .filter((item) => item.key === "liquidity")
     .map((item) => ({
@@ -131,3 +132,41 @@ const liquidity = computed(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.arch-item {
+  background: #fff;
+  border-color: #dbe5f0;
+}
+.arch-item:hover {
+  border-color: #8fb9a9;
+  background: #f7fbf9;
+}
+.arch-item .idx {
+  background: #eef7f3;
+  color: #0f766e;
+}
+.arch-item strong {
+  color: #1e293b;
+}
+.arch-item .go {
+  color: var(--accent);
+  font-weight: 650;
+}
+.arch-item:hover .go {
+  color: #0b5c3b;
+}
+.arch-item .tag.green {
+  background: #dcfce7;
+  color: #047857;
+}
+.arch-item .tag.amber {
+  background: #fef3c7;
+  color: #92400e;
+}
+.arch-item .tag.red {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+</style>
+

@@ -19,8 +19,12 @@ request.interceptors.response.use(
   (response) => response.data,
   (error) => {
     const data = error && error.response && error.response.data
-    const message = (data && data.error) || error.message || '请求失败'
-    return Promise.reject(new Error(message))
+    const timedOut = error && (error.code === 'ECONNABORTED' || /timeout/i.test(String(error.message || '')))
+    const message = (data && data.error) || (timedOut ? '请求超时，请稍后重试' : error.message || '请求失败')
+    const wrapped = new Error(message)
+    wrapped.status = error && error.response && error.response.status
+    wrapped.data = data || null
+    return Promise.reject(wrapped)
   },
 )
 

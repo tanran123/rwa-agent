@@ -18,6 +18,17 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
 const { writeXlsx } = require(path.join(root, "server/lib/xlsx-writer.cjs"));
 let cached = null;
 
+function friendlyModelError(err, fallback) {
+  const text = String((err && err.message) || "");
+  console.error("[model]", text);
+  if (/timeout|timed out/i.test(text)) return "模型服务响应超时，请稍后重试或手工处理";
+  if (/ECONN|network|fetch failed|socket/i.test(text)) return "模型服务连接失败，请检查网络或模型配置后重试";
+  if (/api.?key|unauthorized|401|403/i.test(text)) return "当前账号的模型配置不可用，请到系统管理检查";
+  if (/quota|rate.?limit|429/i.test(text)) return "模型调用额度不足或触发限流，请稍后重试";
+  if (/parse|JSON|Unexpected token/i.test(text)) return "模型返回格式不正确，请重试或手工处理";
+  return fallback || "模型服务暂不可用，请稍后重试或手工处理";
+}
+
 function round2(value) {
   return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 }
@@ -649,15 +660,43 @@ function rememberUpload(id, item) {
 }
 
 const READ_XLSX = `
-import json, sys
+import json, sys, unicodedata
 from io import BytesIO
 import openpyxl
 sheet_name = sys.argv[1] if len(sys.argv) > 1 else ""
 try:
-    header_row = int(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2] else 1
+    header_row = int(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2] else 0
 except ValueError:
-    header_row = 1
-AMOUNT = ("value balance(mop)", "equiv to mop", "o/s bal_mop", "信贷敞口", "信貸敞口", "剩余可使用额度")
+    header_row = 0
+amount_column = sys.argv[3] if len(sys.argv) > 3 else ""
+AMOUNT_ALIASES = (
+    "value balance(mop)", "equiv to mop", "o/s bal_mop",
+    "信贷敞口", "信貸敞口", "剩余可使用额度",
+    "贷款余额", "貸款餘額", "余额", "餘額", "账面价值", "賬面價值",
+    "账面余额", "賬面餘額", "本金余额", "本金餘額", "未偿余额", "未償餘額",
+    "敞口金额", "敞口金額", "风险暴露", "風險暴露",
+    "outstanding balance", "loan balance", "principal", "amount", "balance", "exposure", "ead"
+)
+
+def norm(text):
+    value = unicodedata.normalize("NFKC", "" if text is None else str(text)).lower()
+    return "".join(ch for ch in value if ch.isalnum())
+
+AMOUNT_NORM = [norm(item) for item in AMOUNT_ALIASES]
+
+def has_amount(headers):
+    for header in headers:
+        value = norm(header)
+        if value and any(alias in value or value in alias for alias in AMOUNT_NORM):
+            return True
+    return False
+
+def amount_header_of(headers):
+    for header in headers:
+        value = norm(header)
+        if value and any(alias in value or value in alias for alias in AMOUNT_NORM):
+            return header
+    return ""
 
 def headers_of(raw_header):
     while raw_header and (raw_header[-1] is None or str(raw_header[-1]).strip() == ""):
@@ -676,9 +715,11 @@ def headers_of(raw_header):
         headers.append(text)
     return headers
 
-def is_detail(headers):
-    blob = " ".join(headers).lower()
-    return any(token in blob for token in AMOUNT)
+def header_score(raw_header):
+    headers = headers_of(raw_header)
+    meaningful = sum(1 for header in headers if header and not header.startswith("列"))
+    amount = amount_header_of(headers)
+    return meaningful + (50 if amount else 0), headers, amount
 
 def cell_value(value):
     if hasattr(value, "isoformat"):
@@ -695,25 +736,47 @@ if not names:
 chosen = [sheet_name] if sheet_name in names else ([] if sheet_name == "" else [names[0]])
 if not chosen:
     chosen = names
-body = []
-headers = []
-read = []
-skipped = []
-truncated = False
+
+grids = {}
 for name in chosen:
     ws = wb[name]
     grid = []
     for row in ws.iter_rows(values_only=True):
         grid.append(list(row))
-        if len(grid) > header_row + 2001:
+        if len(grid) > max(header_row, 1) + 2001:
             break
+    grids[name] = grid
+
+candidates = []
+first_name = chosen[0]
+for idx, raw in enumerate(grids.get(first_name, [])[:50]):
+    score, row_headers, amount = header_score(raw)
+    if score <= 0:
+        continue
+    candidates.append({"row": idx + 1, "headers": row_headers[:12], "score": score, "amountColumn": amount})
+candidates.sort(key=lambda item: (-item["score"], item["row"]))
+
+if header_row <= 0:
+    header_row = candidates[0]["row"] if candidates else 1
+
+body = []
+headers = []
+read = []
+skipped = []
+truncated = False
+used_amount_column = amount_column
+for name in chosen:
+    grid = grids.get(name) or []
     if header_row < 1 or header_row > len(grid):
         skipped.append(name)
         continue
     sheet_headers = headers_of(grid[header_row - 1])
-    if sheet_name == "" and not is_detail(sheet_headers):
+    sheet_amount = amount_column if amount_column in sheet_headers else amount_header_of(sheet_headers)
+    if sheet_name == "" and not sheet_amount:
         skipped.append(name)
         continue
+    if not used_amount_column:
+        used_amount_column = sheet_amount
     read.append(name)
     for text in sheet_headers:
         if text not in headers:
@@ -732,7 +795,13 @@ for name in chosen:
     if truncated:
         break
 if not read:
-    print(json.dumps({"error": "没有读到带金额列的明细表"}, ensure_ascii=False))
+    print(json.dumps({
+        "error": "没有读到带金额列的明细表",
+        "sheets": names,
+        "headerCandidates": candidates,
+        "headerRow": header_row,
+        "amountColumn": amount_column
+    }, ensure_ascii=False))
     raise SystemExit(0)
 print(json.dumps({
     "sheets": names,
@@ -740,6 +809,9 @@ print(json.dumps({
     "sheetsRead": read,
     "skipped": skipped,
     "headerRow": header_row,
+    "headerCandidates": candidates,
+    "amountColumn": used_amount_column,
+    "amountMatched": bool(used_amount_column),
     "headers": headers,
     "rows": body,
     "rowCount": len(body),
@@ -927,7 +999,12 @@ export async function detectMeasureProducts(body) {
       modelError: ""
     };
   } catch (err) {
-    return { groups: groups.map((group) => ({ id: group.id, count: group.count, product: "", reason: "" })), modelError: err.message || "模型没有识别产品" };
+    return {
+      groups: groups.map((group) => ({ id: group.id, count: group.count, product: "", reason: "" })),
+      modelError: friendlyModelError(err, "产品识别服务暂不可用，请稍后重试或手工选择产品"),
+      modelErrorCode: "MODEL_UNAVAILABLE",
+      retryable: true
+    };
   }
 }
 
@@ -958,11 +1035,27 @@ async function mapWithModel(headers, fields, samples, columnValues) {
   });
 }
 
+function headerKey(value) {
+  return String(value == null ? "" : value)
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[\s_\-—/\\.,，、:：;；()（）\[\]]+/g, "");
+}
+
 function localHeader(field, headers) {
   const wanted = [field.name, field.code, field.std_field, field.source_field].filter((item) => item && item !== "—");
+  const list = headers.map((header) => ({ raw: header, key: headerKey(header) })).filter((item) => item.key);
   for (const name of wanted) {
-    const hit = headers.find((header) => String(header).toLowerCase() === String(name).toLowerCase());
-    if (hit) return { column: hit, by: name };
+    const key = headerKey(name);
+    if (!key) continue;
+    const hit = list.find((item) => item.key === key);
+    if (hit) return { column: hit.raw, by: name };
+  }
+  for (const name of wanted) {
+    const key = headerKey(name);
+    if (key.length < 3) continue;
+    const hit = list.find((item) => item.key.includes(key) || key.includes(item.key));
+    if (hit) return { column: hit.raw, by: name };
   }
   return null;
 }
@@ -984,12 +1077,18 @@ export async function mapMeasureFields(body) {
     const mappingByName = new Map((docs.mappings || []).map((item) => [item.name, item.doc]));
     const mappings = {};
     const pending = [];
+    const unknownCodes = [];
+    const mappingDocs = [];
+    let standardFieldCount = 0;
     codes.forEach((code) => {
       const product = productByCode.get(code);
       if (!product) {
+        unknownCodes.push(code);
         mappings[code] = [];
         return;
       }
+      standardFieldCount += (product.fields || []).length;
+      if (product.dataMappingRef) mappingDocs.push({ name: product.dataMappingRef, found: mappingByName.has(product.dataMappingRef) });
       const mappingDoc = mappingByName.get(product.dataMappingRef) || {};
       const suggestions = suggestionsFor(product, mappingDoc, headers);
       suggestions.forEach((item) => {
@@ -1018,10 +1117,30 @@ export async function mapMeasureFields(body) {
           row.item.transform = "模型对应";
         });
       } catch (err) {
-        modelError = err.message || "模型没有对上";
+        modelError = friendlyModelError(err, "字段映射模型暂不可用，请重试或手工映射");
       }
     }
-    return { mappings, modelError, standard: true };
+    const allSuggestions = Object.values(mappings).flat();
+    const matchedCount = allSuggestions.filter((item) => item.column || item.constant).length;
+    return {
+      mappings,
+      modelError,
+      modelErrorCode: modelError ? "MODEL_UNAVAILABLE" : "",
+      retryable: !!modelError,
+      standard: true,
+      diagnostics: {
+        productCodes: codes,
+        unknownCodes,
+        standardFieldCount,
+        mappingDoc: mappingDocs.map((item) => item.name + (item.found ? "" : "（未找到）")).join("、"),
+        mappingDocFound: mappingDocs.length > 0 && mappingDocs.every((item) => item.found),
+        matchedCount,
+        pendingCount: allSuggestions.filter((item) => !item.column && !item.constant).length,
+        modelCalled: pending.length > 0 && headers.length > 0,
+        modelError,
+        headers
+      }
+    };
   }
   const marks = codes.map(() => "?").join(", ");
   const rows = await query(
@@ -1085,15 +1204,33 @@ export async function mapMeasureFields(body) {
         row.item.transform = "模型对应";
       });
     } catch (err) {
-      modelError = err.message || "模型没有对上";
+      modelError = friendlyModelError(err, "字段映射模型暂不可用，请重试或手工映射");
     }
   }
-  return { mappings, modelError };
+  const allSuggestions = Object.values(mappings).flat();
+  return {
+    mappings,
+    modelError,
+    modelErrorCode: modelError ? "MODEL_UNAVAILABLE" : "",
+    retryable: !!modelError,
+    diagnostics: {
+      productCodes: codes,
+      unknownCodes: codes.filter((code) => !(byProduct[code] || []).length),
+      standardFieldCount: rows.length,
+      mappingDoc: "legacy product_field",
+      mappingDocFound: rows.length > 0,
+      matchedCount: allSuggestions.filter((item) => item.column || item.constant).length,
+      pendingCount: allSuggestions.filter((item) => !item.column && !item.constant).length,
+      modelCalled: pending.length > 0 && headers.length > 0,
+      modelError,
+      headers
+    }
+  };
 }
 
-function parseXlsx(buffer, sheet, headerRow) {
+function parseXlsx(buffer, sheet, headerRow, amountColumn = "") {
   return new Promise((resolve, reject) => {
-    const child = spawn(pythonBin(), ["-c", READ_XLSX, String(sheet || ""), String(headerRow || 1)]);
+    const child = spawn(pythonBin(), ["-c", READ_XLSX, String(sheet || ""), String(headerRow || 0), String(amountColumn || "")]);
     let out = "";
     let err = "";
     child.stdout.on("data", (chunk) => { out += chunk; });
@@ -1392,7 +1529,8 @@ export async function measureDemo() {
 }
 
 export async function readUploadedWorkbook(body) {
-  const headerRow = Number(body && body.headerRow) || 1;
+  const rawHeaderRow = body && body.headerRow;
+  const headerRow = rawHeaderRow === 0 || rawHeaderRow === "0" ? 0 : (Number(rawHeaderRow) || 1);
   let id = String((body && body.uploadId) || "");
   let stored = id && uploads.get(id);
   let buffer = stored && stored.buffer;
@@ -1412,10 +1550,11 @@ export async function readUploadedWorkbook(body) {
     error.status = 400;
     throw error;
   }
-  const parsed = await parseXlsx(buffer, body && body.sheet, headerRow);
+  const parsed = await parseXlsx(buffer, body && body.sheet, headerRow, String((body && body.amountColumn) || ""));
   if (parsed.error) {
     const error = new Error(parsed.error);
     error.status = 400;
+    error.data = parsed;
     throw error;
   }
   const master = require(path.join(root, "server/data/master_data.cjs"));
@@ -1464,6 +1603,10 @@ export async function readUploadedWorkbook(body) {
     rowCount: parsed.rowCount,
     truncated: parsed.truncated,
     ...pack,
+    headerRow: parsed.headerRow,
+    headerCandidates: parsed.headerCandidates || [],
+    amountColumn: parsed.amountColumn || "",
+    amountMatched: parsed.amountMatched !== false,
     workbookReady: !!annotated,
     workbookError
   };
@@ -2091,6 +2234,23 @@ export async function saveMeasureRun(body) {
   const uploaded = body && body.uploadId && uploads.get(body.uploadId);
   const chosen = body && body.choiceId && chosenDemo && chosenDemo.id === body.choiceId ? chosenDemo.pack : null;
   const data = uploaded ? uploaded.pack : (chosen || await measureDemo());
+  const resultRows = Array.isArray(data.results) ? data.results : [];
+  if (!resultRows.length) {
+    const error = new Error("这批数据还没有计量结果，不能写入正式批次");
+    error.status = 409;
+    throw error;
+  }
+  const missingEad = resultRows.filter((row) => row.ead == null || row.ead === "" || Number.isNaN(Number(row.ead)));
+  const missingWeight = resultRows.filter((row) => row.riskWeight == null || Number.isNaN(Number(row.riskWeight)));
+  if (missingEad.length || missingWeight.length) {
+    const parts = [];
+    if (missingEad.length) parts.push(missingEad.length + " 笔没有 EAD");
+    if (missingWeight.length) parts.push(missingWeight.length + " 笔没有风险权重");
+    const error = new Error("计量结果不完整：" + parts.join("，") + "。请先在第七步核对 EAD 配置、在第六步核对风险权重，再写入正式批次");
+    error.status = 409;
+    error.code = "RESULT_INCOMPLETE";
+    throw error;
+  }
   const now = new Date();
   const id = "BATCH-" + now.toISOString().slice(0, 10).replace(/-/g, "") + "-" + Math.random().toString(36).slice(2, 6).toUpperCase();
   const createdAt = now.toISOString().slice(0, 19).replace("T", " ");

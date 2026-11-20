@@ -37,13 +37,9 @@ export const fetchRuleVersionOverview = (id) => request.get('/rule-versions/' + 
 
 export const validateRuleVersion = (id) => request.post('/rule-versions/' + encodeURIComponent(id) + '/validate')
 
-export const submitRuleVersionReview = (id) => request.post('/rule-versions/' + encodeURIComponent(id) + '/submit-review')
-
 export const publishRuleVersion = (id) => request.post('/rule-versions/' + encodeURIComponent(id) + '/publish')
 
-export const cloneRuleVersion = (id, body) => request.post('/rule-versions/' + encodeURIComponent(id) + '/clone', body)
-
-export const fetchRuleVersionDiff = (id, sourceId) => request.get('/rule-versions/' + encodeURIComponent(id) + '/diff/' + encodeURIComponent(sourceId))
+export const withdrawRuleVersion = (id) => request.post('/rule-versions/' + encodeURIComponent(id) + '/withdraw')
 
 export const fetchRuleVersionRevisions = (id, limit = 100) => request.get('/rule-versions/' + encodeURIComponent(id) + '/revisions', { params: { limit } })
 

@@ -8,6 +8,9 @@ import { fetchProductGroupMappings } from "@/api/product";
 import { useContext } from "@/composables/useContext";
 import ExposureOverview from "@/components/ExposureOverview.vue";
 import FieldMappingWorkbench from "@/components/FieldMappingWorkbench.vue";
+import StandardFieldDrawer from "@/components/StandardFieldDrawer.vue";
+import FieldGroupDrawer from "@/components/FieldGroupDrawer.vue";
+import DictionaryManagerDrawer from "@/components/DictionaryManagerDrawer.vue";
 import { buildExposureModel } from "@/utils/exposureModel";
 import {
   familyMeta, mappingTargetSet, matchedRules, productStatus, STATUS_META
@@ -44,12 +47,21 @@ const infoForm = ref({ codesText: "", mappingVersion: "", exposureType: "", targ
 const selectedClasses = ref([]);
 const classSearch = ref("");
 const fieldSearch = ref("");
+const ALL_FIELD_GROUP = "__all__";
+const activeFieldGroup = ref(ALL_FIELD_GROUP);
+const fieldNavOpen = ref(true);
 const fields = ref([]);
 const originalFields = ref([]);
-const newField = ref({ name: "", label: "", type: "string", group: "", level: "", required: false, mapsTo: "" });
-const fieldAddOpen = ref(false);
+const fieldEditorOpen = ref(false);
+const fieldDraft = ref(null);
+const editingFieldName = ref("");
+const groupEditorOpen = ref(false);
+const dictionaryOpen = ref(false);
+const groupEdits = ref([]);
+const dictionaries = ref([]);
 const fieldImportOpen = ref(false);
 const fieldImportText = ref("");
+const fieldImportPreview = ref([]);
 const active = ref("info");
 
 const family = computed(() => String(route.params.family || ""));
@@ -71,17 +83,6 @@ const status = computed(() => STATUS_META[statusKey.value] || STATUS_META.draft)
 const targets = computed(() => mappingTargetSet(mappingBody.value));
 const classRules = computed(() => matchedRules(classDoc.value, targets.value));
 const weightRules = computed(() => matchedRules(weightDoc.value, targets.value));
-const fieldRuleHits = computed(() => {
-  const targetHits = {};
-  classRules.value.concat(weightRules.value).forEach((rule) => {
-    (rule.fields || []).forEach((field) => { targetHits[field] = (targetHits[field] || 0) + 1; });
-  });
-  const hits = {};
-  activeFields.value.forEach((field) => {
-    hits[field.name] = (field.maps_to || []).reduce((sum, target) => sum + (targetHits[target] || 0), 0);
-  });
-  return hits;
-});
 const ruleSets = computed(() => (registry.value && registry.value.body && registry.value.body.default_rule_sets) || {});
 const businessGroups = computed(() => {
   const profiles = (entry.value && entry.value.product_profiles) || {};
@@ -142,6 +143,7 @@ const mappingCoverage = computed(() => {
 });
 
 const activeFields = computed(() => fields.value.filter((field) => !field.deleted));
+const missingEnglishCount = computed(() => activeFields.value.filter((field) => !(field.labelEn || field.label_en)).length);
 const docGroupMeta = computed(() => {
   const map = {};
   [classDoc.value, weightDoc.value].forEach((doc) => {
@@ -149,61 +151,185 @@ const docGroupMeta = computed(() => {
       if (!group || !group.group_id || map[group.group_id]) return;
       map[group.group_id] = {
         label: group.label || group.group_id,
+        labelEn: group.label_en || "",
+        level: group.level || "",
+        description: group.description || "",
         order: typeof group.order === "number" ? group.order : index
       };
     });
   });
   return map;
 });
+function asciiOnly(value) {
+  return !!value && !/[^\x00-\x7F]/.test(String(value));
+}
+function readableGroup(code) {
+  return String(code || "").split("_").map((word) => word ? word.charAt(0) + word.slice(1).toLowerCase() : "").join(" ").trim();
+}
 const standardGroups = computed(() => {
   const map = new Map();
-  ((entry.value && entry.value.standard_field_groups) || []).forEach((group, index) => {
-    if (group && group.group_id) {
-      const meta = docGroupMeta.value[group.group_id] || {};
-      map.set(group.group_id, {
-        id: group.group_id,
-        label: meta.label || group.label || group.group_id,
-        level: group.level || "",
-        order: meta.order == null ? index : meta.order
-      });
-    }
+  const source = groupEdits.value.length
+    ? groupEdits.value.map((group) => ({ ...group, group_id: group.id }))
+    : ((entry.value && entry.value.standard_field_groups) || []);
+  source.forEach((group, index) => {
+    const id = group.id || group.group_id;
+    if (!id) return;
+    const meta = docGroupMeta.value[id] || {};
+    const rawLabel = group.label || "";
+    const label = (!rawLabel || asciiOnly(rawLabel)) ? (meta.label || rawLabel || id) : rawLabel;
+    map.set(id, {
+      id,
+      label,
+      labelEn: group.labelEn || group.label_en || (asciiOnly(rawLabel) && rawLabel !== id ? rawLabel : "") || meta.labelEn || readableGroup(id),
+      level: group.level || meta.level || "FACILITY",
+      description: group.description || meta.description || "",
+      order: typeof group.order === "number" ? group.order : (meta.order == null ? index : meta.order)
+    });
   });
   fields.value.forEach((field) => {
-    if (field.group && !map.has(field.group)) {
-      const meta = docGroupMeta.value[field.group] || {};
-      map.set(field.group, {
-        id: field.group,
-        label: meta.label || field.group,
-        level: field.level || "",
-        order: meta.order == null ? 999 : meta.order
-      });
-    }
+    if (!field.group || map.has(field.group)) return;
+    const meta = docGroupMeta.value[field.group] || {};
+    map.set(field.group, {
+      id: field.group,
+      label: meta.label || field.group,
+      labelEn: meta.labelEn || readableGroup(field.group),
+      level: meta.level || "FACILITY",
+      description: meta.description || "",
+      order: meta.order == null ? 999 : meta.order
+    });
   });
   return Array.from(map.values()).sort((left, right) => (left.order == null ? 999 : left.order) - (right.order == null ? 999 : right.order));
 });
-const groupedFields = computed(() => {
-  const text = fieldSearch.value.trim().toLowerCase();
-  const groups = standardGroups.value.map((group) => Object.assign({}, group, { fields: [] }));
-  const byId = new Map(groups.map((group) => [group.id, group]));
-  activeFields.value.forEach((field) => {
-    if (text && !(field.name + " " + field.label + " " + (field.description || "")).toLowerCase().includes(text)) return;
-    let group = byId.get(field.group);
-    if (!group) {
-      group = { id: field.group || "OTHER", label: field.group || "OTHER", level: field.level || "", fields: [] };
-      byId.set(group.id, group);
-      groups.push(group);
-    }
-    group.fields.push(field);
+const fieldQuery = computed(() => fieldSearch.value.trim().toLowerCase());
+function dictionaryName(code) {
+  const dict = dictionaries.value.find((item) => item.dict_code === code);
+  return dict ? dict.dict_name : "";
+}
+function groupLabelOf(code) {
+  const group = standardGroups.value.find((item) => item.id === code);
+  return group ? group.label : code;
+}
+function fieldMatches(field) {
+  if (!fieldQuery.value) return true;
+  return (field.name + " " + field.label + " " + (field.labelEn || field.label_en || "") + " " + (field.description || "") + " " + dictionaryName(field.dictionary)).toLowerCase().includes(fieldQuery.value);
+}
+const matchedFields = computed(() => activeFields.value.filter((field) => fieldMatches(field)));
+const groupOrder = computed(() => new Map(standardGroups.value.map((group, index) => [group.id, index])));
+const groupEditorGroups = computed(() => standardGroups.value.map((group) => ({
+  ...group,
+  total: activeFields.value.filter((field) => field.group === group.id).length
+})));
+const fieldGroupNav = computed(() => ([
+  {
+    id: ALL_FIELD_GROUP,
+    label: "全部字段",
+    code: "ALL",
+    total: activeFields.value.length,
+    matched: matchedFields.value.length
+  },
+  ...standardGroups.value.map((group) => ({
+    id: group.id,
+    label: group.label,
+    code: group.id,
+    total: activeFields.value.filter((field) => field.group === group.id).length,
+    matched: matchedFields.value.filter((field) => field.group === group.id).length
+  }))
+]));
+const activeFieldGroupId = computed(() => (
+  fieldGroupNav.value.some((group) => group.id === activeFieldGroup.value) ? activeFieldGroup.value : ALL_FIELD_GROUP
+));
+const selectedFieldGroup = computed(() => fieldGroupNav.value.find((group) => group.id === activeFieldGroupId.value) || fieldGroupNav.value[0]);
+const showFieldGroupColumn = computed(() => activeFieldGroupId.value === ALL_FIELD_GROUP);
+const visibleFields = computed(() => {
+  const list = activeFieldGroupId.value === ALL_FIELD_GROUP
+    ? matchedFields.value
+    : matchedFields.value.filter((field) => field.group === activeFieldGroupId.value);
+  if (activeFieldGroupId.value !== ALL_FIELD_GROUP) return list;
+  return list.slice().sort((left, right) => {
+    const a = groupOrder.value.get(left.group);
+    const b = groupOrder.value.get(right.group);
+    return (a == null ? 999 : a) - (b == null ? 999 : b);
   });
-  return groups.filter((group) => group.fields.length);
+});
+function selectFieldGroup(id) {
+  activeFieldGroup.value = id;
+}
+function resetFieldGroupSelection() {
+  const first = standardGroups.value.find((group) => activeFields.value.some((field) => field.group === group.id));
+  activeFieldGroup.value = first ? first.id : ALL_FIELD_GROUP;
+}
+function openFieldCreate() {
+  editingFieldName.value = "";
+  fieldDraft.value = {
+    name: "",
+    label: "",
+    label_en: "",
+    type: "string",
+    group: activeFieldGroupId.value === ALL_FIELD_GROUP ? "" : activeFieldGroupId.value,
+    required: false,
+    status: "ACTIVE",
+    description: "",
+    dictionary: "",
+    enum_values: []
+  };
+  fieldEditorOpen.value = true;
+}
+function openFieldEdit(field) {
+  editingFieldName.value = field.name;
+  fieldDraft.value = JSON.parse(JSON.stringify(field));
+  fieldEditorOpen.value = true;
+}
+function copyField(field) {
+  editingFieldName.value = "";
+  const copy = JSON.parse(JSON.stringify(field));
+  copy.name = field.name + "_COPY";
+  copy.label = field.label + "（副本）";
+  copy.label_en = field.labelEn || field.label_en || "";
+  copy.required = false;
+  fieldDraft.value = copy;
+  fieldEditorOpen.value = true;
+}
+function handleFieldSave(field) {
+  const normalized = { ...field, labelEn: field.label_en, label_en: field.label_en };
+  if (editingFieldName.value) {
+    fields.value = fields.value.map((item) => item.name === editingFieldName.value ? { ...item, ...normalized, count: item.count || 0 } : item);
+  } else {
+    fields.value.push({ ...normalized, count: 0 });
+  }
+  fieldEditorOpen.value = false;
+  fieldDraft.value = null;
+  editingFieldName.value = "";
+  activeFieldGroup.value = field.group;
+  say("字段已修改，点「保存并同步映射」写入产品注册", "info");
+}
+function openGroupEditor() {
+  groupEditorOpen.value = true;
+}
+function handleGroupSave(groups) {
+  groupEdits.value = groups.map((group) => ({ ...group }));
+  groupEditorOpen.value = false;
+  if (!groups.some((group) => group.id === activeFieldGroup.value)) activeFieldGroup.value = ALL_FIELD_GROUP;
+  say("字段分组已修改，点「保存并同步映射」写入产品注册", "info");
+}
+function openDictionaries() {
+  dictionaryOpen.value = true;
+}
+function handleDictionariesSaved(doc) {
+  registry.value = doc;
+  dictionaries.value = (doc.body && doc.body.dictionaries) || [];
+  say("码值字典已保存", "ok");
+}
+watch(fieldSearch, (value, previous) => {
+  const now = String(value || "").trim();
+  const before = String(previous || "").trim();
+  if (now && !before) {
+    activeFieldGroup.value = ALL_FIELD_GROUP;
+  } else if (!now && before && activeFieldGroup.value === ALL_FIELD_GROUP) {
+    resetFieldGroupSelection();
+  }
 });
 
-const headerMetrics = computed(() => ([
-  { label: "标准字段", value: String(activeFields.value.length), sub: standardGroups.value.length + " 个分组" },
-  { label: "Mapping", value: mappingCoverage.value.mapped + " / " + mappingCoverage.value.required, sub: "已映射必需 · " + mappingCoverage.value.pct + "%" },
-  { label: "分类/权重规则", value: scopedNodeCounts.value.cls + " / " + scopedNodeCounts.value.rw, sub: selectedClasses.value.length + " 个候选暴露类型" },
-  { label: "目标字段", value: String(mappingCoverage.value.targetFields), sub: "目标字段总数" }
-]));
+
 
 const configChecks = computed(() => ([
   { label: "产品组信息完整", ok: selectedClasses.value.length > 0 && !!(entry.value && entry.value.data_mapping_ref) },
@@ -231,50 +357,50 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function definitionToField(definition, item) {
+  const name = definition.name || (item && item.source_field) || "";
+  const label = definition.label || (item && item.description) || name;
+  return {
+    name,
+    label,
+    labelEn: definition.label_en || definition.labelEn || "",
+    label_en: definition.label_en || definition.labelEn || "",
+    type: definition.type || (item && item.source_type) || "string",
+    group: definition.group || (item && item.target_group) || "OTHER",
+    required: definition.required !== undefined ? !!definition.required : !!(item && item.required !== false),
+    status: definition.status || "ACTIVE",
+    unit: definition.unit || (item && item.unit) || "",
+    precision: definition.precision == null ? null : definition.precision,
+    scale: definition.scale == null ? null : definition.scale,
+    format: definition.format || "",
+    default_value: definition.default_value || "",
+    description: definition.description || (item && item.description) || label,
+    description_en: definition.description_en || "",
+    dictionary: definition.dictionary || "",
+    enum_values: Array.isArray(definition.enum_values) ? definition.enum_values : [],
+    source_hint: definition.source_hint || name,
+    aliases: Array.isArray(definition.aliases) ? definition.aliases : [],
+    count: 0
+  };
+}
+
 function syncFieldsFromMapping() {
   const definitions = {};
   ((entry.value && entry.value.standard_fields) || []).forEach((field) => {
-    if (field && field.name) definitions[field.name] = field;
+    if (field && field.name && !definitions[field.name]) definitions[field.name] = field;
   });
   const mapping = {};
   (mappingBody.value.mappings || []).forEach((item) => {
     if (!item || !item.source_field) return;
-    const definition = definitions[item.source_field] || {};
     if (!mapping[item.source_field]) {
-      mapping[item.source_field] = {
-        name: item.source_field,
-        label: definition.label || item.description || item.source_field,
-        type: definition.type || item.source_type || "string",
-        group: definition.group || item.target_group || "OTHER",
-        level: definition.level || "",
-        required: definition.required !== undefined ? !!definition.required : item.required !== false,
-        maps_to: [],
-        description: item.description || definition.label || "",
-        unit: item.unit || "",
-        count: 0
-      };
-    }
-    if (item.target_field && !mapping[item.source_field].maps_to.includes(item.target_field)) {
-      mapping[item.source_field].maps_to.push(item.target_field);
+      mapping[item.source_field] = definitionToField(definitions[item.source_field] || {}, item);
     }
     mapping[item.source_field].count += 1;
   });
-  ((entry.value && entry.value.standard_fields) || []).forEach((definition) => {
-    if (!definition || !definition.name || mapping[definition.name]) return;
-    mapping[definition.name] = {
-      name: definition.name,
-      label: definition.label || definition.name,
-      type: definition.type || "string",
-      group: definition.group || "OTHER",
-      level: definition.level || "",
-      required: !!definition.required,
-      maps_to: (definition.maps_to || []).slice(),
-      description: definition.label || "",
-      unit: "",
-      count: 0
-    };
+  Object.keys(definitions).forEach((name) => {
+    if (!mapping[name]) mapping[name] = definitionToField(definitions[name], null);
   });
-  fields.value = Object.keys(mapping).map((key) => mapping[key]);
+  fields.value = Object.values(mapping);
   originalFields.value = fields.value.map((field) => field.name);
 }
 
@@ -309,6 +435,8 @@ async function load() {
     const registryMeta = rows.find((item) => item.kind === "product_registry");
     if (!registryMeta) throw new Error("这一版还没有产品规则注册");
     registry.value = await fetchRuleDocument(registryMeta.id);
+    dictionaries.value = (registry.value.body.dictionaries || []).slice();
+    groupEdits.value = [];
     const entries = (registry.value.body.product_mappings || []).map((item, index) => ({ item: item, index: index }));
     const candidates = entries.filter((item) => item.item.product_family === family.value);
     if (!candidates.length) throw new Error("没有找到产品 " + family.value);
@@ -322,6 +450,7 @@ async function load() {
     mappingDoc.value = mappingMetaRow ? await fetchRuleDocument(mappingMetaRow.id) : null;
     syncInfoFromEntry();
     syncFieldsFromMapping();
+    resetFieldGroupSelection();
 
     const classMeta = rows.find((item) => item.kind === "exposure_classification");
     const weightMeta = rows.find((item) => item.kind === "risk_weight");
@@ -416,36 +545,6 @@ function toggleCandidate(code) {
     : selectedClasses.value.concat(code);
 }
 
-function addField() {
-  const name = newField.value.name.trim();
-  if (!name) {
-    say("字段名不能为空", "warn");
-    return;
-  }
-  if (fields.value.some((field) => field.name === name)) {
-    say("字段 " + name + " 已存在", "warn");
-    return;
-  }
-  if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(name)) {
-    say("字段名只能包含字母、数字和下划线", "warn");
-    return;
-  }
-  const mapsTo = newField.value.mapsTo.split(/[,，\s]+/).map((item) => item.trim()).filter(Boolean);
-  fields.value.push({
-    name: name,
-    label: newField.value.label.trim() || name,
-    type: newField.value.type,
-    group: newField.value.group || (standardGroups.value[0] ? standardGroups.value[0].id : "OTHER"),
-    level: newField.value.level || (standardGroups.value[0] ? standardGroups.value[0].level : ""),
-    required: !!newField.value.required,
-    maps_to: mapsTo,
-    description: newField.value.label.trim() || name,
-    count: 0
-  });
-  newField.value = { name: "", label: "", type: "string", group: "", level: "", required: false, mapsTo: "" };
-  fieldAddOpen.value = false;
-}
-
 async function removeField(name) {
   const yes = await askConfirm("删除标准字段「" + name + "」后，保存时会同时删除它已有的映射关系。", {
     title: "删除标准字段",
@@ -456,6 +555,51 @@ async function removeField(name) {
   fields.value = fields.value.filter((field) => field.name !== name);
 }
 
+function activeDictionaryItems(code) {
+  const dict = dictionaries.value.find((item) => item.dict_code === code);
+  return dict ? (dict.items || []).filter((item) => item.status !== "DISABLED") : [];
+}
+
+function validateFieldList() {
+  const problems = [];
+  const seen = new Set();
+  const groupIds = new Set(standardGroups.value.map((group) => group.id));
+  fields.value.forEach((field) => {
+    if (!field.name || !/^[A-Za-z][A-Za-z0-9_]*$/.test(field.name)) problems.push("字段编码不合法：" + (field.name || "（空）"));
+    if (seen.has(field.name)) problems.push("字段编码重复：" + field.name);
+    seen.add(field.name);
+    if (!String(field.label || "").trim()) problems.push(field.name + "：中文名称不能为空");
+    if (!originalFields.value.includes(field.name) && !String(field.labelEn || field.label_en || "").trim()) problems.push(field.name + "：新增字段必须填写英文名称");
+    if (!field.group || !groupIds.has(field.group)) problems.push(field.name + "：所属分组不存在");
+    if (field.type === "enum" && !field.dictionary && !(field.enum_values || []).length) problems.push(field.name + "：enum 字段必须配置字典或临时枚举值");
+    if (field.dictionary && !activeDictionaryItems(field.dictionary).length) problems.push(field.name + "：字典 " + field.dictionary + " 没有可用码值");
+  });
+  return problems;
+}
+
+function fieldPayload(field) {
+  return {
+    name: field.name,
+    label: field.label || field.name,
+    label_en: String(field.labelEn || field.label_en || "").trim(),
+    type: field.type || "string",
+    group: field.group || "OTHER",
+    required: !!field.required,
+    status: field.status || "ACTIVE",
+    unit: field.unit || "",
+    precision: field.precision == null || field.precision === "" ? null : Number(field.precision),
+    scale: field.scale == null || field.scale === "" ? null : Number(field.scale),
+    format: field.format || "",
+    default_value: field.default_value || "",
+    description: field.description || field.label || field.name,
+    description_en: field.description_en || "",
+    dictionary: field.dictionary || "",
+    enum_values: Array.isArray(field.enum_values) ? field.enum_values : [],
+    source_hint: field.source_hint || field.name,
+    aliases: Array.isArray(field.aliases) ? field.aliases : []
+  };
+}
+
 async function saveFields() {
   if (!mappingMeta.value) {
     say("这个产品组还没有字段映射文档，先在字段映射里建立映射。", "warn");
@@ -463,6 +607,11 @@ async function saveFields() {
   }
   if (!fields.value.length) {
     say("至少保留一个标准字段", "warn");
+    return;
+  }
+  const problems = validateFieldList();
+  if (problems.length) {
+    say("字段校验没有通过：" + problems.slice(0, 4).join("；"), "danger");
     return;
   }
   const removed = originalFields.value.filter((name) => !fields.value.some((field) => field.name === name));
@@ -496,30 +645,26 @@ async function saveFields() {
 
     const registryBody = clone(registry.value.body);
     const registryEntry = registryBody.product_mappings[entryIndex.value];
+    registryBody.field_schema_version = 2;
+    registryBody.dictionaries = clone(dictionaries.value || []);
     registryBody.product_mappings[entryIndex.value] = Object.assign({}, registryEntry, {
-      standard_fields: fields.value.map((field) => {
-        const item = {
-          name: field.name,
-          label: field.label || field.name,
-          type: field.type || "string",
-          group: field.group || "OTHER",
-          required: !!field.required,
-          maps_to: (field.maps_to || []).slice()
-        };
-        if (field.level) item.level = field.level;
-        return item;
-      }),
+      standard_fields: fields.value.map(fieldPayload),
       standard_field_groups: standardGroups.value.map((group) => ({
         group_id: group.id,
         label: group.label || group.id,
-        level: group.level || "FACILITY",
+        label_en: group.labelEn || readableGroup(group.id),
+        description: group.description || "",
+        order: typeof group.order === "number" ? group.order : 999,
         field_count: fields.value.filter((field) => field.group === group.id).length
-      })).filter((group) => group.field_count > 0)
+      }))
     });
     const savedRegistry = await saveRuleDocument(registry.value.id, { body: registryBody, baseRevision: registry.value.revision });
     registry.value = savedRegistry;
+    dictionaries.value = (savedRegistry.body && savedRegistry.body.dictionaries) || [];
+    groupEdits.value = [];
     mappingDoc.value = savedMapping;
     syncFieldsFromMapping();
+    if (!fieldGroupNav.value.some((group) => group.id === activeFieldGroup.value)) resetFieldGroupSelection();
     say("标准字段已保存，并同步映射字段类型", "ok");
   } catch (err) {
     say(err.message, "danger");
@@ -533,35 +678,76 @@ function openFieldImport() {
   fieldImportText.value = "";
 }
 
+function parseEnumText(value) {
+  return String(value || "").split(/[;；|]+/).map((item) => item.trim()).filter(Boolean).map((item) => {
+    const index = item.indexOf("=");
+    if (index < 0) return { code: item, label: item };
+    return { code: item.slice(0, index).trim(), label: item.slice(index + 1).trim() };
+  }).filter((item) => item.code);
+}
+
 function applyFieldImport() {
+  fieldImportPreview.value = [];
   const rows = fieldImportText.value.split(/\n+/).map((line) => line.split(/[,\t]/).map((item) => item.trim())).filter((parts) => parts.length >= 1 && parts[0]);
-  rows.forEach(([name, label, type, group, level, required, mapsTo]) => {
-    const existing = fields.value.find((field) => field.name === name);
-    const maps = (mapsTo || "").split(/[;；\s]+/).map((item) => item.trim()).filter(Boolean);
-    if (existing) {
-      existing.label = label || existing.label;
-      existing.type = type || existing.type;
-      existing.group = group || existing.group;
-      existing.level = level || existing.level;
-      existing.required = String(required).toLowerCase() === "true" || String(required) === "1";
-      if (maps.length) existing.maps_to = maps;
-      return;
-    }
-    fields.value.push({
-      name: name,
+  if (!rows.length) {
+    say("没有可导入的行", "warn");
+    return;
+  }
+  const groupIds = new Set(standardGroups.value.map((group) => group.id));
+  const namesInFile = new Set();
+  rows.forEach((parts, index) => {
+    const [name, label, labelEn, type, group, required, unit, precision, scale, format, dictionary, enumText, description, descriptionEn, sourceHint, aliases, status] = parts;
+    const field = {
+      name,
       label: label || name,
+      labelEn: labelEn || "",
+      label_en: labelEn || "",
       type: type || "string",
-      group: group || (standardGroups.value[0] ? standardGroups.value[0].id : "OTHER"),
-      level: level || "",
-      required: String(required).toLowerCase() === "true" || String(required) === "1",
-      maps_to: maps,
-      description: label || name,
+      group: group || "",
+      required: ["true", "1", "是"].includes(String(required || "").toLowerCase()),
+      status: status === "DISABLED" ? "DISABLED" : "ACTIVE",
+      unit: unit || "",
+      precision: precision ? Number(precision) : null,
+      scale: scale ? Number(scale) : null,
+      format: format || "",
+      default_value: "",
+      description: description || label || name,
+      description_en: descriptionEn || "",
+      dictionary: dictionary || "",
+      enum_values: parseEnumText(enumText),
+      source_hint: sourceHint || name,
+      aliases: String(aliases || "").split(/[;；]+/).map((item) => item.trim()).filter(Boolean),
       count: 0
-    });
+    };
+    const errors = [];
+    if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(name)) errors.push("字段编码不合法");
+    if (namesInFile.has(name)) errors.push("本次导入中字段编码重复");
+    namesInFile.add(name);
+    if (!field.label.trim()) errors.push("中文名称不能为空");
+    if (!field.labelEn.trim()) errors.push("英文名称不能为空");
+    if (!field.group) errors.push("分组编码不能为空");
+    else if (!groupIds.has(field.group)) errors.push("分组 " + field.group + " 不存在");
+    if (!["string", "number", "boolean", "date", "enum", "derived", "constant"].includes(field.type)) errors.push("数据类型不合法");
+    if (field.precision != null && (!Number.isInteger(field.precision) || field.precision < 0)) errors.push("精度必须是非负整数");
+    if (field.scale != null && (!Number.isInteger(field.scale) || field.scale < 0)) errors.push("小数位必须是非负整数");
+    if (field.dictionary && !activeDictionaryItems(field.dictionary).length) errors.push("字典 " + field.dictionary + " 不存在或没有可用码值");
+    if (field.type === "enum" && !field.dictionary && !field.enum_values.length) errors.push("enum 字段必须配置字典或临时枚举值");
+    fieldImportPreview.value.push({ line: index + 1, field, errors });
+  });
+}
+
+function confirmFieldImport() {
+  const valid = fieldImportPreview.value.filter((row) => !row.errors.length);
+  if (!valid.length) return;
+  valid.forEach((row) => {
+    const existing = fields.value.find((field) => field.name === row.field.name);
+    if (existing) Object.assign(existing, row.field);
+    else fields.value.push({ ...row.field });
   });
   fieldImportOpen.value = false;
   fieldImportText.value = "";
-  say("字段导入完成，保存后写入产品注册", "ok");
+  fieldImportPreview.value = [];
+  say("已导入 " + valid.length + " 个字段，保存后写入产品注册", "ok");
 }
 
 function downloadJson(name, data) {
@@ -579,15 +765,16 @@ function exportFields() {
     product_family: entry.value ? entry.value.product_family : "",
     mapping: entry.value ? entry.value.data_mapping_ref : "",
     mapping_version: entry.value ? entry.value.data_mapping_version || "" : "",
-    fields: activeFields.value.map((field) => ({
-      name: field.name,
-      label: field.label,
-      type: field.type,
-      group: field.group,
-      level: field.level,
-      required: !!field.required,
-      maps_to: field.maps_to || []
-    }))
+    field_schema_version: 2,
+    fields: activeFields.value.map(fieldPayload),
+    groups: standardGroups.value.map((group) => ({
+      group_id: group.id,
+      label: group.label,
+      label_en: group.labelEn,
+      description: group.description,
+      order: group.order
+    })),
+    dictionaries: clone(dictionaries.value || [])
   });
 }
 
@@ -664,12 +851,6 @@ onMounted(async () => {
             <span>规则 {{ ruleSets.classification_rule_ref || "—" }} / {{ ruleSets.risk_weight_rule_ref || "—" }}</span>
           </div>
         </div>
-        <div class="pws-head-metrics">
-          <div v-for="item in headerMetrics" :key="item.label">
-            <b>{{ item.value }}</b>
-            <span>{{ item.label }} · {{ item.sub }}</span>
-          </div>
-        </div>
       </div>
 
       <nav class="pws-modtabs">
@@ -713,7 +894,7 @@ onMounted(async () => {
               </label>
               <label>适用产品代码数<input :value="(entry.product_codes || []).length" type="text" disabled /></label>
               <label class="wide">备注<textarea v-model="infoForm.note" rows="2"></textarea></label>
-              <label class="wide">适用产品代码（每行一个）<textarea v-model="infoForm.codesText" rows="5"></textarea></label>
+              <label class="wide">适用产品代码（每行一个）<textarea v-model="infoForm.codesText" rows="3"></textarea></label>
 
               <div class="wide pws-expsec">
                 <div class="pws-exphead">
@@ -783,130 +964,157 @@ onMounted(async () => {
           <div class="panel-head">
             <h3>产品标准字段</h3>
             <span class="tag">{{ activeFields.length }} 个字段 · {{ standardGroups.length }} 分组</span>
+            <span v-if="missingEnglishCount" class="tag amber">英文名待补 {{ missingEnglishCount }}</span>
             <span class="spacer"></span>
-            <input v-model="fieldSearch" class="pws-search" type="search" placeholder="搜索字段编码 / 名称 / 说明" />
-            <button type="button" class="btn sm" @click="fieldAddOpen = !fieldAddOpen">＋ 字段</button>
+            <input v-model="fieldSearch" class="pws-search" type="search" placeholder="搜索编码 / 中英文名 / 说明 / 字典" />
+            <button type="button" class="btn sm" @click="openFieldCreate">＋ 字段</button>
+            <button type="button" class="btn sm" @click="openGroupEditor">分组管理</button>
+            <button type="button" class="btn sm" @click="openDictionaries">码值字典</button>
             <button type="button" class="btn sm" @click="openFieldImport">批量导入</button>
             <button type="button" class="btn sm" @click="exportFields">导出字段</button>
             <button type="button" class="btn sm primary" :disabled="saving" @click="saveFields">{{ saving ? "保存中" : "保存并同步映射" }}</button>
           </div>
           <div class="panel-body">
-            <div v-if="fieldAddOpen" class="pws-add-row">
-              <input v-model="newField.name" type="text" placeholder="字段编码" />
-              <input v-model="newField.label" type="text" placeholder="字段名称" />
-              <select v-model="newField.group">
-                <option value="">选择分组</option>
-                <option v-for="group in standardGroups" :key="group.id" :value="group.id">{{ group.label }}</option>
-                <option value="OTHER">OTHER</option>
-              </select>
-              <select v-model="newField.type">
-                <option value="string">string</option>
-                <option value="number">number</option>
-                <option value="boolean">boolean</option>
-                <option value="date">date</option>
-                <option value="enum">enum</option>
-                <option value="derived">derived</option>
-                <option value="constant">constant</option>
-              </select>
-              <select v-model="newField.level">
-                <option value="">层级</option>
-                <option value="OBLIGOR">OBLIGOR</option>
-                <option value="FACILITY">FACILITY</option>
-                <option value="COLLATERAL">COLLATERAL</option>
-                <option value="SETTLEMENT">SETTLEMENT</option>
-                <option value="PORTFOLIO">PORTFOLIO</option>
-                <option value="DATA_PREP">DATA_PREP</option>
-                <option value="OUTPUT">OUTPUT</option>
-              </select>
-              <label class="pws-inline-check"><input v-model="newField.required" type="checkbox" /> 必填</label>
-              <input v-model="newField.mapsTo" type="text" placeholder="映射目标，逗号分隔" />
-              <button type="button" class="btn sm primary" @click="addField">添加字段</button>
-            </div>
 
             <div v-if="fieldImportOpen" class="pws-import">
               <div class="pws-import-head">
                 <b>批量导入标准字段</b>
-                <span class="mini">列顺序：字段编码, 字段名称, 类型, 分组, 层级, 必填, 映射目标（逗号或分号分隔）</span>
+                <span class="mini">列顺序：字段编码, 中文名, 英文名, 类型, 分组编码, 必填, 单位, 精度, 小数位, 格式, 字典编码, 临时枚举, 中文说明, 英文说明, 来源列名, 别名, 状态</span>
               </div>
-              <textarea v-model="fieldImportText" rows="7" placeholder="CUST_NO,客户号,string,OBLIGOR_PROFILE,OBLIGOR,true,obligor_entity_id"></textarea>
+              <textarea v-model="fieldImportText" rows="6" placeholder="CUST_NO,客户号,Customer No,string,OBLIGOR_PROFILE,true,,,,,CUST_TYPE,,,,,,"></textarea>
+              <p class="hint">临时枚举写 `CODE=名称`，多个用分号分隔；别名用分号分隔。导入先解析，逐行显示错误，确认后只写入没有错误的行。</p>
               <div class="pws-import-acts">
-                <button type="button" class="btn sm" @click="fieldImportOpen = false">取消</button>
-                <button type="button" class="btn sm primary" @click="applyFieldImport">导入</button>
+                <button type="button" class="btn sm" @click="fieldImportOpen = false; fieldImportPreview = []">取消</button>
+                <button type="button" class="btn sm" @click="applyFieldImport">解析预览</button>
+                <button type="button" class="btn sm primary" :disabled="!fieldImportPreview.some((row) => !row.errors.length)" @click="confirmFieldImport">确认导入</button>
+              </div>
+              <div v-if="fieldImportPreview.length" class="table-wrap" style="margin-top: 10px">
+                <table class="tbl compact">
+                  <thead><tr><th style="width: 54px">行号</th><th>字段编码</th><th>中文名</th><th>英文名</th><th>错误</th></tr></thead>
+                  <tbody>
+                    <tr v-for="row in fieldImportPreview" :key="row.line" :class="{ 'row-bad': row.errors.length }">
+                      <td class="num">{{ row.line }}</td>
+                      <td class="mono small">{{ row.field.name }}</td>
+                      <td>{{ row.field.label }}</td>
+                      <td>{{ row.field.labelEn || "—" }}</td>
+                      <td><span v-if="row.errors.length" class="tag danger">{{ row.errors.join("；") }}</span><span v-else class="tag green">可导入</span></td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </div>
 
-            <div class="pws-field-scroll">
-              <table class="pws-fieldtable">
-                <thead>
-                  <tr>
-                    <th style="width: 170px">字段编码</th>
-                    <th style="width: 180px">字段名称</th>
-                    <th style="width: 210px">所属分组</th>
-                    <th style="width: 110px">类型</th>
-                    <th style="width: 150px">层级</th>
-                    <th style="width: 54px">必填</th>
-                    <th>映射目标</th>
-                    <th style="width: 78px">引用</th>
-                    <th style="width: 52px"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <template v-for="group in groupedFields" :key="group.id">
-                    <tr class="grp">
-                      <td colspan="9">
-                        {{ group.label }} · {{ group.fields.length }} 个字段
-                        <span class="mini" style="margin-left: 8px">{{ group.id }}</span>
-                      </td>
-                    </tr>
-                    <tr v-for="field in group.fields" :key="field.name">
-                      <td><span class="mono">{{ field.name }}</span></td>
-                      <td><input v-model="field.label" type="text" /></td>
-                      <td>
-                        <select v-model="field.group">
-                          <option v-for="item in standardGroups" :key="item.id" :value="item.id">{{ item.label }}</option>
-                          <option value="OTHER">OTHER</option>
-                        </select>
-                      </td>
-                      <td>
-                        <select v-model="field.type">
-                          <option value="string">string</option>
-                          <option value="number">number</option>
-                          <option value="boolean">boolean</option>
-                          <option value="date">date</option>
-                          <option value="enum">enum</option>
-                          <option value="derived">derived</option>
-                          <option value="constant">constant</option>
-                        </select>
-                      </td>
-                      <td>
-                        <select v-model="field.level">
-                          <option value="">—</option>
-                          <option value="OBLIGOR">OBLIGOR</option>
-                          <option value="FACILITY">FACILITY</option>
-                          <option value="COLLATERAL">COLLATERAL</option>
-                          <option value="SETTLEMENT">SETTLEMENT</option>
-                          <option value="PORTFOLIO">PORTFOLIO</option>
-                          <option value="DATA_PREP">DATA_PREP</option>
-                          <option value="OUTPUT">OUTPUT</option>
-                        </select>
-                      </td>
-                      <td style="text-align: center"><input v-model="field.required" type="checkbox" /></td>
-                      <td>
-                        <input type="text" :value="(field.maps_to || []).join(', ')" @change="field.maps_to = $event.target.value.split(/[,，\s]+/).filter(Boolean)" />
-                        <span class="mini">映射 {{ field.count }} 条</span>
-                      </td>
-                      <td><span class="mini">规则 {{ fieldRuleHits[field.name] || 0 }}</span></td>
-                      <td><button type="button" class="btn sm danger" @click="removeField(field.name)">删除</button></td>
-                    </tr>
-                  </template>
-                </tbody>
-              </table>
-              <p v-if="!groupedFields.length" class="dim" style="padding: 16px">没有匹配的标准字段。</p>
+            <div class="pws-field-split" :class="{ collapsed: !fieldNavOpen }">
+              <aside v-show="fieldNavOpen" class="pws-groupnav">
+                <div class="pws-groupnav-head">
+                  <span>字段分组</span>
+                  <button type="button" class="pws-gn-toggle" title="收起分组导航" @click="fieldNavOpen = false">‹</button>
+                </div>
+                <div class="pws-groupnav-list">
+                  <button
+                    v-for="group in fieldGroupNav"
+                    :key="group.id"
+                    type="button"
+                    class="pws-groupnav-item"
+                    :class="{ on: activeFieldGroupId === group.id, faded: fieldQuery && !group.matched, empty: group.total === 0 }"
+                    @click="selectFieldGroup(group.id)"
+                  >
+                    <span class="pws-gn-row">
+                      <b>{{ group.label }}</b>
+                      <span class="pws-gn-count">{{ fieldQuery ? group.matched + " / " + group.total : group.total }}</span>
+                    </span>
+                    <span class="pws-gn-code mono">{{ group.code }}</span>
+                  </button>
+                </div>
+                <div class="pws-groupnav-foot">
+                  <button type="button" class="btn xs" @click="openGroupEditor">编辑分组</button>
+                </div>
+              </aside>
+
+              <div class="pws-fieldmain">
+                <div class="pws-fieldmain-head">
+                  <div>
+                    <h4>{{ selectedFieldGroup.label }}</h4>
+                    <span class="mini">
+                      <span class="mono">{{ selectedFieldGroup.code }}</span>
+                      · {{ fieldQuery ? selectedFieldGroup.matched + " 个匹配 / " : "" }}{{ selectedFieldGroup.total }} 个字段
+                    </span>
+                  </div>
+                  <div class="pws-fieldmain-actions">
+                    <button v-if="!fieldNavOpen" type="button" class="btn sm" @click="fieldNavOpen = true">显示分组</button>
+                    <button type="button" class="btn sm" @click="openFieldCreate">＋ 新增字段</button>
+                  </div>
+                </div>
+
+                <div class="pws-field-scroll">
+                  <table class="pws-fieldtable">
+                    <thead>
+                      <tr>
+                        <th style="width: 190px">字段编码</th>
+                        <th style="width: 160px">中文名</th>
+                        <th style="width: 170px">英文名</th>
+                        <th v-if="showFieldGroupColumn" style="width: 160px">所属分组</th>
+                        <th style="width: 86px">类型</th>
+                        <th style="width: 52px">必填</th>
+                        <th style="width: 140px">字典</th>
+                        <th style="width: 64px">状态</th>
+                        <th style="width: 150px">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="field in visibleFields" :key="field.name">
+                        <td class="pws-field-code" :title="field.name"><span class="mono">{{ field.name }}</span></td>
+                        <td>{{ field.label }}</td>
+                        <td><span v-if="field.labelEn || field.label_en">{{ field.labelEn || field.label_en }}</span><span v-else class="tag amber">待补</span></td>
+                        <td v-if="showFieldGroupColumn">{{ groupLabelOf(field.group) }}</td>
+                        <td><span class="tag">{{ field.type }}</span></td>
+                        <td class="pws-field-check">{{ field.required ? "是" : "否" }}</td>
+                        <td><span v-if="field.dictionary" class="tag blue" :title="field.dictionary">{{ dictionaryName(field.dictionary) || field.dictionary }}</span><span v-else class="dim">—</span></td>
+                        <td><span class="tag" :class="field.status === 'DISABLED' ? 'muted' : 'green'">{{ field.status === "DISABLED" ? "停用" : "启用" }}</span></td>
+                        <td>
+                          <button type="button" class="btn xs" @click="openFieldEdit(field)">编辑</button>
+                          <button type="button" class="btn xs" @click="copyField(field)">复制</button>
+                          <button type="button" class="btn xs danger" @click="removeField(field.name)">删除</button>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <p v-if="!visibleFields.length" class="dim" style="padding: 16px">
+                    {{ fieldQuery ? "没有匹配的标准字段。" : "这个分组还没有标准字段。" }}
+                  </p>
+                </div>
+              </div>
             </div>
-            <p class="hint">标准字段按产品注册的 standard_fields 保存；保存时同步更新映射文档的源字段类型和说明。分组顺序来自 standard_field_groups。</p>
+            <p class="hint">标准字段按产品注册的 standard_fields 保存；保存时同步映射文档的源字段类型和说明。字段到规则字段的映射只在「字段映射」里维护，产品注册不再保存映射目标。</p>
           </div>
         </div>
       </section>
+
+      <StandardFieldDrawer
+        :open="fieldEditorOpen"
+        :field="fieldDraft"
+        :original-name="editingFieldName"
+        :groups="standardGroups"
+        :dictionaries="dictionaries"
+        :existing-names="fields.map((field) => field.name)"
+        @close="fieldEditorOpen = false"
+        @save="handleFieldSave"
+        @dictionaries="openDictionaries"
+      />
+      <FieldGroupDrawer
+        :open="groupEditorOpen"
+        :groups="groupEditorGroups"
+        @close="groupEditorOpen = false"
+        @save="handleGroupSave"
+      />
+      <DictionaryManagerDrawer
+        :open="dictionaryOpen"
+        :registry="registry"
+        :dictionaries="dictionaries"
+        :fields="activeFields"
+        @close="dictionaryOpen = false"
+        @saved="handleDictionariesSaved"
+      />
 
       <section v-show="moduleKey === 'mapping'" class="pws-module">
         <div v-if="!mappingMeta" class="notice warn">这个产品组还没有字段映射文档。</div>

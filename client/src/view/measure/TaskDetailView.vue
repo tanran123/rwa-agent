@@ -25,14 +25,6 @@ const TASK_STATUS = {
   doing: { label: "进行中", tone: "warn" },
   done: { label: "已完成", tone: "ok" }
 };
-const HQ_STATUS = {
-  draft: { label: "待开始", tone: "muted" },
-  doing: { label: "进行中", tone: "warn" },
-  review_pending: { label: "待复核", tone: "warn" },
-  reviewed: { label: "已复核", tone: "ok" },
-  done: { label: "已完成", tone: "ok" },
-  archived: { label: "已归档", tone: "muted" }
-};
 
 async function load() {
   return fetchTask(route.params.id);
@@ -46,14 +38,6 @@ function moduleSubs(task, module) {
   return (task.subs || []).filter((sub) => (sub.module === "liquidity" ? "liquidity" : "capital") === module);
 }
 
-function shortMoney(value) {
-  const n = Number(value);
-  if (!Number.isFinite(n) || n === 0) return "—";
-  const abs = Math.abs(n);
-  if (abs >= 1e8) return (n / 1e8).toFixed(2) + " 亿";
-  if (abs >= 1e4) return (n / 1e4).toFixed(2) + " 万";
-  return n.toFixed(2);
-}
 
 function openAdd(module) {
   error.value = "";
@@ -93,7 +77,10 @@ async function saveSubEdit(task) {
 }
 
 async function removeSub(task, sub) {
-  const ok = await askConfirm(`将删除子任务「${sub.name}」。已归档的计量批次仍保留在结果明细里。确定继续？`, {
+  const note = sub.module === "liquidity"
+    ? "已关联 LCR 任务时不能直接删除，需先处理对应 LCR 任务。"
+    : "已归档的计量批次仍保留在结果明细里。";
+  const ok = await askConfirm(`将删除子任务「${sub.name}」。${note}确定继续？`, {
     title: "删除子任务",
     danger: true
   });
@@ -115,14 +102,14 @@ function openResults(sub) {
   router.push({ path: "/results", query: { batch: sub.batchId } });
 }
 
-function hqlaStatus(sub) {
-  return HQ_STATUS[sub.hqlaStatus || sub.status] || { label: sub.hqlaStatus || sub.status || "待开始", tone: "muted" };
-}
 
 async function openHqla(data, sub) {
-  if (sub.hqlaTaskId) {
-    router.push(`/hqla/${sub.hqlaTaskId}`);
-    return;
+  if (!sub.hqlaTaskId) {
+    const yes = await askConfirm(
+      `将为流动性子任务「${sub.name}」创建唯一 LCR 计量任务，继承主任务 ${data.version}、${data.institution}、基准日 ${data.baseDate}，并生成配置快照。是否继续？`,
+      { title: "创建 LCR 任务", confirmText: "创建并进入" }
+    );
+    if (!yes) return;
   }
   busySub.value = sub.id;
   error.value = "";
@@ -203,25 +190,20 @@ async function openHqla(data, sub) {
           <table v-else class="tbl compact">
             <thead>
               <tr v-if="module.key === 'liquidity'">
-                <th>子任务</th><th>状态</th><th>进度</th><th class="num">异常数</th><th>结果摘要</th><th>操作</th>
+                <th>子任务</th><th>进度</th><th class="num">异常数</th><th>操作</th>
               </tr>
-              <tr v-else><th>子任务</th><th>状态</th><th class="num">EAD</th><th class="num">RWA</th><th>操作</th></tr>
+              <tr v-else><th>子任务</th><th>状态</th><th>操作</th></tr>
             </thead>
             <tbody>
               <template v-for="sub in moduleSubs(data, module.key)" :key="sub.id">
                 <tr v-if="editingSub !== sub.id">
                   <td>
                     {{ sub.name }}
-                    <div class="dim" style="font-size: 10.5px">
-                      {{ sub.module === "liquidity"
-                        ? (sub.hqlaTaskId || "尚未创建 LCR 任务")
-                        : (sub.batchName || "尚未归档计量批次") }}
+                    <div v-if="sub.module !== 'liquidity'" class="dim" style="font-size: 10.5px">
+                      {{ sub.batchName || "尚未归档计量批次" }}
                     </div>
                   </td>
-                  <td v-if="module.key === 'liquidity'">
-                    <span class="tag" :class="hqlaStatus(sub).tone">{{ hqlaStatus(sub).label }}</span>
-                  </td>
-                  <td v-else>
+                  <td v-if="module.key !== 'liquidity'">
                     <span class="tag" :class="sub.status === 'archived' ? 'ok' : 'muted'">
                       {{ sub.status === "archived" ? "已归档" : "未计算" }}
                     </span>
@@ -234,17 +216,12 @@ async function openHqla(data, sub) {
                       </div>
                     </td>
                     <td class="num">{{ sub.exceptionCount || 0 }}</td>
-                    <td class="small">{{ sub.lcr == null ? "—" : "LCR " + Number(sub.lcr).toFixed(2) + "%" }}</td>
-                  </template>
-                  <template v-else>
-                    <td class="num">{{ sub.ead == null ? "—" : shortMoney(sub.ead) }}</td>
-                    <td class="num">{{ sub.rwa == null ? "—" : shortMoney(sub.rwa) }}</td>
                   </template>
                   <td>
                     <div style="display: flex; gap: 4px; flex-wrap: wrap">
                       <template v-if="sub.module === 'liquidity'">
                         <button type="button" class="btn sm primary" :disabled="busySub === sub.id" @click="openHqla(data, sub)">
-                          {{ busySub === sub.id ? "正在创建…" : sub.hqlaTaskId ? "打开 LCR 任务" : "打开/创建 LCR 任务" }}
+                          {{ busySub === sub.id ? "正在打开…" : (sub.hqlaTaskId ? "打开 LCR 任务" : "创建 LCR 任务") }}
                         </button>
                       </template>
                       <template v-else>
@@ -259,7 +236,7 @@ async function openHqla(data, sub) {
                   </td>
                 </tr>
                 <tr v-else>
-                  <td :colspan="module.key === 'liquidity' ? 6 : 5">
+                  <td :colspan="module.key === 'liquidity' ? 4 : 3">
                     <div class="inline-fields" style="padding: 0">
                       <div class="field">
                         <label>子任务名称</label>
@@ -273,7 +250,7 @@ async function openHqla(data, sub) {
               </template>
 
               <tr v-if="addingModule === module.key">
-                <td :colspan="module.key === 'liquidity' ? 6 : 5">
+                <td :colspan="module.key === 'liquidity' ? 4 : 3">
                   <div class="inline-fields" style="padding: 0">
                     <div class="field">
                       <label>子任务名称</label>

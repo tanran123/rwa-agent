@@ -1,33 +1,29 @@
 <script setup>
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import {
   fetchRuleDocument, fetchRuleDocuments, saveRuleDocument, validateRuleBody
 } from "@/api/config";
-import { useRouter } from "vue-router";
+import { onBeforeRouteLeave, useRoute, useRouter } from "vue-router";
 import { useContext } from "@/composables/useContext";
 import AsyncView from "@/components/AsyncView.vue";
 import ProductWizard from "@/components/ProductWizard.vue";
 import JsonDocEditor from "@/components/JsonDocEditor.vue";
-import RuleForm from "@/components/RuleForm.vue";
 import { askConfirm } from "@/utils/confirm";
 import {
   familyMeta, mappingTargetSet, matchedRuleCount, productStatus, STATUS_META, uniqueSources
 } from "@/utils/productCatalog";
 
-const { session, scopeVersion } = useContext();
+const { session, scopeVersion, currentVersion } = useContext();
+const route = useRoute();
 const router = useRouter();
+const view = ref(null);
 const docs = ref([]);
-const tab = ref("registry");
 const notice = ref({ text: "", kind: "" });
 const registry = ref(null);
-const mapping = ref(null);
-const productForm = ref(null);
-const validationForm = ref(null);
-const formError = ref("");
 const saving = ref(false);
 const jsonMode = ref(false);
 const validation = ref(null);
-const mappingId = ref("");
+const savedBody = ref("");
 const wizard = ref(null);
 const mappingBodies = ref({});
 const classRuleDoc = ref(null);
@@ -38,16 +34,20 @@ const cardStatus = ref("");
 const cardExposure = ref("");
 const cardMapping = ref("");
 const sortBy = ref("name");
-const viewMode = ref("card");
+const viewMode = ref("list");
 const pageSize = ref(10);
 const page = ref(1);
 const cardMenu = ref(-1);
 
-const jurisdiction = computed(() => session.jurisdiction || "");
-const version = computed(() => scopeVersion.value);
+const jurisdiction = computed(() => String(route.query.jurisdiction || session.jurisdiction || "").toUpperCase());
+const version = computed(() => String(route.query.version || scopeVersion.value || ""));
+const versionMeta = computed(() => {
+  const hit = session.versions.find((item) => item.jurisdiction === jurisdiction.value && item.version === version.value);
+  return hit || currentVersion.value || null;
+});
+const readOnly = computed(() => !!versionMeta.value && versionMeta.value.status === "published");
 const registryBody = computed(() => (registry.value ? registry.value.body : {}));
-const mappingBody = computed(() => (mapping.value ? mapping.value.body : {}));
-const mappingDocs = computed(() => docs.value.filter((item) => item.kind === "data_mapping"));
+const dirty = computed(() => (registry.value ? JSON.stringify(registryBody.value) !== savedBody.value : false));
 
 function say(text, kind = "info") {
   notice.value = { text, kind };
@@ -221,17 +221,6 @@ function openWorkbench(card, module) {
   });
 }
 
-function openCardConfig(card) {
-  const meta = docs.value.find((item) => item.kind === "data_mapping" && item.name === card.mappingName);
-  if (!meta) {
-    say("这个产品组还没有字段映射文档，请先通过配置向导创建。", "warn");
-    return;
-  }
-  tab.value = "mappings";
-  jsonMode.value = false;
-  openMapping(meta.id);
-}
-
 function openWizardCopy(row, index) {
   wizard.value = {
     initial: {
@@ -243,6 +232,7 @@ function openWizardCopy(row, index) {
 }
 
 async function removeProductGroup(index) {
+  if (readOnly.value) return;
   const entry = ((registryBody.value && registryBody.value.product_mappings) || [])[index];
   if (!entry) return;
   const yes = await askConfirm("删除产品组「" + entry.product_family + "」不会删除对应的字段映射文档，但会把这个产品组从产品清单中移除。", {
@@ -257,6 +247,7 @@ async function removeProductGroup(index) {
     body.product_mappings.splice(index, 1);
     const saved = await saveRuleDocument(registry.value.id, { body: body });
     registry.value = saved;
+    savedBody.value = JSON.stringify(saved.body);
     cardMenu.value = -1;
     await refreshDocs();
     say("已删除产品组 " + entry.product_family, "ok");
@@ -275,20 +266,26 @@ function openWizardNew() {
   wizard.value = { initial: null };
 }
 
-function openWizardEdit(row, index) {
-  wizard.value = { initial: { index: index, mapping: Object.assign({}, row.entry || row) } };
-}
-
 async function onWizardSaved() {
   wizard.value = null;
   await loadAll();
 }
 
 async function loadAll() {
+  if (route.query.jurisdiction && route.query.version) {
+    const target = session.versions.find(
+      (item) => item.jurisdiction === String(route.query.jurisdiction).toUpperCase() && item.version === String(route.query.version)
+    );
+    if (target) {
+      session.jurisdiction = target.jurisdiction;
+      session.versionId = target.id;
+    }
+  }
   const rows = await fetchRuleDocuments({ jurisdiction: jurisdiction.value, version: version.value });
   docs.value = rows;
   const registryMeta = rows.find((item) => item.kind === "product_registry");
   registry.value = registryMeta ? await fetchRuleDocument(registryMeta.id) : null;
+  savedBody.value = registry.value ? JSON.stringify(registry.value.body) : "";
   const mappingMetas = rows.filter((item) => item.kind === "data_mapping");
   const classMeta = rows.find((item) => item.kind === "exposure_classification");
   const weightMeta = rows.find((item) => item.kind === "risk_weight");
@@ -309,60 +306,23 @@ async function refreshDocs() {
   docs.value = await fetchRuleDocuments({ jurisdiction: jurisdiction.value, version: version.value });
 }
 
-async function openMapping(id) {
-  mappingId.value = id;
-  mapping.value = await fetchRuleDocument(id);
-  validation.value = null;
-}
-
-function setRegistry(key, value) {
-  const next = clone(registry.value.body);
-  if (value === "") delete next[key];
-  else next[key] = value;
-  registry.value.body = next;
-}
-
-function setDefaultRuleSet(key, value) {
-  const next = clone(registry.value.body);
-  next.default_rule_sets = next.default_rule_sets || {};
-  if (value === "") delete next.default_rule_sets[key];
-  else next.default_rule_sets[key] = value;
-  registry.value.body = next;
-}
-
-function setPolicy(key, value) {
-  const next = clone(registry.value.body);
-  next.rule_set_version_policy = next.rule_set_version_policy || {};
-  if (value === "") delete next.rule_set_version_policy[key];
-  else next.rule_set_version_policy[key] = value === "true" ? true : value === "false" ? false : value;
-  registry.value.body = next;
-}
-
-function setMapping(key, value) {
-  const next = clone(mapping.value.body);
-  if (value === "") delete next[key];
-  else next[key] = value;
-  mapping.value.body = next;
-}
-
 async function saveRegistry(nextBody) {
-  if (!registry.value) return;
+  if (!registry.value || readOnly.value) return;
   await saveDoc(registry.value, nextBody);
 }
 
-async function saveMapping(nextBody) {
-  if (!mapping.value) return;
-  await saveDoc(mapping.value, nextBody);
-}
-
 async function saveDoc(doc, nextBody) {
+  if (nextBody) doc.body = nextBody;
+  if (JSON.stringify(doc.body) === savedBody.value) {
+    say("没有需要保存的修改。", "info");
+    return;
+  }
   saving.value = true;
   validation.value = null;
   try {
-    if (nextBody) doc.body = nextBody;
     const saved = await saveRuleDocument(doc.id, { body: doc.body });
-    if (doc === registry.value) registry.value = saved;
-    if (doc === mapping.value) mapping.value = saved;
+    registry.value = saved;
+    savedBody.value = JSON.stringify(saved.body);
     await refreshDocs();
     say("已保存 " + saved.name, "ok");
   } catch (err) {
@@ -373,7 +333,7 @@ async function saveDoc(doc, nextBody) {
 }
 
 async function validateCurrent() {
-  const doc = tab.value === "registry" ? registry.value : mapping.value;
+  const doc = registry.value;
   if (!doc) return;
   saving.value = true;
   try {
@@ -391,139 +351,27 @@ async function validateCurrent() {
   }
 }
 
-// ---------------------------------------------------------------- 产品注册
+watch([() => route.query.jurisdiction, () => route.query.version], async () => {
+  if (view.value) await view.value.reload();
+});
 
-function addProduct() {
-  formError.value = "";
-  productForm.value = {
-    creating: true,
-    product_family: "LOAN",
-    codesText: "",
-    data_mapping_ref: "LOAN_DATA_MAPPING",
-    data_mapping_version: "1.0.0",
-    exposure_type: "ON_BALANCE",
-    note: ""
-  };
+function warnBeforeUnload(event) {
+  if (!dirty.value) return;
+  event.preventDefault();
+  event.returnValue = "";
 }
 
-function editProduct(row, index) {
-  formError.value = "";
-  productForm.value = {
-    creating: false,
-    index,
-    product_family: row.product_family,
-    codesText: (row.product_codes || []).join("\n"),
-    data_mapping_ref: row.data_mapping_ref,
-    data_mapping_version: row.data_mapping_version || "",
-    exposure_type: row.exposure_type || "",
-    note: row.note || ""
-  };
-}
+onMounted(() => window.addEventListener("beforeunload", warnBeforeUnload));
+onBeforeUnmount(() => window.removeEventListener("beforeunload", warnBeforeUnload));
 
-async function saveProduct() {
-  formError.value = "";
-  const form = productForm.value;
-  if (!form) return;
-  const codes = String(form.codesText || "").split("\n").map((item) => item.trim()).filter(Boolean);
-  if (!codes.length) {
-    formError.value = "至少填一个产品代码";
-    return;
-  }
-  const item = {
-    product_family: form.product_family,
-    product_codes: codes,
-    data_mapping_ref: form.data_mapping_ref
-  };
-  if (form.data_mapping_version) item.data_mapping_version = form.data_mapping_version;
-  if (form.exposure_type) item.exposure_type = form.exposure_type;
-  if (form.note) item.note = form.note;
-  const next = clone(registry.value.body);
-  next.product_mappings = next.product_mappings || [];
-  if (form.creating) next.product_mappings.push(item);
-  else next.product_mappings[form.index] = item;
-  saving.value = true;
-  try {
-    const saved = await saveRuleDocument(registry.value.id, { body: next });
-    registry.value = saved;
-    productForm.value = null;
-    await refreshDocs();
-    say("已更新产品组 " + item.product_family, "ok");
-  } catch (err) {
-    formError.value = err.message;
-  } finally {
-    saving.value = false;
-  }
-}
-
-async function removeProduct(index) {
-  const row = (registryBody.value.product_mappings || [])[index] || {};
-  const yes = await askConfirm("删除产品族「" + (row.product_family || "") + "」下的 " + ((row.product_codes || []).length) + " 个产品代码。", {
-    title: "删除产品注册项", confirmText: "删除", danger: true
+onBeforeRouteLeave(async () => {
+  if (!dirty.value) return true;
+  return await askConfirm("产品配置还有未保存的修改，离开后会丢失。", {
+    title: "未保存的修改",
+    confirmText: "离开",
+    danger: true
   });
-  if (!yes) return;
-  const next = clone(registry.value.body);
-  next.product_mappings.splice(index, 1);
-  registry.value.body = next;
-}
-
-function addValidationRule() {
-  formError.value = "";
-  validationForm.value = { creating: true, rule_id: "", description: "", action: "manual_review", target_field: "", expression: "", regulatory_reference: "" };
-}
-
-function editValidationRule(row, index) {
-  formError.value = "";
-  validationForm.value = {
-    creating: false,
-    index,
-    rule_id: row.rule_id || "",
-    description: row.description || "",
-    action: row.action || "manual_review",
-    target_field: (row.target_field || []).join(", "),
-    expression: row.expression || "",
-    regulatory_reference: row.regulatory_reference || ""
-  };
-}
-
-function saveValidationRule() {
-  formError.value = "";
-  const form = validationForm.value;
-  if (!form.rule_id.trim()) {
-    formError.value = "rule_id 不能为空";
-    return;
-  }
-  const item = { rule_id: form.rule_id.trim(), description: form.description, action: form.action };
-  const target = String(form.target_field || "").split(",").map((value) => value.trim()).filter(Boolean);
-  if (target.length) item.target_field = target;
-  if (form.expression) item.expression = form.expression;
-  if (form.regulatory_reference) item.regulatory_reference = form.regulatory_reference;
-  const next = clone(mapping.value.body);
-  next.validation_rules = next.validation_rules || [];
-  if (form.creating) next.validation_rules.push(item);
-  else next.validation_rules[form.index] = item;
-  mapping.value.body = next;
-  validationForm.value = null;
-}
-
-async function removeValidationRule(index) {
-  const yes = await askConfirm("删除校验规则。", { title: "删除校验规则", confirmText: "删除", danger: true });
-  if (!yes) return;
-  const next = clone(mapping.value.body);
-  next.validation_rules.splice(index, 1);
-  mapping.value.body = next;
-}
-
-function removeCurrentProduct() {
-  const form = productForm.value;
-  productForm.value = null;
-  if (form && !form.creating) removeProductGroup(form.index);
-}
-
-function removeCurrentValidationRule() {
-  const form = validationForm.value;
-  validationForm.value = null;
-  if (form && !form.creating) removeValidationRule(form.index);
-}
+});
 </script>
 
 <template>
@@ -539,22 +387,24 @@ function removeCurrentValidationRule() {
     />
   </div>
 
-  <div class="section-tabs" style="margin-bottom: 12px">
-    <button type="button" class="section-tab active" @click="tab = 'registry'; jsonMode = false">产品管理</button>
+  <div v-if="registry" class="section-tabs" style="margin-bottom: 12px">
+    <button type="button" class="section-tab active" @click="jsonMode = false">产品管理</button>
     <span class="spacer"></span>
+    <span v-if="readOnly" class="tag warn">已发布 · 只读</span>
     <button type="button" class="btn sm" @click="jsonMode = !jsonMode">{{ jsonMode ? "结构化编辑" : "JSON 原文" }}</button>
     <button type="button" class="btn sm" :disabled="saving" @click="validateCurrent">校验</button>
     <button
       type="button"
       class="btn sm primary"
-      :disabled="saving || jsonMode"
-      @click="tab === 'registry' ? saveRegistry() : saveMapping()"
+      :disabled="saving || jsonMode || readOnly || !dirty"
+      @click="saveRegistry()"
     >保存</button>
   </div>
 
   <p v-if="notice.text" class="notice" :class="notice.kind">{{ notice.text }}</p>
+  <p v-if="readOnly" class="notice warn">当前版本已发布，产品配置只读；要修改请先到监管规则维护工作台撤回发布。</p>
 
-  <AsyncView :load="loadAll">
+  <AsyncView ref="view" :load="loadAll">
     <template #default>
       <div v-if="validation && validation.errors.length" class="notice danger">
         <strong>校验发现 {{ validation.errors.length }} 处问题</strong>
@@ -562,19 +412,17 @@ function removeCurrentValidationRule() {
       </div>
       <p v-else-if="validation" class="notice ok">校验通过。</p>
 
-      <template v-if="!registry && !mapping">
-        <div class="notice warn">这一版还没有产品注册和字段映射。先到「敞口划分配置」导入 docs 样例，或在 JSON 模式下新建文档。</div>
-      </template>
-
-      <template v-else-if="tab === 'registry'">
-        <div v-if="!registry" class="notice warn">这一版还没有产品规则注册。</div>
-        <template v-else>
+      <div v-if="!registry" class="notice warn">
+        这一版还没有产品注册和字段映射，本页没有可编辑的内容。产品规则文档按监管版本单独维护；切换左上角的监管版本可以查看其它版本的产品组。
+      </div>
+      <template v-else>
           <JsonDocEditor
             v-if="jsonMode"
             :body="registryBody"
             kind="product_registry"
             :jurisdiction="jurisdiction"
             :saving="saving"
+            :read-only="readOnly"
             @update:body="registry.body = $event"
             @save="saveRegistry($event)"
             @notify="say($event, 'info')"
@@ -584,13 +432,13 @@ function removeCurrentValidationRule() {
               <div>
                 <h2>产品管理 <span class="pr-total">{{ filteredCards.length }} / {{ productCards.length }}</span></h2>
                 <p class="pr-stats-line">
-                  产品 {{ productCards.length }} 个 · 已注册 {{ cardSummary.registered }} ·
+                  全部产品 {{ productCards.length }} 个 · 已注册 {{ cardSummary.registered }} ·
                   配置中 {{ cardSummary.configuring }} · 配置异常 {{ cardSummary.error }} ·
                   Mapping 平均完成率 {{ cardSummary.mappingAvg }}% · 当前第 {{ page }}/{{ pageCount }} 页
                 </p>
               </div>
               <span class="spacer"></span>
-              <button type="button" class="btn primary" @click="openWizardNew">＋ 新建产品</button>
+              <button type="button" class="btn primary" :disabled="readOnly" @click="openWizardNew">＋ 新建产品</button>
             </div>
 
             <div class="pr-toolbar">
@@ -638,7 +486,7 @@ function removeCurrentValidationRule() {
               <div class="pr-empty-icon">产</div>
               <h3>当前还没有注册产品</h3>
               <p>从产品组开始登记适用产品代码、标准字段和字段映射。</p>
-              <button type="button" class="btn primary" @click="openWizardNew">立即注册产品</button>
+              <button type="button" class="btn primary" :disabled="readOnly" @click="openWizardNew">立即注册产品</button>
             </div>
             <div v-else-if="!filteredCards.length" class="pr-empty small">
               <h3>没有匹配的产品</h3>
@@ -652,13 +500,17 @@ function removeCurrentValidationRule() {
                   v-for="card in pagedCards"
                   :key="card.index + '_' + card.code"
                   class="pr-card compact"
+                  role="button"
+                  tabindex="0"
                   @click="openWorkbench(card, 'info')"
+                  @keydown.enter.self.prevent="openWorkbench(card, 'info')"
+                  @keydown.space.self.prevent="openWorkbench(card, 'info')"
                 >
                   <header class="pr-card-head">
                     <h3 :title="card.name">{{ card.name }}</h3>
                     <span class="pr-family-tag">{{ card.family }}</span>
                     <span class="pr-status" :class="card.statusKey">{{ card.status }}</span>
-                    <div class="pr-more" @click.stop>
+                    <div v-if="!readOnly" class="pr-more" @click.stop>
                       <button type="button" class="pr-more-btn" title="更多操作" @click.stop="toggleCardMenu(card.index)">⋯</button>
                       <div v-if="cardMenu === card.index" class="pr-menu">
                         <button type="button" @click.stop="openWizardCopy(card.entry, card.index)">复制产品</button>
@@ -700,7 +552,15 @@ function removeCurrentValidationRule() {
                     </tr>
                   </thead>
                   <tbody>
-                    <tr v-for="card in pagedCards" :key="card.index + '_row'" @click="openWorkbench(card, 'info')">
+                    <tr
+                      v-for="card in pagedCards"
+                      :key="card.index + '_row'"
+                      role="button"
+                      tabindex="0"
+                      @click="openWorkbench(card, 'info')"
+                      @keydown.enter.self.prevent="openWorkbench(card, 'info')"
+                      @keydown.space.self.prevent="openWorkbench(card, 'info')"
+                    >
                       <td><b>{{ card.name }}</b></td>
                       <td class="mono">{{ card.code }}</td>
                       <td>{{ card.family }}</td>
@@ -730,142 +590,9 @@ function removeCurrentValidationRule() {
               </div>
             </template>
 
-            <details class="pr-settings">
-              <summary>注册表设置（规则集与版本策略）</summary>
-              <div class="panel" style="margin-top: 10px">
-                <div class="panel-head">
-                  <h3>注册信息</h3>
-                  <span class="sub mono">{{ registry.name }} · {{ registry.ruleVersion }}</span>
-                </div>
-                <div class="panel-body">
-                  <div class="grid c4">
-                    <label class="field">标题
-                      <input :value="registryBody.title || ''" type="text" @change="setRegistry('title', $event.target.value)" />
-                    </label>
-                    <label class="field">文档版本
-                      <input :value="registryBody.version || ''" type="text" @change="setRegistry('version', $event.target.value)" />
-                    </label>
-                    <label class="field">状态
-                      <select :value="registryBody.status || 'DRAFT'" @change="setRegistry('status', $event.target.value)">
-                        <option value="DRAFT">DRAFT</option><option value="REVIEW">REVIEW</option>
-                        <option value="APPROVED">APPROVED</option><option value="RETIRED">RETIRED</option>
-                      </select>
-                    </label>
-                    <label class="field">框架
-                      <input :value="registryBody.framework || 'STC'" type="text" @change="setRegistry('framework', $event.target.value)" />
-                    </label>
-                    <label class="field">分类规则集
-                      <input :value="(registryBody.default_rule_sets || {}).classification_rule_ref || ''" type="text" @change="setDefaultRuleSet('classification_rule_ref', $event.target.value)" />
-                    </label>
-                    <label class="field">分类规则版本
-                      <input :value="(registryBody.default_rule_sets || {}).classification_rule_version || ''" type="text" @change="setDefaultRuleSet('classification_rule_version', $event.target.value)" />
-                    </label>
-                    <label class="field">权重规则集
-                      <input :value="(registryBody.default_rule_sets || {}).risk_weight_rule_ref || ''" type="text" @change="setDefaultRuleSet('risk_weight_rule_ref', $event.target.value)" />
-                    </label>
-                    <label class="field">权重规则版本
-                      <input :value="(registryBody.default_rule_sets || {}).risk_weight_rule_version || ''" type="text" @change="setDefaultRuleSet('risk_weight_rule_version', $event.target.value)" />
-                    </label>
-                    <label class="field">版本选择依据
-                      <select :value="(registryBody.rule_set_version_policy || {}).selection_basis || 'MEASUREMENT_DATE'" @change="setPolicy('selection_basis', $event.target.value)">
-                        <option value="MEASUREMENT_DATE">MEASUREMENT_DATE</option>
-                        <option value="REPORTING_DATE">REPORTING_DATE</option>
-                        <option value="LATEST_APPROVED">LATEST_APPROVED</option>
-                      </select>
-                    </label>
-                    <label class="field">缺版本处理
-                      <select :value="(registryBody.rule_set_version_policy || {}).on_missing_version || 'manual_review'" @change="setPolicy('on_missing_version', $event.target.value)">
-                        <option value="manual_review">manual_review</option><option value="fail">fail</option>
-                      </select>
-                    </label>
-                    <label class="field">要求版本同期
-                      <select :value="String((registryBody.rule_set_version_policy || {}).require_same_version_date !== false)" @change="setPolicy('require_same_version_date', $event.target.value)">
-                        <option value="true">是</option><option value="false">否</option>
-                      </select>
-                    </label>
-                  </div>
-                </div>
-              </div>
-            </details>
-          </template>
-        </template>
       </template>
-
+    </template>
     </template>
   </AsyncView>
 
-  <RuleForm
-    :open="!!productForm"
-    :title="productForm && productForm.creating ? '新增产品族' : '编辑产品族'"
-    :error="formError"
-    :saving="false"
-    @close="productForm = null"
-    @save="saveProduct"
-    @remove="removeCurrentProduct"
-  >
-    <template v-if="productForm">
-      <label class="field">产品族
-        <select v-model="productForm.product_family">
-          <option value="LOAN">LOAN</option><option value="BOND">BOND</option>
-          <option value="INTERBANK">INTERBANK</option><option value="SFT">SFT</option>
-          <option value="DERIVATIVE">DERIVATIVE</option><option value="EQUITY">EQUITY</option>
-          <option value="OFF_BALANCE">OFF_BALANCE</option><option value="TREASURY">TREASURY</option>
-          <option value="OTHER">OTHER</option>
-        </select>
-      </label>
-      <label class="field">映射配置
-        <input v-model="productForm.data_mapping_ref" type="text" />
-      </label>
-      <label class="field">映射版本
-        <input v-model="productForm.data_mapping_version" type="text" />
-      </label>
-      <label class="field">暴露类型
-        <select v-model="productForm.exposure_type">
-          <option value="">不填</option><option value="ON_BALANCE">ON_BALANCE</option>
-          <option value="OFF_BALANCE">OFF_BALANCE</option><option value="CCR">CCR</option>
-          <option value="SETTLEMENT">SETTLEMENT</option><option value="MIXED">MIXED</option>
-        </select>
-      </label>
-      <label class="field full">产品代码（一行一个）
-        <textarea v-model="productForm.codesText" style="min-height: 160px"></textarea>
-      </label>
-      <label class="field full">备注
-        <input v-model="productForm.note" type="text" />
-      </label>
-    </template>
-  </RuleForm>
-
-  <RuleForm
-    :open="!!validationForm"
-    :title="validationForm && validationForm.creating ? '新增校验规则' : '编辑校验规则'"
-    :error="formError"
-    :saving="false"
-    @close="validationForm = null"
-    @save="saveValidationRule"
-    @remove="removeCurrentValidationRule"
-  >
-    <template v-if="validationForm">
-      <label class="field">rule_id
-        <input v-model="validationForm.rule_id" type="text" placeholder="V001" />
-      </label>
-      <label class="field">动作
-        <select v-model="validationForm.action">
-          <option value="fail">fail</option><option value="manual_review">manual_review</option>
-          <option value="not_applicable">not_applicable</option><option value="default">default</option>
-        </select>
-      </label>
-      <label class="field full">说明
-        <input v-model="validationForm.description" type="text" />
-      </label>
-      <label class="field full">目标字段（逗号分隔）
-        <input v-model="validationForm.target_field" type="text" />
-      </label>
-      <label class="field full">表达式
-        <input v-model="validationForm.expression" type="text" />
-      </label>
-      <label class="field full">监管依据
-        <input v-model="validationForm.regulatory_reference" type="text" />
-      </label>
-    </template>
-  </RuleForm>
 </template>

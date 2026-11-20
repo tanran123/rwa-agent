@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import Drawer from "@/components/Drawer.vue";
 import JsonConfigWorkbench from "@/components/JsonConfigWorkbench.vue";
 import { fetchParameterTable, fetchReferenceList } from "@/api/config";
@@ -14,14 +14,21 @@ const props = defineProps({
   jurisdiction: { type: String, default: "" },
   version: { type: String, default: "" },
   scopeClasses: { type: Array, default: () => [] },
-  embedded: { type: Boolean, default: false }
+  embedded: { type: Boolean, default: false },
+  readonly: { type: Boolean, default: false }
 });
-const emit = defineEmits(["import", "reload"]);
+const emit = defineEmits(["reload"]);
 
+const shellRef = ref(null);
+const isFullscreen = ref(false);
 const view = ref("pano");
 const focusedLane = ref("");
 const zoom = ref(1);
 const selectedNodeId = ref("");
+const moreWeightRow = ref(null);
+const panoShellRef = ref(null);
+const hasRuleData = computed(() => !!props.classification && !!props.weight);
+const drawerTarget = computed(() => (isFullscreen.value && shellRef.value ? shellRef.value : "body"));
 const tableDetail = ref(null);
 const listDetail = ref(null);
 const flowCode = ref("");
@@ -176,7 +183,10 @@ function openList(id) {
 
 function listLabel(id) {
   const item = model.value.listMap[id];
-  return item ? item.title + (item.rowCount ? " · " + item.rowCount : " · 待载入") : id;
+  if (!item) return id;
+  const count = Number(item.rowCount);
+  if (!Number.isFinite(count)) return item.title + " · 待载入";
+  return item.title + " · " + count + " 条";
 }
 
 function isTableOutput(text) {
@@ -354,29 +364,59 @@ function zoomBy(delta) {
   zoom.value = Math.max(0.75, Math.min(1.4, Math.round((zoom.value + delta) * 10) / 10));
 }
 
+watch(hasRuleData, (value) => {
+  if (value) return;
+  view.value = "pano";
+  selectedNodeId.value = "";
+  tableDetail.value = null;
+  listDetail.value = null;
+  moreWeightRow.value = null;
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+});
+
+function fitPanoWidth() {
+  const shell = panoShellRef.value;
+  if (!shell || !shell.scrollWidth) return;
+  const next = zoom.value * (shell.clientWidth / shell.scrollWidth);
+  zoom.value = Math.max(0.75, Math.min(1, Math.round(next * 100) / 100));
+}
+
+function syncFullscreen() {
+  isFullscreen.value = !!document.fullscreenElement;
+}
+
+async function toggleFullscreen() {
+  if (document.fullscreenElement) {
+    await document.exitFullscreen();
+  } else if (shellRef.value) {
+    await shellRef.value.requestFullscreen();
+  }
+}
+
+onMounted(() => {
+  document.addEventListener("fullscreenchange", syncFullscreen);
+});
+onBeforeUnmount(() => {
+  document.removeEventListener("fullscreenchange", syncFullscreen);
+});
+
 function selectLane(key) {
   focusedLane.value = focusedLane.value === key ? "" : key;
 }
 </script>
 
 <template>
-  <div class="xp-shell">
+  <div ref="shellRef" class="xp-shell">
     <div class="xp-head">
-      <div class="xp-tabs">
+      <div v-if="hasRuleData" class="xp-tabs">
         <button type="button" :class="{ on: view === 'pano' }" @click="view = 'pano'">规则全景</button>
         <button type="button" :class="{ on: view === 'matrix' }" @click="view = 'matrix'">分类矩阵</button>
         <button type="button" :class="{ on: view === 'flow' }" @click="view = 'flow'">规则流程图</button>
         <button type="button" :class="{ on: view === 'json' }" @click="view = 'json'">JSON 配置</button>
       </div>
       <span class="spacer"></span>
-      <span class="xp-meta" v-if="classification">
-        分类 <b>{{ displayCounts.clsNodes }}</b> · 权重 <b>{{ displayCounts.rwNodes }}</b> ·
-        车道 <b>{{ displayCounts.lanes }}</b> · 类别 <b>{{ displayCounts.classes }}</b> ·
-        参数表 <b>{{ displayCounts.tables }}</b> · 名单 <b>{{ displayCounts.lists }}</b>
-      </span>
-      <span v-if="version" class="xp-vtag">v{{ version }}</span>
-      <button v-if="!embedded" type="button" class="btn sm" @click="$emit('import')">导入 docs 样例</button>
-      <div v-if="view === 'pano'" class="xp-zoom">
+      <button v-if="hasRuleData" type="button" class="btn sm" @click="toggleFullscreen">{{ isFullscreen ? "退出全屏" : "全屏查看" }}</button>
+      <div v-if="hasRuleData && view === 'pano'" class="xp-zoom">
         <button type="button" @click="zoomBy(-0.1)">−</button>
         <span>{{ Math.round(zoom * 100) }}%</span>
         <button type="button" @click="zoomBy(0.1)">+</button>
@@ -384,13 +424,13 @@ function selectLane(key) {
     </div>
 
     <div v-if="!classification || !weight" class="notice warn">
-      还没有同时导入分类规则和风险权重规则，先点「导入 docs 样例」。
+      当前版本还没有同时配置分类规则和风险权重规则，请先在规则配置中维护。
     </div>
 
     <template v-else>
       <div v-show="view === 'pano'" class="xp-view">
-        <p class="xp-hint">横向为处理阶段，纵向为业务分支；最右列「参数与名单」可直接点开参数表与名单。点击分支名聚焦该路径，点击节点查看规则详情。</p>
-        <div class="xp-pano-shell">
+        <p class="xp-hint">横向为处理阶段，纵向为业务分支；可横向滚动查看最右侧「权重输出」和「参数与名单」。点击分支名聚焦该路径，点击节点查看规则详情。</p>
+        <div ref="panoShellRef" class="xp-pano-shell">
           <div class="xp-pano" :style="{ zoom: zoom }">
           <div class="xp-grid xp-head-row">
             <div class="xp-ph c0"><b>业务分支</b><span class="n">{{ scopedLanes.length }} 条主路径</span></div>
@@ -525,10 +565,10 @@ function selectLane(key) {
                   <span v-for="item in row.shared" :key="'s' + item.id" class="xp-otag m" @click="openNode(item.id)">
                     共享路径 · {{ item.classes }} 类
                   </span>
-                  <button v-for="id in row.weightIds" :key="id" type="button" class="xp-nchip rw" @click="openNode(id)">
+                  <button v-for="id in row.primaryWeightIds" :key="id" type="button" class="xp-nchip rw" @click="openNode(id)">
                     <i class="xp-dot" :class="nodeStatus(model.nodes[id]).className"></i><span class="id">{{ id }}</span><span class="lb">{{ model.nodes[id]?.label }}</span>
                   </button>
-                  <span v-if="row.rwMore" class="xp-otag m">+{{ row.rwMore }} 个下游节点</span>
+                  <button v-if="row.rwMore" type="button" class="xp-otag m" @click="moreWeightRow = row">+{{ row.rwMore }} 个下游节点</button>
                   <span v-if="!row.weightIds.length" class="xp-empty">—</span>
                 </td>
                 <td>
@@ -547,6 +587,7 @@ function selectLane(key) {
           <aside class="xp-flow-side">
             <div class="xp-flow-side-h"><b>暴露类别</b><input v-model="flowQuery" type="search" placeholder="搜索" /></div>
             <div class="xp-side-scroll">
+              <p v-if="!flowGroups.length" class="empty" style="padding: 12px">没有匹配的暴露类别。</p>
               <div v-for="group in flowGroups" :key="group.lane" class="xp-sgroup">
                 <div class="xp-sgh"><b>{{ group.lane }}</b><span>{{ group.items.length }}</span></div>
                 <button
@@ -638,11 +679,12 @@ function selectLane(key) {
         :docs="docs"
         :jurisdiction="jurisdiction"
         :rule-version="version"
+        :readonly="readonly"
         @saved="$emit('reload')"
       />
     </template>
 
-    <Drawer :open="!!selectedNode" wide :title="selectedNode ? selectedNode.id + ' · ' + selectedNode.label : '规则详情'" @close="selectedNodeId = ''">
+    <Drawer :open="!!selectedNode" :to="drawerTarget" wide :title="selectedNode ? selectedNode.id + ' · ' + selectedNode.label : '规则详情'" @close="selectedNodeId = ''">
       <template v-if="selectedNode">
         <div class="xp-detail-head">
           <span class="xp-status" :class="nodeStatus(selectedNode).className">{{ nodeStatus(selectedNode).label }}</span>
@@ -669,7 +711,26 @@ function selectLane(key) {
       </template>
     </Drawer>
 
-    <Drawer :open="!!tableDetail" wide :title="tableDetail ? tableDetail.tableId + ' · ' + tableDetail.title : '参数表'" @close="tableDetail = null">
+    <Drawer :open="!!moreWeightRow" :to="drawerTarget" wide :title="moreWeightRow ? moreWeightRow.code + ' · 下游权重节点' : '下游权重节点'" @close="moreWeightRow = null">
+      <template v-if="moreWeightRow">
+        <table class="tbl compact">
+          <thead><tr><th>节点编号</th><th>名称</th><th>类型</th><th>暴露类别</th><th>风险权重</th><th></th></tr></thead>
+          <tbody>
+            <tr v-for="id in moreWeightRow.moreWeightIds" :key="id">
+              <td class="mono">{{ id }}</td>
+              <td>{{ (model.nodes[id] && model.nodes[id].label) || "—" }}</td>
+              <td>{{ (model.nodes[id] && model.nodes[id].kind) === "rw" ? "风险权重" : "分类" }}</td>
+              <td class="mono small">{{ (model.nodes[id] && model.nodes[id].cls) || "—" }}</td>
+              <td>{{ model.nodes[id] && model.nodes[id].rw != null ? (model.nodes[id].rw === "" ? "—" : model.nodes[id].rw + "%") : "—" }}</td>
+              <td><button type="button" class="btn sm" @click="moreWeightRow = null; openNode(id)">查看</button></td>
+            </tr>
+          </tbody>
+        </table>
+        <p v-if="!moreWeightRow.moreWeightIds.length" class="dim">没有下游节点。</p>
+      </template>
+    </Drawer>
+
+    <Drawer :open="!!tableDetail" :to="drawerTarget" wide :title="tableDetail ? tableDetail.tableId + ' · ' + tableDetail.title : '参数表'" @close="tableDetail = null">
       <template v-if="tableDetail">
         <table class="xp-dtable">
           <thead><tr><th v-for="column in tableDetail.columns" :key="column">{{ column }}</th></tr></thead>
@@ -683,7 +744,7 @@ function selectLane(key) {
       </template>
     </Drawer>
 
-    <Drawer :open="!!listDetail" wide :title="listDetail ? listDetail.listId + ' · ' + listDetail.title : '监管名单'" @close="listDetail = null">
+    <Drawer :open="!!listDetail" :to="drawerTarget" wide :title="listDetail ? listDetail.listId + ' · ' + listDetail.title : '监管名单'" @close="listDetail = null">
       <template v-if="listDetail">
         <table class="xp-dtable">
           <thead><tr><th v-for="column in listDetail.columns" :key="column">{{ column }}</th></tr></thead>

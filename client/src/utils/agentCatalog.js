@@ -112,7 +112,7 @@ export const AGENT_APIS = [
   "POST /rules/chat"
 ];
 
-const STATUS = ["draft", "reviewing", "published", "superseded", "disabled"];
+const STATUS = ["draft", "published", "superseded", "disabled"];
 
 export const AGENT_FORMS = [
   {

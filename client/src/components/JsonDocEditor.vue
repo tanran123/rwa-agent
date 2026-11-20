@@ -6,7 +6,8 @@ const props = defineProps({
   body: { type: Object, required: true },
   kind: { type: String, default: "" },
   jurisdiction: { type: String, default: "" },
-  saving: { type: Boolean, default: false }
+  saving: { type: Boolean, default: false },
+  readOnly: { type: Boolean, default: false }
 });
 const emit = defineEmits(["update:body", "save", "notify"]);
 
@@ -68,14 +69,15 @@ async function save() {
       <h3>JSON 原文</h3>
       <span class="sub">整份文档按 V3.5 Schema 编辑</span>
       <span class="spacer"></span>
-      <button type="button" class="btn sm" @click="apply">解析并应用</button>
+      <button type="button" class="btn sm" :disabled="readOnly" @click="apply">解析并应用</button>
       <button type="button" class="btn sm" :disabled="busy" @click="validate">校验</button>
-      <button type="button" class="btn sm primary" :disabled="saving" @click="save">保存</button>
+      <button type="button" class="btn sm primary" :disabled="saving || readOnly" @click="save">保存</button>
     </div>
     <div class="panel-body">
       <p v-if="parseError" class="notice danger">{{ parseError }}</p>
       <textarea
         v-model="text"
+        :readonly="readOnly"
         spellcheck="false"
         style="width: 100%; min-height: 460px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.5"
       ></textarea>

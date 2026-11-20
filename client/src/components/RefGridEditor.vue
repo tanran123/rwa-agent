@@ -3,7 +3,8 @@ import { computed } from "vue";
 
 const props = defineProps({
   document: { type: Object, required: true },
-  saving: { type: Boolean, default: false }
+  saving: { type: Boolean, default: false },
+  readonly: { type: Boolean, default: false }
 });
 const emit = defineEmits(["update", "save"]);
 
@@ -39,8 +40,9 @@ function removeRow(index) {
       <h3>{{ document.title }}</h3>
       <span class="sub mono">{{ document.tableId || document.listId }} · {{ document.version }}</span>
       <span class="spacer"></span>
-      <button type="button" class="btn sm" @click="addRow">新增一行</button>
-      <button type="button" class="btn sm primary" :disabled="saving" @click="$emit('save')">{{ saving ? "保存中" : "保存" }}</button>
+      <span v-if="readonly" class="tag muted">已发布只读</span>
+      <button type="button" class="btn sm" :disabled="readonly" @click="addRow">新增一行</button>
+      <button type="button" class="btn sm primary" :disabled="saving || readonly" @click="$emit('save')">{{ saving ? "保存中" : "保存" }}</button>
     </div>
     <div class="panel-body tight">
       <table class="tbl compact">
@@ -53,9 +55,9 @@ function removeRow(index) {
         <tbody>
           <tr v-for="(row, rowIndex) in rows" :key="rowIndex">
             <td v-for="(cell, columnIndex) in row" :key="columnIndex">
-              <input :value="cell" type="text" style="width: 100%; min-width: 80px" @change="setCell(rowIndex, columnIndex, $event.target.value)" />
+              <input :value="cell" type="text" :readonly="readonly" style="width: 100%; min-width: 80px" @change="setCell(rowIndex, columnIndex, $event.target.value)" />
             </td>
-            <td><button type="button" class="btn sm danger" @click="removeRow(rowIndex)">删除</button></td>
+            <td><button type="button" class="btn sm danger" :disabled="readonly" @click="removeRow(rowIndex)">删除</button></td>
           </tr>
         </tbody>
       </table>

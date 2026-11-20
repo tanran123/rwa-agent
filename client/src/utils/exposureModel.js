@@ -322,6 +322,7 @@ export function buildExposureModel(classification, weight, tableMeta, listMeta) 
     const clsIds = classProducers.get(code) || [];
     const first = nodes[clsIds[0]];
     const top = first ? topAncestor(clsIds[0]) : null;
+    const topLane = top ? STC_LANE_GROUPS.find((group) => group.s2.includes(top.id)) : null;
     const weightRootIds = rootByClass.get(code) || [];
     const weightIds = unique(
       (universalByClass[code] || [])
@@ -331,11 +332,13 @@ export function buildExposureModel(classification, weight, tableMeta, listMeta) 
     return {
       code: code,
       label: first ? (first.json.result && first.json.result.label) || first.label : code,
-      lane: (useStcLanes ? classLaneLabel(code) : "") || (top ? top.label : "—"),
+      lane: topLane ? topLane.title : ((useStcLanes ? classLaneLabel(code) : "") || (top ? top.label : "—")),
       laneKey: top ? top.id : "",
       clsIds: clsIds,
       specialIds: [],
       weightRootIds: weightRootIds,
+      primaryWeightIds: unique(weightRootIds.concat(universalByClass[code] || [])),
+      moreWeightIds: weightIds.filter((id) => !weightRootIds.includes(id) && !(universalByClass[code] || []).includes(id)),
       weightIds: weightIds,
       out: outputs.texts,
       outputs: outputs,

@@ -49,6 +49,10 @@ const data = ref(null);
 const tab = ref(normalizeTab(route.query.tab || route.params.tab));
 const completenessOpen = ref(String(route.query.tab || route.params.tab) === "check");
 
+const tabLabel = computed(() => {
+  const hit = TABS.find(([key]) => key === tab.value);
+  return hit ? hit[1] : "概览";
+});
 const code = computed(() => String(route.params.code || ""));
 const jurisdiction = computed(() => String(route.query.jurisdiction || session.jurisdiction || "HK"));
 const version = computed(() => String(route.query.version || scopeVersion.value || ""));
@@ -615,6 +619,17 @@ onMounted(load);
   <div v-if="loading" class="empty">正在读取产品配置…</div>
 
   <template v-else-if="product">
+    <nav class="lq-crumb" aria-label="面包屑导航">
+      <button type="button" @click="router.push('/liquidity-config')">流动性产品管理</button>
+      <span class="sep">›</span>
+      <button
+        type="button"
+        @click="router.push({ name: 'liquidity-product', params: { code: code }, query: { ...route.query, tab: 'overview' } })"
+      >{{ product.name }}</button>
+      <span class="sep">›</span>
+      <span class="current">{{ tabLabel }}</span>
+    </nav>
+
     <div class="lq-product-head">
       <div>
         <h2>{{ product.name }}</h2>
@@ -842,9 +857,9 @@ onMounted(load);
           <button type="button" class="btn sm primary" @click="openFieldCreate">＋ 新增字段</button>
         </div>
         <div class="panel-body tight">
-          <table class="tbl">
+          <table class="tbl lq-fields-table">
             <thead>
-              <tr><th>字段名称</th><th>字段编码</th><th>分组</th><th>数据类型</th><th>业务类型</th><th>必填</th><th>码值字典</th><th>被引用</th><th>状态</th><th></th></tr>
+              <tr><th>字段名称</th><th style="width: 140px">字段编码</th><th style="width: 96px">分组</th><th style="width: 90px">数据类型</th><th style="width: 90px">业务类型</th><th style="width: 50px">必填</th><th style="width: 120px">码值字典</th><th style="width: 90px">被引用</th><th style="width: 62px">状态</th><th style="width: 96px">操作</th></tr>
             </thead>
             <tbody>
               <tr v-for="field in filteredFields" :key="field.code">
@@ -1322,5 +1337,52 @@ onMounted(load);
   .lq-field-layout, .lq-rules-layout, .lq-preview-layout, .lq-dict-layout { grid-template-columns: 1fr; }
   .lq-product-head { flex-direction: column; }
   .lq-product-head-actions { justify-content: flex-start; }
+}
+
+.lq-crumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+.lq-crumb button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #1d4ed8;
+  font: inherit;
+  cursor: pointer;
+}
+.lq-crumb button:hover { text-decoration: underline; }
+.lq-crumb .sep { color: #cbd5e1; }
+.lq-crumb .current { color: #334155; font-weight: 600; }
+
+/* 标准字段清单紧凑化 */
+.lq-fields-table { table-layout: fixed; font-size: 11px; }
+.lq-fields-table th {
+  padding: 6px 7px;
+  font-size: 10.5px;
+  line-height: 1.3;
+  white-space: nowrap;
+  background: #f8fafc;
+}
+.lq-fields-table td {
+  padding: 5px 7px;
+  font-size: 10.5px;
+  line-height: 1.35;
+  vertical-align: middle;
+}
+.lq-fields-table td strong { font-size: 11.5px; font-weight: 600; }
+.lq-fields-table td .mono,
+.lq-fields-table td .small { font-size: 10.5px; }
+.lq-fields-table .tag { padding: 0 6px; font-size: 9.5px; }
+.lq-fields-table .btn.sm {
+  padding: 1px 6px;
+  font-size: 10px;
+  margin-left: 2px;
+  white-space: nowrap;
 }
 </style>

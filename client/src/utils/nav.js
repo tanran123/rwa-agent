@@ -4,7 +4,7 @@ export const NAV = [
     id: "config",
     label: "规则配置",
     items: [
-      { id: "versions", label: "监管规则版本", path: "/versions" },
+      { id: "versions", label: "监管规则配置管理", path: "/versions" },
       { id: "orgs", label: "机构", path: "/orgs" }
     ]
   },

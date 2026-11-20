@@ -86,7 +86,7 @@ export const STC_CLASS_LANE = {
   BANK: "银行/QNBFI",
   ELIGIBLE_COVERED_BOND: "银行/QNBFI",
   QNBFI: "银行/QNBFI",
-  CORPORATE: "银行/QNBFI",
+  CORPORATE: "公司及专业贷款",
   SPECIALISED_LENDING: "公司/专业贷款",
   RETAIL: "零售/IPO",
   RETAIL_OTHER: "零售/IPO",

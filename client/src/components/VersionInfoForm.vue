@@ -14,29 +14,27 @@ defineEmits(["save", "cancel"]);
 const { session } = useContext();
 const HK = "HK";
 const jurisdictionLabels = (code) => (session.jurisdictions.find((item) => item.code === code) || {}).label || code;
-const jurisdictionOptions = computed(() => {
-  const list = session.jurisdictions || [];
-  return props.creating ? list.filter((item) => item.code === HK) : list;
-});
-const orgOptions = computed(() => {
-  const list = session.orgs || [];
-  return props.creating ? list.filter((item) => item.jurisdiction === HK) : list;
-});
+const jurisdictionOptions = computed(() => session.jurisdictions || []);
+const orgOptions = computed(() => (session.orgs || []).filter((item) => item.jurisdiction === props.form.jurisdiction));
 
 watch(() => session.ready, () => {
-  if (props.creating) {
-    props.form.jurisdiction = HK;
-  } else if (!props.form.jurisdiction) {
-    props.form.jurisdiction = HK;
+  if (!props.form.jurisdiction) {
+    props.form.jurisdiction = session.jurisdiction || HK;
   }
 }, { immediate: true });
+
+watch(() => props.form.jurisdiction, () => {
+  if (!props.form.institution || !orgOptions.value.some((item) => item.name === props.form.institution)) {
+    props.form.institution = orgOptions.value[0] ? orgOptions.value[0].name : "";
+  }
+});
 </script>
 
 <template>
   <div class="panel">
     <div class="panel-head">
       <h3>{{ creating ? "新建监管规则版本" : "编辑版本信息" }}</h3>
-      <span class="sub">{{ creating ? "录入地区和规则名称后，可保存草稿或提交" : "修改版本核心信息，保存后仍回到维护工作台" }}</span>
+      <span class="sub">{{ creating ? "录入地区和规则名称后保存，直接进入监管规则维护工作台" : "修改版本核心信息，保存后仍回到维护工作台" }}</span>
       <span class="spacer"></span>
       <button type="button" class="btn sm" @click="$emit('cancel')">取消</button>
     </div>
@@ -44,19 +42,12 @@ watch(() => session.ready, () => {
       <p v-if="error" class="notice danger">{{ error }}</p>
       <div class="grid c2">
         <label class="field">地区
-          <select v-model="form.jurisdiction" :disabled="creating">
+          <select v-model="form.jurisdiction">
             <option v-for="item in jurisdictionOptions" :key="item.code" :value="item.code">{{ item.label }}</option>
           </select>
-          <span v-if="creating" class="hint">当前只维护香港监管规则。</span>
         </label>
         <label class="field">规则名称
           <input v-model="form.name" type="text" placeholder="如：香港银行业（资本）规则" />
-        </label>
-        <label class="field">监管框架
-          <select v-model="form.framework">
-            <option value="CAR">资本充足率 CAR</option>
-            <option value="LCR">流动性 LCR</option>
-          </select>
         </label>
         <label class="field">生效日期
           <input v-model="form.effectiveFrom" type="date" />
@@ -74,14 +65,9 @@ watch(() => session.ready, () => {
         </label>
       </div>
       <div style="margin-top: 12px; display: flex; gap: 8px">
-        <template v-if="creating">
-          <button type="button" class="btn primary" :disabled="saving" @click="$emit('save', 'draft')">
-            {{ saving ? "正在保存" : "保存草稿" }}
-          </button>
-          <button type="button" class="btn" :disabled="saving" @click="$emit('save', 'reviewing')">
-            {{ saving ? "正在提交" : "提交" }}
-          </button>
-        </template>
+        <button v-if="creating" type="button" class="btn primary" :disabled="saving" @click="$emit('save', 'draft')">
+          {{ saving ? "正在保存" : "保存并进入工作台" }}
+        </button>
         <button v-else type="button" class="btn primary" :disabled="saving" @click="$emit('save')">
           {{ saving ? "正在保存" : "保存版本信息" }}
         </button>

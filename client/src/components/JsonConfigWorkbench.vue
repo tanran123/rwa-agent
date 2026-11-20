@@ -12,7 +12,8 @@ const props = defineProps({
   lists: { type: Array, default: () => [] },
   docs: { type: Array, default: () => [] },
   jurisdiction: { type: String, default: "" },
-  ruleVersion: { type: String, default: "" }
+  ruleVersion: { type: String, default: "" },
+  readonly: { type: Boolean, default: false }
 });
 const emit = defineEmits(["saved"]);
 
@@ -616,6 +617,10 @@ async function validate() {
 }
 
 async function save() {
+  if (props.readonly) {
+    notice.value = { text: "当前版本已发布，配置只读；请先在版本工作台撤回发布", kind: "danger" };
+    return;
+  }
   if (!currentBody.value) return;
   saving.value = true;
   notice.value = { text: "", kind: "" };
@@ -698,7 +703,8 @@ onMounted(async () => {
       <span class="jw-pill">{{ schemaLabel }}</span>
       <span class="jw-pill">{{ referenceLabel }}</span>
       <button type="button" class="btn sm" @click="validate">校验</button>
-      <button type="button" class="btn sm primary" :disabled="saving" @click="save">{{ saving ? "保存中" : "保存变更" }}</button>
+      <span v-if="readonly" class="tag muted">已发布只读</span>
+      <button type="button" class="btn sm primary" :disabled="saving || readonly" @click="save">{{ saving ? "保存中" : "保存变更" }}</button>
       <span class="jw-badge" :class="{ dirty: dirty }">{{ dirty ? "未保存" : "未修改" }}</span>
     </div>
 
@@ -747,6 +753,7 @@ onMounted(async () => {
             <span v-else-if="item.kind === 'rw'" class="jw-ochip rw">权重</span>
             <span v-else-if="item.kind === 'field'" class="jw-ochip rev">字段</span>
           </button>
+          <p v-if="!filteredOutline.length" class="dim jw-outline-empty">没有匹配的节点。</p>
         </div>
         <div class="jw-outline-foot">
           <div class="path">{{ selectedPath || "/" }}</div>
@@ -780,6 +787,7 @@ onMounted(async () => {
               v-if="isTableFile && currentBody"
               :document="tableBody()"
               :saving="saving"
+              :readonly="readonly"
               @update="activeFile === 'param' ? setParamBody($event) : setListBody($event)"
               @save="save"
             />
@@ -1052,9 +1060,9 @@ onMounted(async () => {
               <span class="mono">{{ currentBody ? (currentBody.name || currentBody.tableId || currentBody.listId) : "" }}</span>
               <span class="spacer"></span>
               <button type="button" class="btn sm" @click="syncSource">格式化/还原</button>
-              <button type="button" class="btn sm" @click="applySource">应用 JSON</button>
+              <button type="button" class="btn sm" :disabled="readonly" @click="applySource">应用 JSON</button>
             </div>
-            <textarea v-model="sourceText" spellcheck="false" @input="onSourceInput"></textarea>
+            <textarea v-model="sourceText" spellcheck="false" :readonly="readonly" @input="onSourceInput"></textarea>
           </div>
         </div>
       </section>

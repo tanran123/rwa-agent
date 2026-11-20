@@ -1,17 +1,18 @@
 <script setup>
-import { computed, onMounted, ref } from "vue";
-import { useRoute } from "vue-router";
-import {
-  fetchParameterTables, fetchReferenceLists, fetchRuleDocument, fetchRuleDocuments, importRuleDocuments, previewRuleDocumentsImport
-} from "@/api/config";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { useRoute, useRouter } from "vue-router";
+import { useStore } from "vuex";
+import { fetchExposureOverview } from "@/api/config";
 import { useContext } from "@/composables/useContext";
 import ExposureOverview from "@/components/ExposureOverview.vue";
-import { askConfirm } from "@/utils/confirm";
 
 const route = useRoute();
-const { session, scopeVersion, loadBootstrap } = useContext();
-const loading = ref(true);
-const error = ref("");
+const router = useRouter();
+const store = useStore();
+const { session, currentVersion, scopeVersion, loadBootstrap } = useContext();
+const pageLoading = ref(true);
+const pageError = ref("");
+const scopeNotice = ref("");
 const docs = ref([]);
 const classification = ref(null);
 const weight = ref(null);
@@ -20,85 +21,116 @@ const lists = ref([]);
 
 const jurisdiction = computed(() => session.jurisdiction || "");
 const version = computed(() => scopeVersion.value);
+const readonly = computed(() => currentVersion.value && currentVersion.value.status === "published");
 
-async function load() {
-  loading.value = true;
-  error.value = "";
-  try {
-    if (!session.ready) await loadBootstrap();
-    const queryJurisdiction = String(route.query.jurisdiction || "");
-    const queryVersion = String(route.query.version || "");
-    if (queryJurisdiction && queryVersion) {
-      const target = (session.versions || []).find((item) => item.jurisdiction === queryJurisdiction && item.version === queryVersion);
-      if (target) {
-        session.jurisdiction = queryJurisdiction;
-        session.versionId = target.id;
-      }
+function applyScope() {
+  const queryJurisdiction = String(route.query.jurisdiction || "");
+  const hasVersionParam = Object.prototype.hasOwnProperty.call(route.query, "version");
+  const queryVersion = String(route.query.version || "").trim();
+  if (!queryJurisdiction && !hasVersionParam) return "";
+  if (hasVersionParam && !queryVersion) {
+    const actual = (queryJurisdiction
+      ? (session.versions || []).find((item) => item.jurisdiction === queryJurisdiction && item.id === session.versionId)
+        || (session.versions || []).find((item) => item.jurisdiction === queryJurisdiction && item.status === "published")
+        || (session.versions || []).find((item) => item.jurisdiction === queryJurisdiction)
+      : currentVersion.value);
+    if (!actual) {
+      const err = new Error("未指定版本号，且当前没有可用的监管规则版本");
+      err.hideContext = true;
+      throw err;
     }
-    const [docRows, tableRows, listRows] = await Promise.all([
-      fetchRuleDocuments({ jurisdiction: jurisdiction.value, version: version.value }),
-      fetchParameterTables(jurisdiction.value, version.value),
-      fetchReferenceLists(jurisdiction.value, version.value)
-    ]);
-    docs.value = docRows;
-    tables.value = tableRows;
-    lists.value = listRows;
-    const classMeta = docRows.find((item) => item.kind === "exposure_classification");
-    const weightMeta = docRows.find((item) => item.kind === "risk_weight");
-    const [classDoc, weightDoc] = await Promise.all([
-      classMeta ? fetchRuleDocument(classMeta.id) : Promise.resolve(null),
-      weightMeta ? fetchRuleDocument(weightMeta.id) : Promise.resolve(null)
-    ]);
-    classification.value = classDoc ? classDoc.body : null;
-    weight.value = weightDoc ? weightDoc.body : null;
-  } catch (err) {
-    error.value = err.message || "加载规则全景失败";
-  } finally {
-    loading.value = false;
+    session.jurisdiction = actual.jurisdiction;
+    session.versionId = actual.id;
+    const nextQuery = { ...route.query, jurisdiction: actual.jurisdiction, version: actual.version };
+    router.replace({ query: nextQuery });
+    return "未指定版本号，已使用当前版本 " + actual.version;
   }
+  if (queryJurisdiction && !queryVersion) {
+    const actual = (session.versions || []).find((item) => item.jurisdiction === queryJurisdiction && item.id === session.versionId)
+      || (session.versions || []).find((item) => item.jurisdiction === queryJurisdiction && item.status === "published")
+      || (session.versions || []).find((item) => item.jurisdiction === queryJurisdiction);
+    if (!actual) {
+      const err = new Error("司法管辖区 " + queryJurisdiction + " 没有可用的监管规则版本，请返回版本列表重新选择");
+      err.hideContext = true;
+      throw err;
+    }
+    session.jurisdiction = queryJurisdiction;
+    session.versionId = actual.id;
+    router.replace({ query: { ...route.query, jurisdiction: actual.jurisdiction, version: actual.version } });
+    return "未指定版本号，已使用当前版本 " + actual.version;
+  }
+  const target = (session.versions || []).find(
+    (item) => item.jurisdiction === queryJurisdiction && item.version === queryVersion
+  );
+  if (target) {
+    session.jurisdiction = queryJurisdiction;
+    session.versionId = target.id;
+    return "";
+  }
+  if (queryJurisdiction && !(session.versions || []).some((item) => item.jurisdiction === queryJurisdiction)) {
+    const err = new Error("司法管辖区 " + queryJurisdiction + " 不存在，请返回版本列表重新选择");
+    err.hideContext = true;
+    throw err;
+  }
+  const actual = currentVersion.value;
+  if (!actual) throw new Error("指定版本不存在，且当前没有可用的监管规则版本");
+  session.jurisdiction = actual.jurisdiction;
+  session.versionId = actual.id;
+  const message = "指定版本 " + (queryVersion || "（空）") + " 不存在，已切换到 " + actual.version;
+  router.replace({
+    query: { ...route.query, jurisdiction: actual.jurisdiction, version: actual.version }
+  });
+  return message;
 }
 
-async function importDocs() {
-  loading.value = true;
-  error.value = "";
+async function load() {
+  pageLoading.value = true;
+  pageError.value = "";
+  scopeNotice.value = "";
+  store.commit("setVersionContextHidden", false);
   try {
-    const preview = await previewRuleDocumentsImport({ jurisdiction: jurisdiction.value || "HK", version: version.value });
-    const docs = preview.documentChanges || {};
-    const text = [
-      "把 docs/信用风险规则/ 下的香港 STC 规则集、参数表和名单导入当前版本。",
-      "文档：新增 " + (docs.added || 0) + "、更新 " + (docs.updated || 0) + "、不变 " + (docs.same || 0) + "。",
-      "参数表：新增 " + (preview.parameterTables.added || 0) + "、更新 " + (preview.parameterTables.updated || 0) + "。",
-      "名单：新增 " + (preview.referenceLists.added || 0) + "、更新 " + (preview.referenceLists.updated || 0) + "。",
-      "导入前会自动生成一份配置快照，同名文档会被覆盖。"
-    ].join("\n");
-    const yes = await askConfirm(text, { title: "导入预览", confirmText: "确认导入" });
-    if (!yes) { loading.value = false; return; }
-    await importRuleDocuments({ jurisdiction: jurisdiction.value || "HK", version: version.value });
-    await load();
+    if (!session.ready) await loadBootstrap();
+    scopeNotice.value = applyScope();
+    const overview = await fetchExposureOverview({
+      jurisdiction: jurisdiction.value,
+      version: version.value
+    });
+    docs.value = overview.docs || [];
+    tables.value = overview.tables || [];
+    lists.value = overview.lists || [];
+    classification.value = overview.classification || null;
+    weight.value = overview.weight || null;
   } catch (err) {
-    error.value = err.message || "导入失败";
-    loading.value = false;
+    pageError.value = err.message || "加载规则全景失败";
+    store.commit("setVersionContextHidden", !!err.hideContext);
+  } finally {
+    pageLoading.value = false;
   }
 }
 
 onMounted(load);
+onBeforeUnmount(() => {
+  store.commit("setVersionContextHidden", false);
+});
 </script>
 
 <template>
   <div class="xp-page">
-    <div v-if="loading" class="loading"><span class="spin"></span>正在读取规则全景</div>
-    <div v-else-if="error" class="notice danger">{{ error }}</div>
-    <ExposureOverview
-      v-else
-      :classification="classification"
-      :weight="weight"
-      :tables="tables"
-      :lists="lists"
-      :docs="docs"
-      :jurisdiction="jurisdiction"
-      :version="version"
-      @import="importDocs"
-      @reload="load"
-    />
+    <div v-if="pageLoading" class="loading"><span class="spin"></span>正在读取规则全景</div>
+    <div v-else-if="pageError" class="notice danger">{{ pageError }}</div>
+    <template v-else>
+      <p v-if="scopeNotice" class="notice warn">{{ scopeNotice }}</p>
+      <ExposureOverview
+        :classification="classification"
+        :weight="weight"
+        :tables="tables"
+        :lists="lists"
+        :docs="docs"
+        :jurisdiction="jurisdiction"
+        :version="version"
+        :readonly="readonly"
+        @reload="load"
+      />
+    </template>
   </div>
 </template>

@@ -15,13 +15,13 @@ import { readCrmConfig, saveCrmConfig } from "./crmConfig.js";
 import { configProducts, productGroupMappings } from "./productStandard.js";
 import {
   archiveTask, computeLcr, computeTask, computeTaskRun, confirmTaskFields, confirmTaskRecognitions,
-  createTask, deleteDataset, deleteList, deleteTask, demoData, duplicateTask, exportTask,
+  deleteDataset, deleteList, deleteTask, demoData,
   exportTaskRunWorkbook, exportWorkbook,
-  getTask, getTaskRunDetail, getTaskSnapshot, identifyTaskDatasets, importTask, inspectUpload,
+  getTask, getTaskRunDetail, getTaskSnapshot, identifyTaskDatasets, inspectUpload,
   inspectWorkbook, listHitsFor, listMeta, listTaskFields, listTaskQualityIssues, listTaskQualityRuns,
-  listTaskAudit, listTaskRecognitions, listTaskRunExceptions, listTaskRunResults, listTaskRuns, listTasks,
+  listTaskAudit, listTaskRecognitions, listTaskRunExceptions, listTaskRunResults, listTaskRuns,
   mapTaskDatasets, openHqlaTask, parseUpload, parseWorkbook, planSample, preflightTask,
-  qualityTaskDatasets, recognizeTaskProducts, referenceRows, reviewTask, runTaskQuality,
+  qualityTaskDatasets, recognizeTaskProducts, referenceRows, runTaskQuality,
   saveDatasetMeta, saveDatasets, saveInput, saveList, saveReported, saveSimple, suggestTaskFields,
   updateTask, upsertReference
 } from "./hqla.js";
@@ -51,17 +51,18 @@ import {
 } from "./ruleWrite.js";
 import { requestContext } from "./requestContext.js";
 import {
-  createRuleDocument, deleteRuleDocument, importStcDocuments, ruleDocument, ruleDocuments,
+  createRuleDocument, deleteRuleDocument, ruleDocument, ruleDocuments,
   saveRuleDocument, validateRuleBody, validateRuleDocumentById
 } from "./ruleDocs.js";
 import {
   parameterTable, parameterTables, referenceList, referenceLists, saveParameterTable, saveReferenceList
 } from "./refData.js";
 import { resolveVersionRef } from "./ruleVersion.js";
+import { exposureOverview } from "./exposureOverview.js";
 import {
-  clauseImpact, clauseRelations, cloneRuleVersion, compareSnapshots, configRevisions, createRuleConfigSnapshot,
-  diffRuleVersion, getRuleSnapshot, loadRwaConfig, publishRuleVersion, rollbackSnapshot,
-  ruleVersionOverview, saveClauseRelations, submitRuleVersionReview, validateRuleVersion
+  clauseImpact, clauseRelations, compareSnapshots, configRevisions, createRuleConfigSnapshot,
+  getRuleSnapshot, loadRwaConfig, publishRuleVersion, rollbackSnapshot,
+  ruleVersionOverview, saveClauseRelations, validateRuleVersion, withdrawRuleVersion
 } from "./ruleGovernance.js";
 
 const app = new Koa();
@@ -311,6 +312,13 @@ router.get("/bootstrap", async (ctx) => {
   };
 });
 
+router.get("/exposure-overview", async (ctx) => {
+  ctx.body = await exposureOverview({
+    jurisdiction: String(ctx.query.jurisdiction || "HK"),
+    version: String(ctx.query.version || "")
+  });
+});
+
 router.get("/orgs", async (ctx) => {
   const jur = ctx.query.jurisdiction || "";
   const rows = await query(
@@ -349,7 +357,8 @@ router.get("/dashboard", async (ctx) => {
     topRules: (doc.rules || []).length,
     fieldCount: (doc.fields || []).length,
     version: published[0] || null,
-    batches: batches.map(batch)
+    batches: batches.map(batch),
+    tasks: await listRwaTasks()
   };
 });
 
@@ -411,21 +420,12 @@ router.post("/rule-versions/:id/validate", async (ctx) => {
   ctx.body = await validateRuleVersion(ctx.params.id);
 });
 
-router.post("/rule-versions/:id/submit-review", async (ctx) => {
-  ctx.body = await submitRuleVersionReview(ctx.params.id, actorOf(ctx));
-});
-
 router.post("/rule-versions/:id/publish", async (ctx) => {
   ctx.body = await publishRuleVersion(ctx.params.id, actorOf(ctx));
 });
 
-router.post("/rule-versions/:id/clone", async (ctx) => {
-  ctx.status = 201;
-  ctx.body = await cloneRuleVersion(ctx.params.id, ctx.request.body || {}, actorOf(ctx));
-});
-
-router.get("/rule-versions/:id/diff/:sourceId", async (ctx) => {
-  ctx.body = await diffRuleVersion(ctx.params.id, ctx.params.sourceId);
+router.post("/rule-versions/:id/withdraw", async (ctx) => {
+  ctx.body = await withdrawRuleVersion(ctx.params.id, actorOf(ctx));
 });
 
 router.get("/rule-versions/:id/revisions", async (ctx) => {
@@ -679,25 +679,6 @@ router.post("/rule-documents", async (ctx) => {
   const body = ctx.request.body || {};
   if (!body.actor) body.actor = actorOf(ctx);
   ctx.body = await createRuleDocument(body);
-});
-
-router.post("/rule-documents/import/preview", async (ctx) => {
-  const body = ctx.request.body || {};
-  ctx.body = await importStcDocuments({
-    jurisdiction: String(body.jurisdiction || "HK"),
-    version: String(body.version || ""),
-    actor: actorOf(ctx),
-    dryRun: true
-  });
-});
-
-router.post("/rule-documents/import", async (ctx) => {
-  const body = ctx.request.body || {};
-  ctx.body = await importStcDocuments({
-    jurisdiction: String(body.jurisdiction || "HK"),
-    version: String(body.version || ""),
-    actor: actorOf(ctx)
-  });
 });
 
 router.post("/rule-documents/validate", async (ctx) => {
@@ -1021,7 +1002,17 @@ router.get("/rwa-tasks/readiness", async (ctx) => {
 });
 
 router.get("/rwa-tasks", async (ctx) => {
-  ctx.body = await listRwaTasks();
+  ctx.body = await listRwaTasks({
+    page: ctx.query.page,
+    pageSize: ctx.query.pageSize,
+    q: String(ctx.query.q || ""),
+    jurisdiction: String(ctx.query.jurisdiction || ""),
+    version: String(ctx.query.version || ""),
+    institution: String(ctx.query.institution || ""),
+    status: String(ctx.query.status || ""),
+    from: String(ctx.query.from || ""),
+    to: String(ctx.query.to || "")
+  });
 });
 
 router.post("/rwa-tasks", async (ctx) => {
@@ -1338,8 +1329,6 @@ router.get("/hqla/reference", async (ctx) => { ctx.body = await referenceRows();
 router.post("/hqla/reference", async (ctx) => { ctx.body = await upsertReference((ctx.request.body || {}).rows || []); });
 router.get("/hqla/demo/:kind", async (ctx) => { ctx.body = await demoData(ctx.params.kind); });
 
-router.get("/hqla/tasks", async (ctx) => { ctx.body = await listTasks(); });
-router.post("/hqla/tasks", async (ctx) => { ctx.status = 201; ctx.body = await createTask(ctx.request.body || {}); });
 router.get("/hqla/tasks/:id", async (ctx) => { ctx.body = await getTask(ctx.params.id); });
 router.get("/hqla/tasks/:id/snapshot", async (ctx) => { ctx.body = await getTaskSnapshot(ctx.params.id); });
 router.post("/hqla/tasks/:id/products/recognize", async (ctx) => {
@@ -1385,7 +1374,6 @@ router.get("/hqla/tasks/:id/runs/:runId/export.xlsx", async (ctx) => {
 router.put("/hqla/tasks/:id", async (ctx) => { ctx.body = await updateTask(ctx.params.id, ctx.request.body || {}); });
 router.delete("/hqla/tasks/:id", async (ctx) => { ctx.body = await deleteTask(ctx.params.id); });
 
-router.post("/hqla/tasks/:id/duplicate", async (ctx) => { ctx.status = 201; ctx.body = await duplicateTask(ctx.params.id); });
 router.post("/hqla/tasks/:id/identify", async (ctx) => { ctx.body = await identifyTaskDatasets(ctx.params.id); });
 router.post("/hqla/tasks/:id/auto-map", async (ctx) => { ctx.body = await mapTaskDatasets(ctx.params.id); });
 router.post("/hqla/tasks/:id/quality", async (ctx) => { ctx.body = await qualityTaskDatasets(ctx.params.id); });
@@ -1393,16 +1381,6 @@ router.post("/hqla/tasks/:id/archive", async (ctx) => {
   const body = ctx.request.body || {};
   ctx.body = await archiveTask(ctx.params.id, !!body.archived);
 });
-router.post("/hqla/tasks/:id/review", async (ctx) => {
-  ctx.body = await reviewTask(ctx.params.id, ctx.request.body || {});
-});
-router.get("/hqla/tasks/:id/archive.json", async (ctx) => {
-  const doc = await exportTask(ctx.params.id);
-  ctx.set("content-disposition", `attachment; filename*=UTF-8''${encodeURIComponent(`hqla-${doc.task.id}.json`)}`);
-  ctx.body = doc;
-});
-router.post("/hqla/import", async (ctx) => { ctx.status = 201; ctx.body = await importTask(ctx.request.body || {}); });
-
 router.put("/hqla/tasks/:id/input", async (ctx) => { ctx.body = await saveInput(ctx.params.id, ctx.request.body || {}); });
 router.put("/hqla/tasks/:id/datasets", async (ctx) => { ctx.body = await saveDatasets(ctx.params.id, ctx.request.body || {}); });
 router.put("/hqla/tasks/:id/datasets/:datasetId", async (ctx) => {

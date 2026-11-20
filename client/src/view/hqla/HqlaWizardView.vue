@@ -1,10 +1,9 @@
 <script setup>
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { getTask, reviewTask, updateTask } from "@/api/hqla";
+import { getTask, updateTask } from "@/api/hqla";
 import { fetchLiquidityMeta } from "@/api/liquidity";
 import { useContext } from "@/composables/useContext";
-import { auth } from "@/utils/auth";
 import StepBasic from "./steps/StepBasic.vue";
 import StepImport from "./steps/StepImport.vue";
 import StepProduct from "./steps/StepProduct.vue";
@@ -29,7 +28,7 @@ const STEPS = [
   { key: "mapping", title: "标准字段 Mapping", desc: "Excel 表头映射到产品标准字段" },
   { key: "quality", title: "数据质量检查", desc: "字段完整性、金额格式、重复与负值" },
   { key: "calc", title: "自动计量计算", desc: "HQLA、现金流入流出与 LCR 汇总" },
-  { key: "result", title: "结果复核与输出", desc: "产品结果、单笔追溯与归档" }
+  { key: "result", title: "结果输出", desc: "产品结果、单笔追溯与导出" }
 ];
 const COMPONENTS = [StepBasic, StepImport, StepProduct, StepMapping, StepQuality, StepCalc, StepResult];
 
@@ -62,7 +61,6 @@ const checks = computed(() => {
     ["succeeded", "partial_failed"].includes(run.status) &&
     Number(run.inputVersion) === Number(t.inputVersion)
   );
-  const reviewed = t.reviewStatus === "reviewed" || !!(c.review && c.review.status === "reviewed");
   return [
     !!(c.ruleVersion && (c.snapshotId || c.snapshotLockedAt)),
     list.length > 0,
@@ -70,7 +68,7 @@ const checks = computed(() => {
     !!(t.fieldMappingCount > 0 || list.some((item) => Object.keys(item.mapping || {}).length)),
     qualityOk,
     runOk,
-    reviewed
+    runOk
   ];
 });
 
@@ -107,7 +105,7 @@ const summaryLine = computed(() => {
     case 7: {
       const run = t.currentRun;
       if (!run) return "待计算";
-      return `LCR ${run.metrics && run.metrics.lcr != null ? Number(run.metrics.lcr).toFixed(2) + "%" : "—"} · ${run.exceptionCount} 条异常 · ${t.reviewStatus || "未复核"}`;
+      return `LCR ${run.metrics && run.metrics.lcr != null ? Number(run.metrics.lcr).toFixed(2) + "%" : "—"} · ${run.exceptionCount} 条异常 · 输出与导出`;
     }
     default: return "";
   }
@@ -164,8 +162,6 @@ async function goStep(n) {
 
 async function finish() {
   if (!task.value) return;
-  const reviewer = auth.user ? auth.user.username : "";
-  await reviewTask(task.value.id, { reviewer });
   router.push(task.value.rwaTaskId ? `/tasks/${task.value.rwaTaskId}` : "/tasks");
 }
 
@@ -192,7 +188,8 @@ onMounted(async () => {
         <h2>{{ task.name }}</h2>
         <p>
           <span class="mono">{{ task.id }}</span> · {{ task.institution }} · 基准日 {{ task.baseDate }} ·
-          规则版本 {{ cfg.ruleVersion || "—" }}
+          规则版本 {{ cfg.ruleVersion || "—" }} ·
+          <span title="导入或删除数据集、执行或确认产品识别、保存字段对应都会让输入版本加一；质量检查和计算批次记录当时使用的版本">输入版本 v{{ task.inputVersion || 1 }}</span>
         </p>
       </div>
       <div class="lq-wizard-actions">
@@ -233,7 +230,6 @@ onMounted(async () => {
           :is="stepComponent"
           :task="task"
           :meta="meta"
-          :result="result"
           :reload="reload"
           :finish="finish"
         />
@@ -241,14 +237,12 @@ onMounted(async () => {
     </div>
 
     <div class="lq-step-nav">
-      <button type="button" class="btn" @click="step <= 1 ? router.push('/hqla') : goStep(step - 1)">
-        {{ step <= 1 ? "← 返回任务列表" : "← 上一步：" + STEPS[step - 2].title }}
+      <button type="button" class="btn" @click="step <= 1 ? finish() : goStep(step - 1)">
+        {{ step <= 1 ? "← 返回主任务" : "← 上一步：" + STEPS[step - 2].title }}
       </button>
       <span class="spacer"></span>
       <button v-if="step < 7" type="button" class="btn primary" @click="goStep(step + 1)">下一步：{{ STEPS[step].title }} →</button>
-      <button v-else type="button" class="btn primary" :disabled="(task.cfg && task.cfg.review && task.cfg.review.status === 'reviewed')" @click="finish">
-        {{ task.cfg && task.cfg.review && task.cfg.review.status === "reviewed" ? "已复核并归档" : "完成复核并归档" }}
-      </button>
+      <button v-else type="button" class="btn primary" @click="finish">完成并返回主任务</button>
     </div>
   </template>
 </template>

@@ -239,11 +239,16 @@ async function buildSnapshotConfig(cfg) {
   } catch (err) {
     throw fail(400, "当前版本还没有可用的流动性配置：" + (err.message || version));
   }
-  const [rules, params, dictionaries] = await Promise.all([
+  const [rules, params, dictionaries, catalogue] = await Promise.all([
     liquidityRules({ jurisdiction, version }),
     liquidityParams({ jurisdiction, version }),
-    listLiquidityDictionaries({ jurisdiction, version })
+    listLiquidityDictionaries({ jurisdiction, version }),
+    listLiquidityProducts({ jurisdiction, version })
   ]);
+  const usable = (catalogue.products || []).filter(
+    (product) => product.status === "LIVE" && product.completeness && product.completeness.score >= 100
+  );
+  if (!usable.length) throw fail(400, "这一版没有可用于计量的产品（需已启用且配置完整）");
   return {
     domain: "LCR",
     ruleVersion: version,
@@ -251,7 +256,7 @@ async function buildSnapshotConfig(cfg) {
     lcrVersion: (meta.meta && meta.meta.lcrVersion) || cfg.lcrVersion || "",
     lcrVersionName: (meta.meta && meta.meta.lcrVersionName) || "",
     source: (meta.meta && meta.meta.source) || "",
-    products: meta.products || [],
+    products: usable,
     packages: meta.packages || [],
     rules: rules.rules || [],
     params: params.params || [],
@@ -330,7 +335,10 @@ export async function openHqlaTask(taskId, subId, actor = "") {
     }
     throw err;
   }
-  const snapshot = await createSnapshot(id, cfg, actor);
+  const snapshot = await createSnapshot(id, cfg, actor).catch(async (err) => {
+    await query("DELETE FROM hqla_task WHERE id = ?", [id]);
+    throw err;
+  });
   await query(
     "UPDATE hqla_task SET config = ?, snapshot_id = ?, updated_at = ? WHERE id = ?",
     [JSON.stringify({ ...cfg, snapshotId: snapshot.id, snapshotHash: snapshot.hash, lcrVersion: snapshot.config.lcrVersion }), snapshot.id, nowText(), id]
@@ -579,9 +587,9 @@ export async function updateTask(id, body) {
   return getTask(id);
 }
 
-export async function deleteTask(id) {
+export async function deleteTask(id, options = {}) {
   const row = await taskRow(id);
-  if (row.status === "archived") throw fail(400, "已归档任务不能删除");
+  if (row.status === "archived" && !options.force) throw fail(400, "已归档任务不能删除");
   for (const table of [
     "hqla_task_input", "hqla_task_list", "hqla_task_reported", "hqla_task_dataset", "hqla_record",
     "hqla_file", "hqla_snapshot", "hqla_product_rule", "hqla_product_recognition",
@@ -626,7 +634,7 @@ export async function archiveTask(id, archived) {
   const now = nowText();
   await query(
     "UPDATE hqla_task SET status = ?, progress = ?, review_status = ?, updated_at = ? WHERE id = ?",
-    [archived ? "archived" : "doing", archived ? 100 : Number(row.progress) || 0, archived ? "reviewed" : "", now, id]
+    [archived ? "archived" : "doing", archived ? 100 : Number(row.progress) || 0, "", now, id]
   );
   if (row.rwa_task_sub_id) {
     const summary = archived ? parseJson(row.summary, null) : null;
@@ -634,49 +642,10 @@ export async function archiveTask(id, archived) {
       `UPDATE rwa_task_sub
           SET status = ?, progress = ?, review_status = ?, result_summary = ?, updated_at = ?
         WHERE id = ?`,
-      [archived ? "archived" : "doing", archived ? 100 : Number(row.progress) || 0, archived ? "reviewed" : "",
+      [archived ? "archived" : "doing", archived ? 100 : Number(row.progress) || 0, "",
         summary ? JSON.stringify(summary) : null, now, row.rwa_task_sub_id]
     );
   }
-  return getTask(id);
-}
-
-export async function reviewTask(id, body = {}) {
-  const task = await getTask(id);
-  if (task.status === "archived") throw fail(400, "任务已归档");
-  if (!task.currentRunId) throw fail(400, "还没有计算批次，不能复核");
-  const runs = await query("SELECT * FROM hqla_task_run WHERE task_id = ? AND id = ?", [id, task.currentRunId]);
-  if (!runs.length) throw fail(404, "当前计算批次不存在");
-  const now = nowText();
-  const reviewer = String(body.reviewer || "").slice(0, 64);
-  const comment = String(body.comment || "").slice(0, 1000);
-  const reviewId = uid("V");
-  await query(
-    `INSERT INTO hqla_review (id, task_id, run_id, status, reviewer, comment, reviewed_at)
-     VALUES (?, ?, ?, 'reviewed', ?, ?, ?)`,
-    [reviewId, id, task.currentRunId, reviewer, comment, now]
-  );
-  await query(
-    `UPDATE hqla_task
-        SET status = 'archived', step = 7, progress = 100, review_status = 'reviewed',
-            config = ?, updated_at = ?
-      WHERE id = ?`,
-    [JSON.stringify({ ...(task.cfg || {}), review: { status: "reviewed", reviewedAt: now, reviewer } }), now, id]
-  );
-  if (task.rwaTaskSubId) {
-    await query(
-      `UPDATE rwa_task_sub
-          SET status = 'archived', progress = 100, review_status = 'reviewed',
-              result_summary = ?, updated_at = ?
-        WHERE id = ?`,
-      [task.summary ? JSON.stringify(task.summary) : null, now, task.rwaTaskSubId]
-    );
-  }
-  await query(
-    `INSERT INTO hqla_audit_log (task_id, action, object_type, object_id, detail_json, actor, at)
-     VALUES (?, 'review', 'hqla_task', ?, ?, ?, ?)`,
-    [id, id, JSON.stringify({ runId: task.currentRunId, reviewId }), reviewer, now]
-  );
   return getTask(id);
 }
 
@@ -1083,10 +1052,24 @@ async function bumpTaskVersion(id) {
   await query(
     `UPDATE hqla_task
         SET input_version = ?, calc_status = 'not_run', current_run_id = NULL,
+            status = IF(status = 'archived', status, 'doing'),
+            progress = IF(status = 'archived', progress, 0),
             review_status = '', updated_at = ?
       WHERE id = ?`,
     [next, nowText(), id]
   );
+  if (task.rwa_task_sub_id) {
+    await query(
+      `UPDATE rwa_task_sub
+          SET status = 'doing', progress = 0,
+              review_status = '', result_summary = NULL, updated_at = ?
+        WHERE id = ?`,
+      [nowText(), task.rwa_task_sub_id]
+    );
+  }
+  if (task.rwa_task_id) {
+    await query("UPDATE rwa_task SET updated_at = ? WHERE id = ?", [nowText(), task.rwa_task_id]);
+  }
   return next;
 }
 
@@ -1990,6 +1973,11 @@ export async function preflightTask(id, options = {}) {
     task.datasets && task.datasets.length ? task.datasets.length + " 个数据集" : "还没有导入数据集");
   push("snapshot", "配置快照", config ? "PASS" : "BLOCK", config ? "快照可用" : "任务没有可用的配置快照");
   if (config) {
+    const unusable = catalogProducts(config).filter(
+      (product) => product.status !== "LIVE" || !product.completeness || product.completeness.score < 100
+    );
+    push("snapshot-products", "适用产品", unusable.length ? "BLOCK" : "PASS",
+      unusable.length ? "快照里有未启用或配置不完整的产品：" + unusable.slice(0, 8).map((product) => product.code).join("、") : "快照产品均已启用且配置完整");
     push("snapshot-tables", "参数表", config.tables && config.tables.length ? "PASS" : "BLOCK",
       config.tables && config.tables.length ? config.tables.length + " 张参数表" : "快照缺少参数表");
     push("snapshot-params", "监管参数", config.params && config.params.length ? "PASS" : "WARN",
@@ -2037,17 +2025,19 @@ export async function preflightTask(id, options = {}) {
     push("quality", "质量检查", "BLOCK", "还没有执行质量检查");
   } else if (Number(latestQuality.inputVersion) !== (Number(task.inputVersion) || 1)) {
     push("quality", "质量检查", "BLOCK", "质量检查结果不是当前输入版本，请重新检查");
-  } else if (latestQuality.summary && latestQuality.summary.hasBlock && !allowPartial) {
-    push("quality", "质量检查", "BLOCK", "存在 BLOCK 问题，请先处理或勾选部分计算");
-  } else {
-    push("quality", "质量检查", "PASS", "当前输入版本的质量检查已完成");
-    if (allowPartial && latestQuality.summary && latestQuality.summary.hasBlock) {
+  } else if (latestQuality.summary && latestQuality.summary.hasBlock) {
+    if (allowPartial) {
       const issues = await query(
         "SELECT DISTINCT record_id FROM hqla_quality_issue WHERE task_id = ? AND run_id = ? AND level = 'BLOCK' AND record_id <> ''",
         [id, latestQuality.id]
       );
       issues.forEach((row) => excluded.add(row.record_id));
+      push("quality", "质量检查", "WARN", "质量检查已完成：存在 " + issues.length + " 条 BLOCK 记录，按部分计算排除");
+    } else {
+      push("quality", "质量检查", "BLOCK", "存在 BLOCK 问题，请先处理或勾选部分计算");
     }
+  } else {
+    push("quality", "质量检查", "PASS", "当前输入版本的质量检查已完成");
   }
   return {
     ok: blocking.length === 0,
@@ -2213,20 +2203,28 @@ export async function computeTaskRun(id, body = {}) {
     inputVersion: Number(task.inputVersion) || 1,
     excluded: excludedCount
   };
+  const completed = status !== "failed";
+  const nextStatus = completed ? "done" : "doing";
+  const nextProgress = completed ? 100 : 90;
+  const nextStep = completed ? 7 : Math.max(6, Number(task.step) || 6);
   await query(
     `UPDATE hqla_task
-        SET current_run_id = ?, calc_status = ?, status = 'review_pending', step = ?,
-            progress = 90, review_status = 'pending', summary = ?, run_at = ?, updated_at = ?
+        SET current_run_id = ?, calc_status = ?, status = ?, step = ?,
+            progress = ?, review_status = '', summary = ?, run_at = ?, updated_at = ?
       WHERE id = ?`,
-    [runId, status, Math.max(6, Number(task.step) || 6), JSON.stringify(summary), computed.runAt, nowText(), id]
+    [runId, status, nextStatus, nextStep, nextProgress, JSON.stringify(summary), computed.runAt, nowText(), id]
   );
   if (task.rwaTaskSubId) {
     await query(
       `UPDATE rwa_task_sub
-          SET progress = 90, review_status = 'pending', result_summary = ?, updated_at = ?
+          SET status = ?, progress = ?, review_status = '', result_summary = ?, updated_at = ?
         WHERE id = ?`,
-      [JSON.stringify({ lcr: computed.lcr, metrics: computed.metrics, runId, calculatedAt: computed.runAt, stats }), nowText(), task.rwaTaskSubId]
+      [completed ? "archived" : "doing", nextProgress,
+        JSON.stringify({ lcr: computed.lcr, metrics: computed.metrics, runId, calculatedAt: computed.runAt, stats }), nowText(), task.rwaTaskSubId]
     );
+  }
+  if (task.rwaTaskId) {
+    await query("UPDATE rwa_task SET updated_at = ? WHERE id = ?", [nowText(), task.rwaTaskId]);
   }
   await writeTaskAudit(id, "compute", "hqla_task_run", runId, { status, lcr: computed.lcr, exceptionCount: exceptions.length }, body.actor || "");
   return {
@@ -2352,11 +2350,10 @@ export async function exportTaskRunWorkbook(id, runId) {
   const runRow = runRows[0];
   const metrics = parseJson(runRow.metrics_json, {});
   const stats = parseJson(runRow.stats_json, {});
-  const [summaryRows, details, exceptions, reviewRows, snapshotRows] = await Promise.all([
+  const [summaryRows, details, exceptions, snapshotRows] = await Promise.all([
     query("SELECT * FROM hqla_result_summary WHERE task_id = ? AND run_id = ? ORDER BY id", [id, runId]),
     query("SELECT * FROM hqla_result_detail WHERE task_id = ? AND run_id = ? ORDER BY dataset_id, id", [id, runId]),
     query("SELECT * FROM hqla_calculation_exception WHERE task_id = ? AND run_id = ? ORDER BY dataset_id, id", [id, runId]),
-    query("SELECT * FROM hqla_review WHERE task_id = ? AND run_id = ? ORDER BY reviewed_at DESC LIMIT 1", [id, runId]),
     runRow.snapshot_id ? query("SELECT * FROM hqla_snapshot WHERE id = ?", [runRow.snapshot_id]) : Promise.resolve([])
   ]);
   const snapshot = snapshotRows.length ? parseJson(snapshotRows[0].config_json, {}) : null;
@@ -2378,7 +2375,6 @@ export async function exportTaskRunWorkbook(id, runId) {
   }
   const qualitySummary = qualityRun ? parseJson(qualityRun.summary_json, null) : null;
   const datasets = new Map((task.datasets || []).map((dataset) => [dataset.id, dataset]));
-  const review = reviewRows[0] || null;
   const col = (title, width = 14) => ({ title, width });
   const sheetRows = (rows) => rows.map((row) => row.map((value) => (value === undefined ? "" : value)));
 
@@ -2406,9 +2402,6 @@ export async function exportTaskRunWorkbook(id, runId) {
     ["异常记录", Number(stats.exceptions) || 0],
     ["参与计算记录", Number(stats.eligible) || 0],
     ["排除记录", Number(stats.excluded) || 0],
-    ["复核状态", task.reviewStatus || (review ? review.status : "")],
-    ["复核人", review ? review.reviewer : ""],
-    ["复核时间", review ? review.reviewed_at : ""],
     ["导出时间", nowText()]
   ];
 

@@ -16,24 +16,20 @@ const q = ref("");
 const form = ref(null);
 const error = ref("");
 const saving = ref(false);
+const busyRow = ref("");
 const view = ref(null);
 const pick = usePick();
 const batch = useBatchNote();
 const load = () => fetchRuleVersions();
-const labels = { draft: "草稿", reviewing: "审核中", published: "已发布", superseded: "已被取代", disabled: "已停用" };
-const tones = { draft: "muted", reviewing: "warn", published: "ok", superseded: "muted", disabled: "danger" };
-
-const HK = "HK";
-
-const hkVersions = (rows) => (rows || []).filter((row) => row.jurisdiction === HK);
+const labels = { draft: "草稿", published: "已发布", superseded: "已被取代", disabled: "已停用" };
+const tones = { draft: "muted", published: "ok", superseded: "muted", disabled: "danger" };
 
 function shown(rows) {
-  const word = q.value.trim();
-  return hkVersions(rows).filter((row) => {
-    if (status.value && labels[row.status] !== status.value && row.status !== status.value) return false;
-    if (!word) return true;
-    return (row.version + row.name).includes(word);
-  });
+  return rows || [];
+}
+
+function jurisdictionLabel(code) {
+  return (session.jurisdictions.find((item) => item.code === code) || {}).label || code || "—";
 }
 
 function institutionOf(code) {
@@ -61,7 +57,7 @@ function alignInstitution() {
 }
 
 function blank() {
-  const jurisdiction = HK;
+  const jurisdiction = session.jurisdiction || "HK";
   return {
     creating: true,
     id: "",
@@ -76,8 +72,7 @@ function blank() {
     rulesetFile: "",
     publishedAt: "",
     author: "",
-    changelog: "",
-    framework: "CAR"
+    changelog: ""
   };
 }
 
@@ -90,10 +85,10 @@ function create() {
 useAgentForm(() => ({
   forms: [{
     id: "version",
-    title: "监管规则版本",
+    title: "监管规则配置",
     fields: [
       { key: "id", label: "编号" },
-      { key: "jurisdiction", label: "地区", options: [HK] },
+      { key: "jurisdiction", label: "地区", options: session.jurisdictions.map((item) => item.code) },
       { key: "version", label: "版本编号" },
       { key: "name", label: "规则名称" },
       { key: "ruleType", label: "规则类型" },
@@ -128,8 +123,7 @@ function payload(row) {
     rulesetFile: row.rulesetFile,
     publishedAt: row.publishedAt,
     author: row.author,
-    changelog: row.changelog,
-    framework: row.framework || "CAR"
+    changelog: row.changelog
   };
 }
 
@@ -186,53 +180,85 @@ function openWorkbench(row) {
   session.jurisdiction = row.jurisdiction;
   router.push({ name: "version-workbench", params: { id: row.id } });
 }
+
+async function toggleStatus(row) {
+  if (busyRow.value) return;
+  const disabling = row.status !== "disabled";
+  const yes = await askConfirm(
+    disabling
+      ? "停用「" + row.version + "」后，这一版不能再用于新建任务；已创建的任务仍按原发布快照复现。"
+      : "启用「" + row.version + "」后恢复为草稿，可继续编辑，校验通过后再发布。",
+    { title: disabling ? "停用版本" : "启用版本", confirmText: disabling ? "停用" : "启用", danger: disabling }
+  );
+  if (!yes) return;
+  error.value = "";
+  busyRow.value = row.id;
+  try {
+    await saveRuleVersion(row.id, { ...payload(row), status: disabling ? "disabled" : "draft" });
+    await refresh();
+  } catch (err) {
+    error.value = err.message;
+  } finally {
+    busyRow.value = "";
+  }
+}
+
+async function removeRow(row) {
+  if (busyRow.value) return;
+  const yes = await askConfirm("删除版本「" + row.version + "」。被规则文档、EAD、专属规则、快照、任务或计量批次引用的版本删不掉。", {
+    title: "删除版本",
+    confirmText: "删除",
+    danger: true
+  });
+  if (!yes) return;
+  error.value = "";
+  busyRow.value = row.id;
+  try {
+    await deleteRuleVersion(row.id);
+    await refresh();
+  } catch (err) {
+    error.value = err.message;
+  } finally {
+    busyRow.value = "";
+  }
+}
 </script>
 
 <template>
+  <p v-if="error" class="notice danger">{{ error }}</p>
   <p v-if="batch.state.text" class="notice" :class="batch.state.kind">{{ batch.state.text }}</p>
   <AsyncView ref="view" :load="load">
     <template #default="{ data }">
       <div class="panel">
         <div class="panel-head">
-          <h3>监管规则版本列表</h3>
-          <span class="sub">香港监管规则 · 共 {{ hkVersions(data).length }} 个版本</span>
+          <h3>监管规则配置管理</h3>
+          <span class="sub">全部监管辖区 · 监管规则版本</span>
           <span class="spacer"></span>
-          <button type="button" class="btn sm danger" :disabled="!pick.visibleIds(shown(data)).length" @click="removeSelected(shown(data))">删除所选</button>
           <button type="button" class="btn sm primary" @click="create">新建</button>
         </div>
         <div class="panel-body">
-          <div class="inline-fields" style="margin-bottom: 12px">
-            <label class="field">规则状态
-              <select v-model="status">
-                <option value="">全部状态</option>
-                <option v-for="(label, key) in labels" :key="key" :value="label">{{ label }}</option>
-              </select>
-            </label>
-            <label class="field" style="flex: 1">关键字
-              <input v-model="q" type="search" placeholder="搜索版本编号或规则名称…" />
-            </label>
-          </div>
           <table class="tbl compact">
             <thead>
               <tr>
-                <th class="pick" @click.stop><input type="checkbox" :checked="pick.allOn(shown(data))" @change="pick.toggleAll(shown(data))" /></th>
-                <th>版本编号</th><th>规则名称</th><th>框架</th><th>规则类型</th><th>生效日期</th><th>适用机构</th><th>状态</th><th>配置状态</th><th>维护人</th><th>操作</th>
+                <th>地区</th><th>版本编号</th><th>规则名称</th><th>生效日期</th><th>适用机构</th><th>状态</th><th>配置状态</th><th>维护人</th><th>操作</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="row in shown(data)" :key="row.id" class="clickable" @click="openWorkbench(row)">
-                <td class="pick" @click.stop><input type="checkbox" :checked="pick.on(row.id)" @change="pick.toggle(row.id)" /></td>
+                <td>{{ jurisdictionLabel(row.jurisdiction) }}</td>
                 <td class="mono">{{ row.version }}</td>
                 <td>{{ row.name }}</td>
-                <td><span class="tag" :class="row.framework === 'LCR' ? 'amber' : 'muted'">{{ row.framework || "CAR" }}</span></td>
-                <td>{{ row.ruleType }}</td>
                 <td>{{ row.effectiveFrom }}{{ row.effectiveTo ? " 至 " + row.effectiveTo : " 起" }}</td>
                 <td>{{ row.institution }}</td>
                 <td><span class="tag" :class="tones[row.status]">{{ labels[row.status] || row.status }}</span></td>
                 <td class="small">{{ row.configStatus || "—" }}</td>
                 <td>{{ row.author }}</td>
                 <td>
-                  <button type="button" class="btn sm primary" @click.stop="openWorkbench(row)">维护</button>
+                  <div class="btn-group">
+                    <button type="button" class="btn sm primary" @click.stop="openWorkbench(row)">维护</button>
+                    <button type="button" class="btn sm" :disabled="busyRow === row.id" @click.stop="toggleStatus(row)">{{ row.status === "disabled" ? "启用" : "停用" }}</button>
+                    <button type="button" class="btn sm danger" :disabled="busyRow === row.id" @click.stop="removeRow(row)">删除</button>
+                  </div>
                 </td>
               </tr>
             </tbody>
@@ -257,7 +283,7 @@ function openWorkbench(row) {
       </label>
       <label class="field">地区
         <select v-model="form.jurisdiction" @change="alignInstitution">
-          <option v-for="item in session.jurisdictions.filter((row) => row.code === HK)" :key="item.code" :value="item.code">{{ item.label }}</option>
+          <option v-for="item in session.jurisdictions" :key="item.code" :value="item.code">{{ item.label }}</option>
         </select>
       </label>
       <label class="field">版本编号
@@ -265,12 +291,6 @@ function openWorkbench(row) {
       </label>
       <label class="field">规则名称
         <input v-model="form.name" type="text" />
-      </label>
-      <label class="field">监管框架
-        <select v-model="form.framework">
-          <option value="CAR">资本充足率 CAR</option>
-          <option value="LCR">流动性 LCR</option>
-        </select>
       </label>
       <label class="field">规则类型
         <input v-model="form.ruleType" type="text" />

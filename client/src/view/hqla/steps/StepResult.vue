@@ -23,11 +23,8 @@ const exceptionPageSize = ref(50);
 const exceptionFilter = ref({ level: "", q: "" });
 const drawer = ref(false);
 const activeRow = ref(null);
-const checks = ref({ hqla: false, exceptions: false, params: false });
 
 const datasets = computed(() => (props.task && props.task.datasets) || []);
-const reviewed = computed(() => !!(props.task && props.task.cfg && props.task.cfg.review && props.task.cfg.review.status === "reviewed"));
-const allChecked = computed(() => checks.value.hqla && checks.value.exceptions && checks.value.params);
 const taskResult = computed(() => {
   const summary = (props.task && props.task.summary) || null;
   return summary && summary.calculation ? summary.calculation : null;
@@ -206,7 +203,7 @@ onMounted(load);
   <template v-else>
     <div class="panel">
       <div class="panel-head">
-        <h3>结果复核与输出</h3>
+        <h3>结果输出</h3>
         <span class="sub">结果只读取已保存的计算批次</span>
         <span class="spacer"></span>
         <select v-model="runId" @change="changeRun" style="width: auto; min-width: 220px">
@@ -317,18 +314,12 @@ onMounted(load);
     </div>
 
     <div class="panel">
-      <div class="panel-head"><h3>复核与归档</h3><span class="sub">当前批次 {{ runId }}</span></div>
+      <div class="panel-head"><h3>结果输出</h3><span class="sub">当前批次 {{ runId }}</span></div>
       <div class="panel-body">
-        <div class="lq-review">
-          <label class="chk"><input v-model="checks.hqla" type="checkbox" /> 已核对 HQLA 分档与上限调整</label>
-          <label class="chk"><input v-model="checks.exceptions" type="checkbox" /> 已核对异常记录与数据质量结论</label>
-          <label class="chk"><input v-model="checks.params" type="checkbox" /> 已核对规则版本、参数表与名单版本</label>
-        </div>
-        <div style="margin-top: 12px">
-          <span v-if="reviewed" class="tag green">已复核并归档</span>
-          <button v-else type="button" class="btn primary" :disabled="!allChecked" @click="finish">完成复核并归档</button>
-        </div>
-        <p v-if="!reviewed && !allChecked" class="dim" style="font-size: 11.5px; margin-top: 6px">三项复核都勾选后才能归档。</p>
+        <p class="dim" style="font-size: 12px; margin: 0 0 10px">
+          计算结果已保存为独立批次。可直接导出 Excel 底稿，或返回主任务继续处理其他模块。
+        </p>
+        <button type="button" class="btn primary" @click="finish">返回主任务</button>
       </div>
     </div>
   </template>
@@ -362,7 +353,5 @@ onMounted(load);
 .lq-result-card span { display: block; font-size: 11.5px; color: var(--muted); }
 .lq-result-card b { display: block; font-size: 20px; }
 .lq-result-card em { font-style: normal; font-size: 11px; color: var(--muted); }
-.lq-review { display: flex; flex-direction: column; gap: 6px; }
-.lq-review label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #334155; }
 @media (max-width: 900px) { .lq-result-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 </style>

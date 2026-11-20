@@ -52,7 +52,7 @@ export async function assertVersionWritable(ruleVersionId) {
   if (!ruleVersionId) return;
   const rows = await query("SELECT status FROM rule_version WHERE id = ?", [ruleVersionId]);
   if (rows[0] && rows[0].status === "published") {
-    const err = new Error("已发布版本只读；如需修改，请新建版本");
+    const err = new Error("当前版本已发布，配置只读；请先撤回发布");
     err.status = 409;
     throw err;
   }

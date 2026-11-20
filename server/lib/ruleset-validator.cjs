@@ -716,12 +716,45 @@ function validateProductRegistry(doc) {
   only(doc, [
     "$schema", "$id", "registry_name", "title", "version", "status", "jurisdiction",
     "framework", "effective_from", "effective_to", "default_rule_sets",
-    "rule_set_version_policy", "product_mappings", "settings", "note"
+    "rule_set_version_policy", "product_mappings", "settings", "note",
+    "dictionaries", "field_schema_version"
   ], "产品注册", errors);
   if (!NAME.test(String(doc.registry_name || ""))) errors.push("registry_name：必须匹配 ^[A-Z][A-Z0-9_]+$");
   nonEmptyString(doc.title, "title", errors);
   if (doc.version != null && !VERSION.test(String(doc.version))) errors.push("version：必须匹配 \\d+.\\d+.\\d+");
   if (doc.framework != null && doc.framework !== "STC") errors.push("framework：只能是 STC");
+  const schemaV2 = Number(doc.field_schema_version || 0) >= 2;
+  if (doc.field_schema_version != null && (!Number.isInteger(doc.field_schema_version) || doc.field_schema_version < 1)) {
+    errors.push("field_schema_version：必须是正整数");
+  }
+  const dictionaryMap = new Map();
+  if (doc.dictionaries != null && !Array.isArray(doc.dictionaries)) {
+    errors.push("dictionaries：必须是数组");
+  } else {
+    (doc.dictionaries || []).forEach((dict, index) => {
+      const path = "dictionaries[" + index + "]";
+      if (!isObject(dict)) { errors.push(path + "：必须是对象"); return; }
+      if (!NAME.test(String(dict.dict_code || ""))) errors.push(path + ".dict_code：必须匹配 ^[A-Z][A-Z0-9_]+$");
+      else if (dictionaryMap.has(dict.dict_code)) errors.push(path + ".dict_code：字典编码 " + dict.dict_code + " 重复");
+      nonEmptyString(dict.dict_name, path + ".dict_name", errors);
+      if (schemaV2) nonEmptyString(dict.dict_name_en, path + ".dict_name_en", errors);
+      enumValue(dict.status, ["ACTIVE", "DISABLED"], path + ".status", errors);
+      const items = Array.isArray(dict.items) ? dict.items : [];
+      if (!items.length) errors.push(path + ".items：至少需要一个码值");
+      const itemSet = new Set();
+      items.forEach((item, at) => {
+        const itemPath = path + ".items[" + at + "]";
+        if (!isObject(item)) { errors.push(itemPath + "：必须是对象"); return; }
+        if (typeof item.item_code !== "string" || !item.item_code.trim()) errors.push(itemPath + ".item_code：必须是非空字符串");
+        else if (itemSet.has(item.item_code)) errors.push(itemPath + ".item_code：码值 " + item.item_code + " 重复");
+        else itemSet.add(item.item_code);
+        nonEmptyString(item.item_name, itemPath + ".item_name", errors);
+        if (schemaV2) nonEmptyString(item.item_name_en, itemPath + ".item_name_en", errors);
+        enumValue(item.status, ["ACTIVE", "DISABLED"], itemPath + ".status", errors);
+      });
+      if (dict.dict_code) dictionaryMap.set(dict.dict_code, dict);
+    });
+  }
   const sets = doc.default_rule_sets;
   if (!isObject(sets)) errors.push("default_rule_sets：必填");
   else {
@@ -769,6 +802,19 @@ function validateProductRegistry(doc) {
         if (!NAME.test(String(code))) errors.push(path + ".candidate_exposure_classes[" + at + "]：必须匹配 ^[A-Z][A-Z0-9_]+$");
       });
     }
+    const groupIds = new Set();
+    (mapping.standard_field_groups || []).forEach((group, at) => {
+      const groupPath = path + ".standard_field_groups[" + at + "]";
+      if (!isObject(group)) { errors.push(groupPath + "：必须是对象"); return; }
+      if (!NAME.test(String(group.group_id || ""))) errors.push(groupPath + ".group_id：必须匹配 ^[A-Z][A-Z0-9_]+$");
+      else if (groupIds.has(group.group_id)) errors.push(groupPath + ".group_id：分组 " + group.group_id + " 重复");
+      else groupIds.add(group.group_id);
+      nonEmptyString(group.label, groupPath + ".label", errors);
+      if (schemaV2) nonEmptyString(group.label_en, groupPath + ".label_en", errors);
+      enumValue(group.level, FIELD_LEVELS, groupPath + ".level", errors);
+      if (group.order != null && typeof group.order !== "number") errors.push(groupPath + ".order：必须是数字");
+    });
+    const fieldNames = new Set();
     if (!Array.isArray(mapping.standard_fields) || !mapping.standard_fields.length) {
       errors.push(path + ".standard_fields：至少一个标准字段");
     } else {
@@ -776,18 +822,31 @@ function validateProductRegistry(doc) {
         const fieldPath = path + ".standard_fields[" + at + "]";
         if (!isObject(field)) { errors.push(fieldPath + "：必须是对象"); return; }
         nonEmptyString(field.name, fieldPath + ".name", errors);
-        if (!NAME.test(String(field.group || ""))) errors.push(fieldPath + ".group：必须匹配 ^[A-Z][A-Z0-9_]+$");
+        if (schemaV2) {
+          if (fieldNames.has(field.name)) errors.push(fieldPath + ".name：字段编码 " + field.name + " 在本产品族内重复");
+          else fieldNames.add(field.name);
+          nonEmptyString(field.label, fieldPath + ".label", errors);
+          nonEmptyString(field.group, fieldPath + ".group", errors);
+          if (field.group && !groupIds.has(field.group)) errors.push(fieldPath + ".group：分组 " + field.group + " 不在 standard_field_groups 内");
+          enumValue(field.status, ["ACTIVE", "DISABLED"], fieldPath + ".status", errors);
+          if (field.dictionary != null && String(field.dictionary) !== "") {
+            const dict = dictionaryMap.get(field.dictionary);
+            if (!dict) errors.push(fieldPath + ".dictionary：字典 " + field.dictionary + " 不存在");
+            else if (!(dict.items || []).some((item) => item && item.status !== "DISABLED")) errors.push(fieldPath + ".dictionary：字典 " + field.dictionary + " 没有可用码值");
+          }
+          if (field.type === "enum" && !field.dictionary && !(Array.isArray(field.enum_values) && field.enum_values.length)) {
+            errors.push(fieldPath + "：enum 字段必须配置字典或临时枚举值");
+          }
+          ["precision", "scale"].forEach((key) => {
+            if (field[key] != null && (!Number.isInteger(field[key]) || field[key] < 0)) errors.push(fieldPath + "." + key + "：必须是非负整数");
+          });
+        } else {
+          if (!NAME.test(String(field.group || ""))) errors.push(fieldPath + ".group：必须匹配 ^[A-Z][A-Z0-9_]+$");
+          enumValue(field.level, FIELD_LEVELS, fieldPath + ".level", errors);
+        }
         enumValue(field.type, ["string", "number", "boolean", "date", "enum", "derived", "constant"], fieldPath + ".type", errors);
-        enumValue(field.level, FIELD_LEVELS, fieldPath + ".level", errors);
       });
     }
-    (mapping.standard_field_groups || []).forEach((group, at) => {
-      const groupPath = path + ".standard_field_groups[" + at + "]";
-      if (!isObject(group)) { errors.push(groupPath + "：必须是对象"); return; }
-      if (!NAME.test(String(group.group_id || ""))) errors.push(groupPath + ".group_id：必须匹配 ^[A-Z][A-Z0-9_]+$");
-      nonEmptyString(group.label, groupPath + ".label", errors);
-      enumValue(group.level, FIELD_LEVELS, groupPath + ".level", errors);
-    });
   });
   return errors;
 }

@@ -33,8 +33,8 @@ const testValues = ref({});
 const testResult = ref(null);
 const searchSource = ref("");
 const searchTarget = ref("");
-const typeSource = ref("");
-const typeTarget = ref("");
+const groupSource = ref("");
+const groupTarget = ref("");
 const statusSource = ref("all");
 const statusTarget = ref("all");
 const zoom = ref(1);
@@ -214,13 +214,21 @@ const completion = computed(() => {
   };
 });
 
-const sourceTypes = computed(() => Array.from(new Set(sourceFields.value.map((field) => field.type))).sort());
-const targetTypes = computed(() => Array.from(new Set(targetFields.value.map((field) => field.type))).sort());
+function groupOptionsOf(fields) {
+  const seen = new Map();
+  fields.forEach((field) => {
+    const code = field.group || "UNGROUPED";
+    if (!seen.has(code)) seen.set(code, field.groupLabel || code);
+  });
+  return Array.from(seen.entries()).map(([code, label]) => ({ code, label }));
+}
+const sourceGroupOptions = computed(() => groupOptionsOf(sourceFields.value));
+const targetGroupOptions = computed(() => groupOptionsOf(targetFields.value));
 
 const filteredSources = computed(() => {
   const text = searchSource.value.trim().toLowerCase();
   return sourceFields.value.filter((field) => {
-    if (typeSource.value && field.type !== typeSource.value) return false;
+    if (groupSource.value && (field.group || "UNGROUPED") !== groupSource.value) return false;
     if (statusSource.value === "mapped" && !mappedSourceCount.value.has(field.name)) return false;
     if (statusSource.value === "unmapped" && mappedSourceCount.value.has(field.name)) return false;
     if (!text) return true;
@@ -231,7 +239,7 @@ const filteredSources = computed(() => {
 const filteredTargets = computed(() => {
   const text = searchTarget.value.trim().toLowerCase();
   return targetFields.value.filter((field) => {
-    if (typeTarget.value && field.type !== typeTarget.value) return false;
+    if (groupTarget.value && (field.group || "UNGROUPED") !== groupTarget.value) return false;
     if (statusTarget.value === "mapped" && !mappedTargets.value.has(field.name)) return false;
     if (statusTarget.value === "unmapped" && mappedTargets.value.has(field.name)) return false;
     if (statusTarget.value === "required" && !field.required) return false;
@@ -544,8 +552,19 @@ const mappingRows = computed(() => {
   });
 });
 
-const visibleMappingRows = computed(() => mappingRows.value.slice(0, mappingLimit.value));
-const hasMoreMappings = computed(() => mappingRows.value.length > mappingLimit.value);
+const selectionActive = computed(() => selectedSources.value.length > 0 || selectedTargets.value.length > 0);
+const linkedMappingRows = computed(() => {
+  if (!selectionActive.value) return mappingRows.value;
+  const sources = new Set(selectedSources.value);
+  const targets = new Set(selectedTargets.value);
+  return mappingRows.value.filter((row) => {
+    if (targets.has(row.field.name)) return true;
+    if (sources.size && row.sources.some((source) => sources.has(source.name))) return true;
+    return false;
+  });
+});
+const visibleMappingRows = computed(() => linkedMappingRows.value.slice(0, mappingLimit.value));
+const hasMoreMappings = computed(() => linkedMappingRows.value.length > mappingLimit.value);
 const selectedMappingCards = computed(() => links.value.filter((link) => selectedMappings.value.includes(link.id)).map((link) => ({ link: link })));
 const allVisibleMappingSelected = computed(() => {
   const ids = visibleMappingRows.value.filter((row) => row.link).map((row) => row.link.id);
@@ -882,13 +901,13 @@ function clearTargets() { selectedTargets.value = []; }
 
 function clearSourceFilters() {
   searchSource.value = "";
-  typeSource.value = "";
+  groupSource.value = "";
   statusSource.value = "all";
   selectedSources.value = [];
 }
 function clearTargetFilters() {
   searchTarget.value = "";
-  typeTarget.value = "";
+  groupTarget.value = "";
   statusTarget.value = "all";
   selectedTargets.value = [];
 }
@@ -1249,16 +1268,17 @@ watch(
   { deep: false }
 );
 
-watch([searchSource, typeSource, statusSource], () => {
+watch([searchSource, groupSource, statusSource], () => {
   sourceAnchor = -1;
   if (searchSource.value.trim()) expandGroups("source", true);
 });
-watch([searchTarget, typeTarget, statusTarget], () => {
+watch([searchTarget, groupTarget, statusTarget], () => {
   targetAnchor = -1;
   if (searchTarget.value.trim()) expandGroups("target", true);
 });
 watch(mappingSearch, () => { mappingLimit.value = 20; });
 watch(mappingStatus, () => { mappingLimit.value = 20; });
+watch(() => [selectedSources.value.join("\n"), selectedTargets.value.join("\n")], () => { mappingLimit.value = 20; });
 
 watch(
   () => [selectedSources.value.join("\n"), selectedTargets.value.join("\n")],
@@ -1331,9 +1351,9 @@ function onKey(event) {
           </div>
           <input v-model="searchSource" class="fm-search" type="search" placeholder="搜索字段" />
           <div class="fm-filters">
-            <select v-model="typeSource">
-              <option value="">全部类型</option>
-              <option v-for="type in sourceTypes" :key="type" :value="type">{{ type }}</option>
+            <select v-model="groupSource">
+              <option value="">全部字段大类</option>
+              <option v-for="group in sourceGroupOptions" :key="group.code" :value="group.code">{{ group.label }}</option>
             </select>
             <select v-model="statusSource">
               <option value="all">全部状态</option>
@@ -1467,7 +1487,7 @@ function onKey(event) {
 
         <section v-else class="fm-map-panel">
           <div class="fm-map-toolbar">
-            <h3>映射关系 <span class="sub">{{ mappingRows.length }} / {{ targetFields.length }}</span></h3>
+            <h3>映射关系 <span class="sub">{{ linkedMappingRows.length }} / {{ mappingRows.length }}</span></h3>
             <input v-model="mappingSearch" class="fm-search" type="search" placeholder="搜索目标字段、源字段或说明" />
             <div class="fm-seg">
               <button type="button" :class="{ active: mappingStatus === 'all' }" @click="mappingStatus = 'all'">全部</button>
@@ -1485,7 +1505,8 @@ function onKey(event) {
 
           <div class="fm-midbar">
             <label><input type="checkbox" :checked="allVisibleMappingSelected" @change="toggleAllMappingSelection" /> 全选</label>
-            <span>共 <b>{{ mappingRows.length }}</b> 行</span>
+            <span>共 <b>{{ linkedMappingRows.length }}</b> 行</span>
+            <span v-if="selectionActive" class="fm-linkhint">已按左右选中字段联动</span>
             <span class="spacer"></span>
             <div v-if="selectedSources.length || selectedTargets.length || selectedMappings.length" class="fm-batchbar">
               <span>已选 源 <b>{{ selectedSources.length }}</b> · 目标 <b>{{ selectedTargets.length }}</b> · 映射 <b>{{ selectedMappings.length }}</b></span>
@@ -1593,7 +1614,7 @@ function onKey(event) {
                 </template>
               </div>
             </template>
-            <p v-if="!mappingRows.length" class="dim" style="padding: 16px">没有符合条件的字段。</p>
+            <p v-if="!linkedMappingRows.length" class="dim" style="padding: 16px">{{ selectionActive ? "选中的字段没有匹配的映射关系。" : "没有符合条件的字段。" }}</p>
             <div v-if="hasMoreMappings" class="pr-more-row">
               <button type="button" class="btn" @click="mappingLimit += 20">加载更多</button>
             </div>
@@ -1606,9 +1627,9 @@ function onKey(event) {
           </div>
           <input v-model="searchTarget" class="fm-search" type="search" placeholder="搜索字段" />
           <div class="fm-filters">
-            <select v-model="typeTarget">
-              <option value="">全部类型</option>
-              <option v-for="type in targetTypes" :key="type" :value="type">{{ type }}</option>
+            <select v-model="groupTarget">
+              <option value="">全部字段大类</option>
+              <option v-for="group in targetGroupOptions" :key="group.code" :value="group.code">{{ group.label }}</option>
             </select>
             <select v-model="statusTarget">
               <option value="all">全部状态</option>

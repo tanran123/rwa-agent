@@ -101,7 +101,7 @@ async function removeDataset(dataset) {
         上传原始工作簿即可，无需提前按产品拆分；系统按 Sheet 解析为数据集，保留原始行号并生成数据特征和抽样。
       </p>
       <p class="dim" style="font-size: 11.5px; margin: 0 0 10px">
-        当前输入版本 <b>v{{ inputVersion }}</b>。重新导入、删除数据集或修改识别结果后，当前计算结果和复核状态会失效。
+        当前输入版本 <b>v{{ inputVersion }}</b>。导入或删除数据集、执行或确认产品识别、保存字段对应都会让输入版本加一；质量检查和计算批次记录当时使用的版本，版本变化后需要重新检查和计算。
       </p>
       <input ref="fileInput" type="file" accept=".xlsx,.xls,.csv" style="display: none" @change="onFile" />
       <div class="lq-upload" @click="fileInput.click()">

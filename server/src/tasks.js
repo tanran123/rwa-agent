@@ -7,6 +7,10 @@
  */
 
 import { query } from "./db.js";
+import { readCrmConfig } from "./crmConfig.js";
+import { readEadConfig } from "./eadConfig.js";
+import { deleteTask as deleteHqlaTask } from "./hqla.js";
+import { listLiquidityProducts, liquidityParams } from "./liquidity.js";
 import { configProducts, versionRuleDocuments } from "./productStandard.js";
 import { resolveVersionRef } from "./ruleVersion.js";
 import { latestPublishedSnapshot } from "./ruleGovernance.js";
@@ -71,18 +75,9 @@ function subOut(row) {
     status: row.status,
     batchId: row.batch_id || null,
     batchName: row.batch_name || "",
-    measureName: row.measure_name || "",
-    ead: row.batch_ead == null ? null : Number(row.batch_ead),
-    rwa: row.batch_rwa == null ? null : Number(row.batch_rwa),
-    batchStatus: row.batch_status || "",
     hqlaTaskId: row.hqla_task_id || null,
-    hqlaStatus: row.hqla_status || "",
-    calcStatus: row.hqla_calc_status || "",
     progress: row.hqla_progress == null ? Number(row.progress) || 0 : Number(row.hqla_progress),
-    reviewStatus: row.hqla_review_status || row.review_status || "",
-    lcr: calculation && calculation.lcr != null ? Number(calculation.lcr) : null,
     exceptionCount: calculation && calculation.stats ? Number(calculation.stats.exceptions) || 0 : 0,
-    resultSummary: summary,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -91,11 +86,10 @@ function subOut(row) {
 function decorate(task, subs) {
   const capital = subs.filter((item) => item.module !== "liquidity");
   const liquidity = subs.filter((item) => item.module === "liquidity");
-  const archived = capital.filter((item) => item.status === "archived").length;
-  const liquidityArchived = liquidity.filter((item) => item.status === "archived").length;
-  const status = !subs.length ? "draft" : capital.length && archived === capital.length ? "done" : "doing";
-  const ead = capital.reduce((sum, item) => sum + (Number(item.ead) || 0), 0);
-  const rwa = capital.reduce((sum, item) => sum + (Number(item.rwa) || 0), 0);
+  const done = new Set(["archived", "done"]);
+  const archived = capital.filter((item) => done.has(item.status)).length;
+  const liquidityArchived = liquidity.filter((item) => done.has(item.status)).length;
+  const status = !subs.length ? "draft" : subs.every((item) => done.has(item.status)) ? "done" : "doing";
   return {
     ...task,
     subs,
@@ -104,9 +98,7 @@ function decorate(task, subs) {
     liquidityCount: liquidity.length,
     liquidityArchived: liquidityArchived,
     archivedCount: archived,
-    status,
-    ead,
-    rwa
+    status
   };
 }
 
@@ -118,9 +110,8 @@ async function taskRow(id) {
 
 async function subRows(taskId) {
   const rows = await query(
-    `SELECT s.*, b.name AS measure_name, b.ead AS batch_ead, b.rwa AS batch_rwa, b.status AS batch_status,
-            h.status AS hqla_status, h.calc_status AS hqla_calc_status, h.progress AS hqla_progress,
-            h.review_status AS hqla_review_status, h.summary AS hqla_summary
+    `SELECT s.*, b.name AS batch_name,
+            h.progress AS hqla_progress, h.summary AS hqla_summary
        FROM rwa_task_sub s
        LEFT JOIN measure_batch b ON b.id = s.batch_id
        LEFT JOIN hqla_task h ON h.id = s.hqla_task_id
@@ -131,11 +122,45 @@ async function subRows(taskId) {
   return rows.map(subOut);
 }
 
-export async function listRwaTasks() {
-  const rows = await query("SELECT * FROM rwa_task ORDER BY updated_at DESC");
+export async function listRwaTasks(options = {}) {
+  const page = Number(options.page) || 0;
+  const pageSize = Math.min(100, Math.max(1, Number(options.pageSize) || 20));
+  const where = [];
+  const params = [];
+  const q = String(options.q || "").trim();
+  if (q) {
+    where.push("CONCAT_WS(' ', t.name, t.id, t.version, t.institution, t.jurisdiction, t.base_date) LIKE ?");
+    params.push("%" + q + "%");
+  }
+  if (options.jurisdiction) { where.push("t.jurisdiction = ?"); params.push(String(options.jurisdiction)); }
+  if (options.version) { where.push("t.version = ?"); params.push(String(options.version)); }
+  if (options.institution) { where.push("t.institution = ?"); params.push(String(options.institution)); }
+  if (options.from) { where.push("t.base_date >= ?"); params.push(String(options.from)); }
+  if (options.to) { where.push("t.base_date <= ?"); params.push(String(options.to)); }
+  if (options.status === "draft") {
+    where.push("NOT EXISTS (SELECT 1 FROM rwa_task_sub s WHERE s.task_id = t.id)");
+  } else if (options.status === "done") {
+    where.push("EXISTS (SELECT 1 FROM rwa_task_sub s WHERE s.task_id = t.id)");
+    where.push("NOT EXISTS (SELECT 1 FROM rwa_task_sub s WHERE s.task_id = t.id AND s.status NOT IN ('archived', 'done'))");
+  } else if (options.status === "doing") {
+    where.push("EXISTS (SELECT 1 FROM rwa_task_sub s WHERE s.task_id = t.id AND s.status NOT IN ('archived', 'done'))");
+  }
+  const clause = where.length ? " WHERE " + where.join(" AND ") : "";
+  const order = " ORDER BY t.base_date DESC, t.created_at DESC, t.id DESC";
+  if (!page) {
+    const rows = await query("SELECT t.* FROM rwa_task t" + clause + order, params);
+    const out = [];
+    for (const row of rows) out.push(decorate(taskOut(row), await subRows(row.id)));
+    return out;
+  }
+  const countRows = await query("SELECT COUNT(*) AS n FROM rwa_task t" + clause, params);
+  const rows = await query(
+    "SELECT t.* FROM rwa_task t" + clause + order + " LIMIT ? OFFSET ?",
+    params.concat([pageSize, (page - 1) * pageSize])
+  );
   const out = [];
   for (const row of rows) out.push(decorate(taskOut(row), await subRows(row.id)));
-  return out;
+  return { rows: out, total: Number(countRows[0].n) || 0, page, pageSize };
 }
 
 export async function getRwaTask(id) {
@@ -149,27 +174,109 @@ export async function readRwaTaskReadiness(version, jurisdiction = "") {
   if (!ruleVersion) {
     return { ok: false, version: ruleVersion, jurisdiction, issues: ["缺少监管规则版本"] };
   }
-  const [products, docs] = await Promise.all([
+  const versionId = await resolveVersionRef(ruleVersion, jurisdiction);
+  const versionRows = versionId ? await query("SELECT * FROM rule_version WHERE id = ?", [versionId]) : [];
+  const versionRow = versionRows[0] || null;
+  const published = !!versionRow && versionRow.status === "published";
+  const snapshot = versionId ? await latestPublishedSnapshot(versionId) : null;
+  const [products, docs, ead, crm, paramRows, listRows] = await Promise.all([
     configProducts(ruleVersion),
-    versionRuleDocuments(ruleVersion)
+    versionRuleDocuments(ruleVersion),
+    readEadConfig({ version: ruleVersion, jurisdiction }),
+    readCrmConfig({ version: ruleVersion, jurisdiction }),
+    versionId
+      ? query("SELECT COUNT(*) AS n FROM rule_parameter_table WHERE rule_version_id = ? OR rule_version_id = ''", [versionId])
+      : query("SELECT COUNT(*) AS n FROM rule_parameter_table WHERE jurisdiction = ?", [jurisdiction]),
+    versionId
+      ? query("SELECT COUNT(*) AS n FROM rule_list WHERE rule_version_id = ? OR rule_version_id = ''", [versionId])
+      : query("SELECT COUNT(*) AS n FROM rule_list WHERE jurisdiction = ?", [jurisdiction])
   ]);
+  let catalogue = { products: [] };
+  let liquidityParamData = { params: [], tables: [], lists: [] };
+  try {
+    catalogue = await listLiquidityProducts({ jurisdiction, version: ruleVersion });
+  } catch (err) {
+    catalogue = { products: [] };
+  }
+  try {
+    liquidityParamData = await liquidityParams({ jurisdiction, version: ruleVersion });
+  } catch (err) {
+    liquidityParamData = { params: [], tables: [], lists: [] };
+  }
   const fieldCount = products.reduce((sum, item) => sum + ((item.fields || []).length), 0);
+  const usableLiquidity = (catalogue.products || []).filter(
+    (product) => product.status === "LIVE" && product.completeness && product.completeness.score >= 100
+  );
+  const crmNeeded = (crm.products || []).filter((product) => product.needed);
+  const crmBound = (product) => ["crm_type", "crm_value", "crm_weight"].some((attr) =>
+    (product.slotColumns && product.slotColumns[attr] ? product.slotColumns[attr] : [])
+      .slice(0, product.maxSlots || 1)
+      .some((value) => String(value || "").trim())
+  );
+  const crmReady = crmNeeded.filter((product) => crmBound(product) && (product.eligibleTypes || []).length);
+  const eadNeeded = (ead.products || []).filter((product) => product.needed);
+  const eadReady = eadNeeded.filter((product) =>
+    product.side && (product.rules || []).length && (product.rules || []).every((rule) => rule.structured)
+  );
+  const parameterTableCount = Number((paramRows[0] && paramRows[0].n) || 0);
+  const referenceListCount = Number((listRows[0] && listRows[0].n) || 0);
   const issues = [];
+  if (!published) {
+    issues.push("监管规则版本未发布" + (versionRow ? "（当前状态：" + versionRow.status + "）" : ""));
+  }
+  if (!snapshot) issues.push("该版本还没有发布正式配置快照，不能创建正式任务");
   if (!docs.registry) issues.push("该版本还没有产品注册");
   if (!products.length) issues.push("产品清单为空");
   if (!docs.classification) issues.push("缺少 V3.5 暴露分类规则集");
   if (!docs.weight) issues.push("缺少 V3.5 风险权重规则集");
   if (!docs.mappings.length) issues.push("缺少字段映射文档");
+  if (!parameterTableCount) issues.push("缺少规则参数表");
+  if (!referenceListCount) issues.push("缺少监管名单");
+  if (!eadNeeded.length) issues.push("缺少 EAD 配置");
+  else {
+    const incomplete = eadNeeded.length - eadReady.length;
+    if (incomplete) issues.push("EAD 配置不完整：" + incomplete + " 个产品缺少表内/表外或公式");
+  }
+  if (crmNeeded.length && crmReady.length < crmNeeded.length) {
+    issues.push("信用风险缓释配置不完整：" + (crmNeeded.length - crmReady.length) + " 个产品缺少字段绑定或合格缓释物");
+  }
+  if (!usableLiquidity.length) issues.push("流动性没有已启用且配置完整的产品");
+  if (!(liquidityParamData.tables || []).length) issues.push("流动性缺少参数表");
+  if (!(liquidityParamData.params || []).length) issues.push("流动性缺少监管参数");
+  if (!(liquidityParamData.lists || []).length) issues.push("流动性缺少监管名单");
   return {
     ok: issues.length === 0,
     version: ruleVersion,
+    versionId,
     jurisdiction,
+    published,
+    snapshotId: snapshot ? snapshot.id : "",
     productCount: products.length,
     fieldCount,
     registry: docs.registry ? { name: docs.registry.name, version: docs.registry.docVersion } : null,
     classification: docs.classification ? { name: docs.classification.name, version: docs.classification.docVersion } : null,
     weight: docs.weight ? { name: docs.weight.name, version: docs.weight.docVersion } : null,
     mappingCount: docs.mappings.length,
+    parameterTableCount,
+    referenceListCount,
+    ead: {
+      productCount: (ead.products || []).length,
+      neededCount: eadNeeded.length,
+      readyCount: eadReady.length,
+      issues: ead.issues || []
+    },
+    crm: {
+      productCount: (crm.products || []).length,
+      neededCount: crmNeeded.length,
+      readyCount: crmReady.length
+    },
+    liquidity: {
+      productCount: (catalogue.products || []).length,
+      usableCount: usableLiquidity.length,
+      tableCount: (liquidityParamData.tables || []).length,
+      paramCount: (liquidityParamData.params || []).length,
+      listCount: (liquidityParamData.lists || []).length
+    },
     issues
   };
 }
@@ -184,6 +291,13 @@ export async function createRwaTask(body) {
   if (!jurisdiction) throw fail(400, "请选择司法管辖区");
   if (!version) throw fail(400, "请选择监管规则版本");
   if (!institution) throw fail(400, "请选择机构");
+  const duplicate = await query(
+    "SELECT id, name FROM rwa_task WHERE jurisdiction = ? AND version = ? AND institution = ? AND base_date = ? LIMIT 1",
+    [jurisdiction, version, institution, baseDate]
+  );
+  if (duplicate[0]) {
+    throw fail(409, "该机构在 " + version + "、基准日 " + baseDate + " 已有主任务 " + duplicate[0].id + "，请直接进入该任务或调整基准日");
+  }
   const readiness = await readRwaTaskReadiness(version, jurisdiction);
   if (!readiness.ok) throw fail(400, "当前监管版本的规则配置不完整：" + readiness.issues.join("；"));
   const id = uid("RT");
@@ -240,11 +354,43 @@ export async function updateRwaTask(id, body) {
   params.push(nowText());
   params.push(id);
   await query(`UPDATE rwa_task SET ${fields.join(", ")} WHERE id = ?`, params);
+  if (body.name !== undefined || body.baseDate !== undefined) {
+    await syncHqlaTaskInfo(await taskRow(id));
+  }
   return getRwaTask(id);
+}
+
+async function syncHqlaTaskInfo(task) {
+  const rows = await query("SELECT id, config FROM hqla_task WHERE rwa_task_id = ?", [task.id]);
+  const now = nowText();
+  for (const row of rows) {
+    const cfg = parseJson(row.config, {}) || {};
+    cfg.rwaTask = Object.assign({}, cfg.rwaTask || {}, {
+      id: task.id,
+      name: task.name,
+      institution: task.institution,
+      jurisdiction: task.jurisdiction,
+      version: task.version,
+      baseDate: dateText(task.base_date)
+    });
+    await query(
+      "UPDATE hqla_task SET base_date = ?, config = ?, updated_at = ? WHERE id = ?",
+      [dateText(task.base_date), JSON.stringify(cfg), now, row.id]
+    );
+  }
 }
 
 export async function deleteRwaTask(id) {
   await taskRow(id);
+  const subs = await query("SELECT id, hqla_task_id FROM rwa_task_sub WHERE task_id = ?", [id]);
+  for (const sub of subs) {
+    let hqlaId = sub.hqla_task_id || "";
+    if (!hqlaId) {
+      const linked = await query("SELECT id FROM hqla_task WHERE rwa_task_sub_id = ? LIMIT 1", [sub.id]);
+      hqlaId = linked[0] ? linked[0].id : "";
+    }
+    if (hqlaId) await deleteHqlaTask(hqlaId, { force: true });
+  }
   await query("DELETE FROM rwa_task_sub WHERE task_id = ?", [id]);
   await query("DELETE FROM rwa_task WHERE id = ?", [id]);
   return { ok: true };
@@ -286,7 +432,23 @@ export async function updateSubtask(taskId, subId, body) {
   params.push(nowText());
   params.push(subId, taskId);
   await query(`UPDATE rwa_task_sub SET ${fields.join(", ")} WHERE id = ? AND task_id = ?`, params);
+  if (body.name !== undefined && body.name !== rows[0].name) {
+    await syncHqlaSubName(subId, String(body.name).trim());
+  }
   return getRwaTask(taskId);
+}
+
+async function syncHqlaSubName(subId, name) {
+  const rows = await query("SELECT id, config FROM hqla_task WHERE rwa_task_sub_id = ?", [subId]);
+  const now = nowText();
+  for (const row of rows) {
+    const cfg = parseJson(row.config, {}) || {};
+    cfg.rwaTaskSub = Object.assign({}, cfg.rwaTaskSub || {}, { id: subId, name: name });
+    await query(
+      "UPDATE hqla_task SET name = ?, config = ?, updated_at = ? WHERE id = ?",
+      [name.slice(0, 200), JSON.stringify(cfg), now, row.id]
+    );
+  }
 }
 
 export async function deleteSubtask(taskId, subId) {

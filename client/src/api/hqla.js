@@ -3,15 +3,10 @@ import request from './request'
 const long = { timeout: 120000 }
 
 // ---------------------------------------------------------------- 任务
-export const listTasks = () => request.get('/hqla/tasks')
-export const createTask = (body) => request.post('/hqla/tasks', body)
 export const getTask = (id) => request.get(`/hqla/tasks/${id}`)
 export const updateTask = (id, body) => request.put(`/hqla/tasks/${id}`, body)
 export const deleteTask = (id) => request.delete(`/hqla/tasks/${id}`)
-export const duplicateTask = (id) => request.post(`/hqla/tasks/${id}/duplicate`)
 export const archiveTask = (id, archived) => request.post(`/hqla/tasks/${id}/archive`, { archived })
-export const exportTaskArchive = (id) => request.get(`/hqla/tasks/${id}/archive.json`)
-export const importTask = (doc) => request.post('/hqla/import', doc)
 
 // ---------------------------------------------------------------- 任务数据
 export const saveInput = (id, body) => request.put(`/hqla/tasks/${id}/input`, body)
@@ -53,7 +48,6 @@ export const listRunResults = (id, runId, params = {}) =>
   request.get(`/hqla/tasks/${id}/runs/${runId}/results`, { params })
 export const listRunExceptions = (id, runId, params = {}) =>
   request.get(`/hqla/tasks/${id}/runs/${runId}/exceptions`, { params })
-export const reviewTask = (id, body = {}) => request.post(`/hqla/tasks/${id}/review`, body)
 export const exportRunWorkbook = (id, runId) =>
   request.get(`/hqla/tasks/${id}/runs/${runId}/export.xlsx`, { ...long, responseType: 'blob' })
 export const saveList = (id, code, body) => request.put(`/hqla/tasks/${id}/lists/${code}`, body)

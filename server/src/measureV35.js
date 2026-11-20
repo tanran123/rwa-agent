@@ -71,11 +71,24 @@ function numberOrNull(value) {
   return Number.isFinite(n) ? n : null;
 }
 
+function headerKey(value) {
+  return String(value == null ? "" : value)
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[\s_\-—/\\.,，、:：;；()（）\[\]]+/g, "");
+}
+
 function headerHit(headers, names) {
-  const wanted = names.filter((name) => name && name !== "—").map((name) => String(name).toLowerCase());
+  const wanted = names.filter((name) => name && name !== "—").map(headerKey).filter(Boolean);
+  const list = (headers || []).map((header) => ({ raw: header, key: headerKey(header) })).filter((item) => item.key);
   for (const name of wanted) {
-    const hit = (headers || []).find((header) => String(header).toLowerCase() === name);
-    if (hit) return hit;
+    const exact = list.find((item) => item.key === name);
+    if (exact) return exact.raw;
+  }
+  for (const name of wanted) {
+    if (name.length < 3) continue;
+    const partial = list.find((item) => item.key.includes(name) || name.includes(item.key));
+    if (partial) return partial.raw;
   }
   return "";
 }

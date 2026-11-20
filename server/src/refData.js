@@ -1,6 +1,7 @@
 import { query } from "./db.js";
 import { resolveVersionRef } from "./ruleVersion.js";
 import { assertRevision, assertVersionWritable, recordRevision } from "./configAudit.js";
+import { clearExposureCache } from "./exposureCache.js";
 
 const PARAM_SQL = "SELECT * FROM rule_parameter_table";
 const LIST_SQL = "SELECT * FROM rule_list";
@@ -114,6 +115,7 @@ export async function saveParameterTable(id, body, actor = "") {
       id
     ]
   );
+  clearExposureCache(rows[0].rule_version_id || "");
   await recordRevision({
     ruleVersionId: rows[0].rule_version_id || "", objectType: "rule_parameter_table",
     objectKey: rows[0].table_id + "|" + rows[0].table_version, action: "UPDATE",
@@ -178,6 +180,7 @@ export async function saveReferenceList(id, body, actor = "") {
       id
     ]
   );
+  clearExposureCache(rows[0].rule_version_id || "");
   await recordRevision({
     ruleVersionId: rows[0].rule_version_id || "", objectType: "rule_list",
     objectKey: rows[0].list_id + "|" + rows[0].list_version, action: "UPDATE",
