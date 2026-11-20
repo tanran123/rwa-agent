@@ -11,5 +11,8 @@ __pycache__/
 output/
 决策树对话.json
 docker/deploy.env
+docker/app.env
+docker/mysql.env
+docker/model.env
 release/
 docs/

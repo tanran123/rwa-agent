@@ -24,6 +24,7 @@ const { session, scopeVersion, loadBootstrap } = useContext();
 const MODULES = [
   { key: "info", label: "产品组信息" },
   { key: "fields", label: "标准字段" },
+  { key: "exposure", label: "适用风险暴露类型" },
   { key: "mapping", label: "字段映射" },
   { key: "rules", label: "规则预览" }
 ];
@@ -43,9 +44,10 @@ const error = ref("");
 const notice = ref({ text: "", kind: "" });
 const saving = ref(false);
 const mappingVisited = ref(false);
-const infoForm = ref({ codesText: "", mappingVersion: "", exposureType: "", targetProfileRef: "", note: "" });
+const infoForm = ref({ codesText: "", mappingVersion: "", targetProfileRef: "", note: "" });
 const selectedClasses = ref([]);
 const classSearch = ref("");
+const showSelectedOnly = ref(false);
 const fieldSearch = ref("");
 const ALL_FIELD_GROUP = "__all__";
 const activeFieldGroup = ref(ALL_FIELD_GROUP);
@@ -113,19 +115,112 @@ const scopedNodeCounts = computed(() => {
   });
   return { cls: clsIds.size, rw: weightIds.size };
 });
-const candidateRows = computed(() => exposureModel.value.matrix.map((row) => ({
-  code: row.code,
-  label: row.label,
-  lane: row.lane,
-  clsCount: row.clsIds.length,
-  rwCount: row.weightIds.length,
-  selected: candidateSet.value.has(row.code)
-})));
+const targetFieldDefs = computed(() => {
+  const map = {};
+  [classDoc.value, weightDoc.value].forEach((doc) => {
+    ((doc && doc.fields) || []).forEach((field) => {
+      if (field && field.name && !map[field.name]) map[field.name] = field;
+    });
+  });
+  return map;
+});
+function nodeFieldNames(row) {
+  const set = new Set();
+  [...row.clsIds, ...row.weightIds].forEach((id) => {
+    const node = exposureModel.value.nodes[id];
+    (node && node.fields || []).forEach((name) => { if (name) set.add(name); });
+  });
+  set.delete("exposure_class");
+  return [...set].filter((name) => {
+    const def = targetFieldDefs.value[name];
+    return !def || def.source !== "calc";
+  });
+}
+const candidateRows = computed(() => exposureModel.value.matrix.map((row) => {
+  const names = nodeFieldNames(row);
+  const required = names.filter((name) => {
+    const def = targetFieldDefs.value[name];
+    return def && def.required === true && (def.source || "column") === "column";
+  });
+  return {
+    code: row.code,
+    label: row.label,
+    lane: row.lane,
+    clsCount: row.clsIds.length,
+    rwCount: row.weightIds.length,
+    fieldCount: names.length,
+    requiredCount: required.length,
+    selected: candidateSet.value.has(row.code)
+  };
+}));
 const filteredCandidates = computed(() => {
   const text = classSearch.value.trim().toLowerCase();
-  if (!text) return candidateRows.value;
-  return candidateRows.value.filter((item) => (item.code + " " + item.label + " " + item.lane).toLowerCase().includes(text));
+  return candidateRows.value.filter((item) => {
+    if (showSelectedOnly.value && !item.selected) return false;
+    if (!text) return true;
+    return (item.code + " " + item.label + " " + item.lane).toLowerCase().includes(text);
+  });
 });
+const scopeClassLabels = computed(() => Object.fromEntries(candidateRows.value.map((item) => [item.code, item.label])));
+const scopedFieldNames = computed(() => {
+  const set = new Set();
+  selectedMatrix.value.forEach((row) => nodeFieldNames(row).forEach((name) => set.add(name)));
+  Object.values(targetFieldDefs.value).forEach((def) => {
+    if (def && def.name && def.required === true && (def.source || "column") === "column" && def.name !== "exposure_class") {
+      set.add(def.name);
+    }
+  });
+  return [...set];
+});
+const savedExposureClasses = computed(() => {
+  const own = entry.value && Array.isArray(entry.value.candidate_exposure_classes)
+    ? entry.value.candidate_exposure_classes
+    : [];
+  const fallback = (mappingBody.value && mappingBody.value.candidate_exposure_classes) || [];
+  return (own.length ? own : fallback).slice().sort();
+});
+const exposureDirty = computed(() => JSON.stringify(selectedClasses.value.slice().sort()) !== JSON.stringify(savedExposureClasses.value));
+const exposureChecks = computed(() => {
+  const selected = candidateRows.value.filter((item) => item.selected);
+  return [
+    { label: "已选择至少一个适用风险暴露类型", ok: selected.length > 0 },
+    { label: "每个暴露类型存在分类规则", ok: selected.length > 0 && selected.every((item) => item.clsCount > 0) },
+    { label: "每个暴露类型关联权重规则", ok: selected.length > 0 && selected.every((item) => item.rwCount > 0) }
+  ];
+});
+const failedExposureChecks = computed(() => exposureChecks.value.filter((item) => !item.ok).length);
+const scopedRequiredFieldNames = computed(() => scopedFieldNames.value.filter((name) => {
+  const def = targetFieldDefs.value[name];
+  return def && def.required === true && (def.source || "column") === "column";
+}));
+const scopedMappingCoverage = computed(() => {
+  if (!selectedClasses.value.length || !scopedFieldNames.value.length) return mappingCoverage.value;
+  const mapped = mappingTargetSet(mappingBody.value);
+  const required = scopedRequiredFieldNames.value;
+  const targets = required.length ? required : scopedFieldNames.value;
+  const hit = targets.filter((name) => mapped.has(name)).length;
+  return {
+    mapped: hit,
+    required: targets.length,
+    pct: targets.length ? Math.round(hit / targets.length * 100) : 0,
+    targetFields: scopedFieldNames.value.length,
+    missing: targets.filter((name) => !mapped.has(name)),
+    missingCount: targets.filter((name) => !mapped.has(name)).length
+  };
+});
+const scopeStats = computed(() => ({
+  types: selectedClasses.value.length,
+  cls: scopedNodeCounts.value.cls,
+  rw: scopedNodeCounts.value.rw,
+  fields: scopedFieldNames.value.length,
+  required: scopedRequiredFieldNames.value.length
+}));
+function toggleAllCandidates() {
+  selectedClasses.value = candidateRows.value.map((item) => item.code);
+}
+function clearCandidates() {
+  selectedClasses.value = [];
+}
 
 const mappingCoverage = computed(() => {
   const coverage = mappingBody.value.coverage || {};
@@ -138,7 +233,8 @@ const mappingCoverage = computed(() => {
     required: required,
     targetFields: targetFields,
     pct: required ? Math.round(mapped / required * 100) : 0,
-    missing: missing
+    missing: missing,
+    missingCount: missing
   };
 });
 
@@ -332,12 +428,9 @@ watch(fieldSearch, (value, previous) => {
 
 
 const configChecks = computed(() => ([
-  { label: "产品组信息完整", ok: selectedClasses.value.length > 0 && !!(entry.value && entry.value.data_mapping_ref) },
+  { label: "产品组信息完整", ok: !!(entry.value && entry.value.data_mapping_ref) && (entry.value.product_codes || []).length > 0 },
   { label: "产品标准字段有效", ok: activeFields.value.length > 0 },
-  { label: "已选择适用风险暴露类型", ok: selectedClasses.value.length > 0 },
-  { label: "每个暴露类型存在分类规则", ok: selectedClasses.value.length > 0 && candidateRows.value.filter((item) => item.selected).every((item) => item.clsCount > 0) },
-  { label: "每个暴露类型关联权重规则", ok: selectedClasses.value.length > 0 && candidateRows.value.filter((item) => item.selected).every((item) => item.rwCount > 0) },
-  { label: "必需业务输入字段已全部映射", ok: mappingCoverage.value.missing === 0 && mappingCoverage.value.mapped > 0 },
+  { label: "必需业务输入字段已全部映射", ok: scopedMappingCoverage.value.missingCount === 0 && scopedMappingCoverage.value.mapped > 0 },
   { label: "映射转换逻辑有效", ok: (mappingBody.value.mappings || []).every((item) => item.transform) }
 ]));
 const failedChecks = computed(() => configChecks.value.filter((item) => !item.ok).length);
@@ -346,7 +439,7 @@ const ruleOverview = computed(() => ([
   { label: "暴露类型", value: String(selectedClasses.value.length), sub: "已选择" },
   { label: "分类规则", value: String(scopedNodeCounts.value.cls), sub: "节点" },
   { label: "权重规则", value: String(scopedNodeCounts.value.rw), sub: "节点" },
-  { label: "字段完整性", value: mappingCoverage.value.mapped + " / " + mappingCoverage.value.required, sub: mappingCoverage.value.pct + "%" }
+  { label: "字段完整性", value: scopedMappingCoverage.value.mapped + " / " + scopedMappingCoverage.value.required, sub: scopedMappingCoverage.value.pct + "%" }
 ]));
 
 function say(text, kind = "info") {
@@ -409,7 +502,6 @@ function syncInfoFromEntry() {
   infoForm.value = {
     codesText: (entry.value.product_codes || []).join("\n"),
     mappingVersion: entry.value.data_mapping_version || "",
-    exposureType: entry.value.exposure_type || "",
     targetProfileRef: entry.value.target_profile_ref || "",
     note: entry.value.note || ""
   };
@@ -474,8 +566,17 @@ async function load() {
   }
 }
 
-function switchModule(key) {
+async function switchModule(key) {
   if (!MODULES.some((item) => item.key === key)) return;
+  if (key !== active.value && active.value === "exposure" && exposureDirty.value) {
+    const yes = await askConfirm("适用风险暴露类型还有未保存的修改，离开后这些修改会丢失。", {
+      title: "离开适用风险暴露类型",
+      confirmText: "离开",
+      cancelText: "继续编辑"
+    });
+    if (!yes) return;
+    selectedClasses.value = savedExposureClasses.value.slice();
+  }
   active.value = key;
   if (key === "mapping") mappingVisited.value = true;
   router.replace({
@@ -489,8 +590,51 @@ function switchModule(key) {
   });
 }
 
-function backToList() {
+async function backToList() {
+  if (active.value === "exposure" && exposureDirty.value) {
+    const yes = await askConfirm("适用风险暴露类型还有未保存的修改，离开后这些修改会丢失。", {
+      title: "离开产品配置工作台",
+      confirmText: "离开",
+      cancelText: "继续编辑"
+    });
+    if (!yes) return;
+  }
   router.push("/product-config");
+}
+
+async function saveExposureScope() {
+  if (!registry.value || entryIndex.value < 0) return;
+  if (!selectedClasses.value.length) {
+    say("至少选择一个适用风险暴露类型", "warn");
+    return;
+  }
+  if (!exposureDirty.value) {
+    say("适用风险暴露类型没有变化", "info");
+    return;
+  }
+  const outOfScope = (mappingBody.value.mappings || []).filter((item) => (
+    item && item.target_field && !scopedFieldNames.value.includes(item.target_field)
+  )).length;
+  saving.value = true;
+  try {
+    const body = clone(registry.value.body);
+    body.product_mappings[entryIndex.value] = Object.assign({}, body.product_mappings[entryIndex.value], {
+      candidate_exposure_classes: selectedClasses.value.slice()
+    });
+    const saved = await saveRuleDocument(registry.value.id, { body: body, baseRevision: registry.value.revision });
+    registry.value = saved;
+    syncInfoFromEntry();
+    say(
+      outOfScope
+        ? "适用风险暴露类型已保存；有 " + outOfScope + " 条已有映射不在新范围内，字段映射中会折叠提示"
+        : "适用风险暴露类型已保存",
+      "ok"
+    );
+  } catch (err) {
+    say(err.message, "danger");
+  } finally {
+    saving.value = false;
+  }
 }
 
 async function saveInfo() {
@@ -509,10 +653,6 @@ async function saveInfo() {
     say("产品代码已被其它产品组占用：" + duplicated.join("、"), "danger");
     return;
   }
-  if (!selectedClasses.value.length) {
-    say("至少选择一个适用风险暴露类型", "warn");
-    return;
-  }
   saving.value = true;
   try {
     const body = clone(registry.value.body);
@@ -520,12 +660,8 @@ async function saveInfo() {
     const next = Object.assign({}, current, { product_codes: codes });
     if (infoForm.value.mappingVersion) next.data_mapping_version = infoForm.value.mappingVersion;
     else delete next.data_mapping_version;
-    if (infoForm.value.exposureType) next.exposure_type = infoForm.value.exposureType;
-    else delete next.exposure_type;
     if (infoForm.value.targetProfileRef) next.target_profile_ref = infoForm.value.targetProfileRef;
     else delete next.target_profile_ref;
-    if (selectedClasses.value.length) next.candidate_exposure_classes = selectedClasses.value.slice();
-    else delete next.candidate_exposure_classes;
     if (infoForm.value.note) next.note = infoForm.value.note;
     else delete next.note;
     body.product_mappings[entryIndex.value] = next;
@@ -847,7 +983,7 @@ onMounted(async () => {
           <div class="pws-subline">
             <span class="mono">{{ entry.data_mapping_ref }} v{{ entry.data_mapping_version || mappingBody.version || "—" }}</span>
             <span v-if="mappingBody.source_system">{{ mappingBody.source_system }}</span>
-            <span>映射 {{ mappingCoverage.mapped }} / {{ mappingCoverage.required }} · {{ mappingCoverage.pct }}%</span>
+            <span>映射 {{ scopedMappingCoverage.mapped }} / {{ scopedMappingCoverage.required }} · {{ scopedMappingCoverage.pct }}%</span>
             <span>规则 {{ ruleSets.classification_rule_ref || "—" }} / {{ ruleSets.risk_weight_rule_ref || "—" }}</span>
           </div>
         </div>
@@ -870,8 +1006,7 @@ onMounted(async () => {
       <section v-show="moduleKey === 'info'" class="pws-module">
         <div class="panel">
           <div class="panel-head">
-            <h3>产品组信息与适用范围</h3>
-            <span class="tag">{{ selectedClasses.length }} 个暴露类型</span>
+            <h3>产品组信息</h3>
             <span class="spacer"></span>
             <span class="dim" style="font-size: 11.5px">保存写入产品规则注册</span>
             <button type="button" class="btn sm primary" :disabled="saving" @click="saveInfo">{{ saving ? "保存中" : "保存产品组信息" }}</button>
@@ -882,57 +1017,18 @@ onMounted(async () => {
               <label>映射配置<input :value="entry.data_mapping_ref" type="text" disabled /></label>
               <label>映射版本<input v-model="infoForm.mappingVersion" type="text" /></label>
               <label>目标画像引用<input v-model="infoForm.targetProfileRef" type="text" placeholder="例如 LOAN" /></label>
-              <label>暴露类型
-                <select v-model="infoForm.exposureType">
-                  <option value="">不填</option>
-                  <option value="ON_BALANCE">ON_BALANCE</option>
-                  <option value="OFF_BALANCE">OFF_BALANCE</option>
-                  <option value="SETTLEMENT">SETTLEMENT</option>
-                  <option value="CCR">CCR</option>
-                  <option value="MIXED">MIXED</option>
-                </select>
-              </label>
               <label>适用产品代码数<input :value="(entry.product_codes || []).length" type="text" disabled /></label>
               <label class="wide">备注<textarea v-model="infoForm.note" rows="2"></textarea></label>
               <label class="wide">适用产品代码（每行一个）<textarea v-model="infoForm.codesText" rows="3"></textarea></label>
 
-              <div class="wide pws-expsec">
-                <div class="pws-exphead">
-                  <b>适用风险暴露类型</b>
-                  <span class="mini">来源：分类规则集 v{{ (classDoc && classDoc.version) || "" }} 的 exposure_class，勾选后参与产品规则预览</span>
-                  <span class="spacer"></span>
-                  <input v-model="classSearch" class="pws-search" type="search" placeholder="搜索暴露类型编码 / 名称" />
-                </div>
-                <div class="pws-expgrid">
-                  <label
-                    v-for="item in filteredCandidates"
-                    :key="item.code"
-                    class="pws-expcard"
-                    :class="{ on: item.selected }"
-                  >
-                    <input type="checkbox" :checked="item.selected" @change="toggleCandidate(item.code)" />
-                    <span class="pws-exp-top"><b>{{ item.label }}</b><span class="mono">{{ item.code }}</span></span>
-                    <span class="pws-exp-meta">
-                      <span class="tag">{{ item.lane }}</span>
-                      <span class="tag blue">分类 {{ item.clsCount }}</span>
-                      <span class="tag violet">权重 {{ item.rwCount }}</span>
-                    </span>
-                  </label>
-                </div>
-                <p v-if="!filteredCandidates.length" class="dim" style="padding: 10px 0">没有匹配的暴露类型。</p>
-              </div>
-
               <div v-if="businessGroups.length" class="wide pws-groups">
                 <div class="pws-group-head">
                   <b>业务产品组</b>
-                  <span class="mini">标准字段和字段映射继承产品族；候选风险暴露类型按业务产品组维护</span>
+                  <span class="mini">标准字段和字段映射继承产品族；覆盖情况按业务产品组统计</span>
                 </div>
                 <div class="pws-group-grid">
                   <div v-for="group in businessGroups" :key="group.code" class="pws-group-card">
                     <div class="pws-group-title"><span class="mono">{{ group.code }}</span></div>
-                    <div class="pws-group-meta">
-                      <span v-for="code in group.candidateExposureClasses" :key="code" class="tag blue">{{ code }}</span>
-                    </div>
                     <div class="pws-group-members" :title="group.members.join('、')">
                       成员产品代码 {{ group.members.length }} 个 · 映射 {{ group.mappingRef || "—" }}
                     </div>
@@ -1116,6 +1212,92 @@ onMounted(async () => {
         @saved="handleDictionariesSaved"
       />
 
+      <section v-show="moduleKey === 'exposure'" class="pws-module">
+        <div class="panel">
+          <div class="panel-head">
+            <h3>适用风险暴露类型</h3>
+            <span class="tag">{{ selectedClasses.length }} 个已选</span>
+            <span v-if="exposureDirty" class="tag amber">有未保存修改</span>
+            <span class="spacer"></span>
+            <span class="dim" style="font-size: 11.5px">选择结果决定字段映射的监管目标字段范围</span>
+            <button type="button" class="btn sm primary" :disabled="saving || !exposureDirty" @click="saveExposureScope">{{ saving ? "保存中" : "保存适用风险暴露类型" }}</button>
+          </div>
+          <div class="panel-body">
+            <div class="notice info">
+              <span class="ni">i</span>
+              <div>只显示分类规则和权重规则实际引用到的字段。选中的暴露类型越多，字段映射需要覆盖的监管目标字段越多。</div>
+            </div>
+
+            <div class="pws-exp-toolbar">
+              <input v-model="classSearch" class="pws-search" type="search" placeholder="搜索暴露类型编码 / 名称 / 业务分支" />
+              <label class="pws-inline-check"><input v-model="showSelectedOnly" type="checkbox" /> 只看已选</label>
+              <button type="button" class="btn sm" @click="toggleAllCandidates">全选</button>
+              <button type="button" class="btn sm" @click="clearCandidates">清空</button>
+              <span class="spacer"></span>
+              <span class="dim" style="font-size: 11px">
+                分类节点 {{ scopeStats.cls }} · 权重节点 {{ scopeStats.rw }} · 涉及字段 {{ scopeStats.fields }} · 必填字段 {{ scopeStats.required }}
+              </span>
+            </div>
+
+            <div class="table-wrap">
+              <table class="tbl compact">
+                <thead>
+                  <tr>
+                    <th style="width: 42px"></th>
+                    <th>暴露类型</th>
+                    <th style="width: 190px">业务分支</th>
+                    <th class="num" style="width: 86px">分类节点</th>
+                    <th class="num" style="width: 86px">权重节点</th>
+                    <th class="num" style="width: 86px">涉及字段</th>
+                    <th class="num" style="width: 86px">必填字段</th>
+                    <th style="width: 150px">规则</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="item in filteredCandidates"
+                    :key="item.code"
+                    class="pws-exp-row"
+                    :class="{ 'pws-exp-row-on': item.selected }"
+                    @click="toggleCandidate(item.code)"
+                  >
+                    <td><input type="checkbox" :checked="item.selected" @click.stop @change="toggleCandidate(item.code)" /></td>
+                    <td>
+                      <b>{{ item.label }}</b>
+                      <div class="mono dim" style="font-size: 10.5px">{{ item.code }}</div>
+                    </td>
+                    <td>{{ item.lane }}</td>
+                    <td class="num">{{ item.clsCount }}</td>
+                    <td class="num">{{ item.rwCount }}</td>
+                    <td class="num">{{ item.fieldCount }}</td>
+                    <td class="num">{{ item.requiredCount }}</td>
+                    <td>
+                      <span class="tag" :class="item.clsCount ? 'green' : 'danger'">分类 {{ item.clsCount ? "有" : "缺" }}</span>
+                      <span class="tag" :class="item.rwCount ? 'green' : 'danger'">权重 {{ item.rwCount ? "有" : "缺" }}</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <p v-if="!filteredCandidates.length" class="dim" style="padding: 16px">
+                {{ showSelectedOnly ? "还没有已选的暴露类型。" : "没有匹配的暴露类型。" }}
+              </p>
+            </div>
+
+            <div class="wide pws-publish" style="margin-top: 12px">
+              <div class="pws-pubhead">
+                <b>范围检查</b>
+                <span class="tag" :class="failedExposureChecks ? 'amber' : 'green'">{{ failedExposureChecks ? failedExposureChecks + " 项待处理" : "通过" }}</span>
+              </div>
+              <div class="pws-checklist">
+                <div v-for="check in exposureChecks" :key="check.label" :class="check.ok ? 'ok' : 'bad'">
+                  {{ check.ok ? "✓" : "✗" }} {{ check.label }}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section v-show="moduleKey === 'mapping'" class="pws-module">
         <div v-if="!mappingMeta" class="notice warn">这个产品组还没有字段映射文档。</div>
         <FieldMappingWorkbench
@@ -1125,7 +1307,11 @@ onMounted(async () => {
           :docs="docs"
           :standard-fields="activeFields"
           :standard-field-groups="standardGroups"
+          :scope-classes="selectedClasses"
+          :scope-class-labels="scopeClassLabels"
+          :scope-fields="scopedFieldNames"
           @save="saveMapping"
+          @edit-scope="switchModule('exposure')"
         />
       </section>
 

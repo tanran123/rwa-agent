@@ -14,9 +14,12 @@ const props = defineProps({
   document: { type: Object, required: true },
   docs: { type: Array, default: () => [] },
   standardFields: { type: Array, default: () => [] },
-  standardFieldGroups: { type: Array, default: () => [] }
+  standardFieldGroups: { type: Array, default: () => [] },
+  scopeClasses: { type: Array, default: () => [] },
+  scopeClassLabels: { type: Object, default: () => ({}) },
+  scopeFields: { type: Array, default: () => [] }
 });
-const emit = defineEmits(["save"]);
+const emit = defineEmits(["save", "edit-scope"]);
 
 const classDoc = ref(null);
 const weightDoc = ref(null);
@@ -135,7 +138,10 @@ const targetGroupMeta = computed(() => {
   return map;
 });
 
-const targetFields = computed(() => {
+const scopeActive = computed(() => (props.scopeClasses || []).length > 0);
+const scopeFieldSet = computed(() => new Set(props.scopeFields || []));
+
+const allTargetFields = computed(() => {
   const list = [];
   const seen = new Set();
   const push = (field, docLabel) => {
@@ -143,6 +149,7 @@ const targetFields = computed(() => {
     seen.add(field.name);
     const group = field.group || "UNGROUPED";
     const meta = targetGroupMeta.value.get(group);
+    const source = field.source || "";
     list.push({
       name: field.name,
       label: field.label || field.name,
@@ -152,6 +159,9 @@ const targetFields = computed(() => {
       groupOrder: meta ? meta.order : 999,
       required: field.required === true || field.missing_policy === "fail",
       missingPolicy: field.missing_policy || "",
+      source: source,
+      systemCalc: source === "calc",
+      inScope: !scopeActive.value || scopeFieldSet.value.has(field.name),
       doc: docLabel
     });
   };
@@ -169,11 +179,36 @@ const targetFields = computed(() => {
       groupOrder: 1000,
       required: mapping.required === true,
       missingPolicy: mapping.missing_policy || "",
+      source: "",
+      systemCalc: false,
+      inScope: !scopeActive.value || scopeFieldSet.value.has(mapping.target_field),
       doc: "未定义"
     });
   });
   return list;
 });
+
+const targetFields = computed(() => allTargetFields.value.filter((field) => !field.systemCalc));
+const scopedTargetFields = computed(() => targetFields.value.filter((field) => field.inScope));
+const outOfScopeTargetFields = computed(() => targetFields.value.filter((field) => !field.inScope));
+const baseTargetFields = computed(() => (scopeActive.value ? scopedTargetFields.value : targetFields.value));
+const mappingBaseTargets = computed(() => {
+  if (!scopeActive.value) return targetFields.value;
+  return showOutOfScope.value ? targetFields.value : scopedTargetFields.value;
+});
+const visibleScopeTargets = computed(() => {
+  if (!scopeActive.value) return targetFields.value;
+  if (scopeFilter.value === "out") return outOfScopeTargetFields.value;
+  if (scopeFilter.value === "all") return targetFields.value;
+  return scopedTargetFields.value;
+});
+const calcTargetNames = computed(() => new Set(allTargetFields.value.filter((field) => field.systemCalc).map((field) => field.name)));
+const outOfScopeLinkCount = computed(() => {
+  if (!scopeActive.value) return 0;
+  const names = new Set(scopedTargetFields.value.map((field) => field.name));
+  return links.value.filter((link) => targetFields.value.some((field) => field.name === link.target) && !names.has(link.target)).length;
+});
+const calcLinkCount = computed(() => links.value.filter((link) => calcTargetNames.value.has(link.target)).length);
 
 const sourceMap = computed(() => {
   const map = {};
@@ -183,7 +218,7 @@ const sourceMap = computed(() => {
 
 const targetMap = computed(() => {
   const map = {};
-  targetFields.value.forEach((field) => { map[field.name] = field; });
+  allTargetFields.value.forEach((field) => { map[field.name] = field; });
   return map;
 });
 
@@ -200,9 +235,9 @@ const mappedSourceCount = computed(() => {
 });
 
 const completion = computed(() => {
-  const total = targetFields.value.length;
-  const mapped = targetFields.value.filter((field) => mappedTargets.value.has(field.name)).length;
-  const required = targetFields.value.filter((field) => field.required);
+  const total = baseTargetFields.value.length;
+  const mapped = baseTargetFields.value.filter((field) => mappedTargets.value.has(field.name)).length;
+  const required = baseTargetFields.value.filter((field) => field.required);
   const requiredMapped = required.filter((field) => mappedTargets.value.has(field.name)).length;
   return {
     total: total,
@@ -223,7 +258,7 @@ function groupOptionsOf(fields) {
   return Array.from(seen.entries()).map(([code, label]) => ({ code, label }));
 }
 const sourceGroupOptions = computed(() => groupOptionsOf(sourceFields.value));
-const targetGroupOptions = computed(() => groupOptionsOf(targetFields.value));
+const targetGroupOptions = computed(() => groupOptionsOf(visibleScopeTargets.value));
 
 const filteredSources = computed(() => {
   const text = searchSource.value.trim().toLowerCase();
@@ -238,7 +273,7 @@ const filteredSources = computed(() => {
 
 const filteredTargets = computed(() => {
   const text = searchTarget.value.trim().toLowerCase();
-  return targetFields.value.filter((field) => {
+  return visibleScopeTargets.value.filter((field) => {
     if (groupTarget.value && (field.group || "UNGROUPED") !== groupTarget.value) return false;
     if (statusTarget.value === "mapped" && !mappedTargets.value.has(field.name)) return false;
     if (statusTarget.value === "unmapped" && mappedTargets.value.has(field.name)) return false;
@@ -324,7 +359,7 @@ const visibleSourceSet = computed(() => {
 
 const visibleTargetSet = computed(() => {
   if (!selectedSources.value.length && !selectedTargets.value.length) {
-    return new Set(targetFields.value.map((field) => field.name));
+    return new Set(mappingBaseTargets.value.map((field) => field.name));
   }
   const set = new Set(selectedTargets.value);
   links.value.forEach((link) => {
@@ -503,25 +538,25 @@ const ruleFieldNames = computed(() => {
 });
 
 const overview = computed(() => {
-  const required = targetFields.value.filter((field) => field.required);
-  const ruleFields = targetFields.value.filter((field) => ruleFieldNames.value.has(field.name));
+  const required = baseTargetFields.value.filter((field) => field.required);
+  const ruleFields = baseTargetFields.value.filter((field) => ruleFieldNames.value.has(field.name));
   const ruleMapped = ruleFields.filter((field) => mappedTargets.value.has(field.name)).length;
   return {
     sourceTotal: sourceFields.value.length,
     sourceUsed: mappedSourceCount.value.size,
-    targetTotal: targetFields.value.length,
-    targetMapped: mappedTargets.value.size,
+    targetTotal: baseTargetFields.value.length,
+    targetMapped: baseTargetFields.value.filter((field) => mappedTargets.value.has(field.name)).length,
     requiredTotal: required.length,
     requiredUnmapped: required.filter((field) => !mappedTargets.value.has(field.name)).length,
     ruleTotal: ruleFields.length,
     ruleMapped: ruleMapped,
-    progress: targetFields.value.length ? Math.round((mappedTargets.value.size / targetFields.value.length) * 100) : 0
+    progress: baseTargetFields.value.length ? Math.round(baseTargetFields.value.filter((field) => mappedTargets.value.has(field.name)).length / baseTargetFields.value.length * 100) : 0
   };
 });
 
 const mappingRows = computed(() => {
   const text = mappingSearch.value.trim().toLowerCase();
-  return targetFields.value.map((field) => {
+  return mappingBaseTargets.value.map((field) => {
     const link = targetLinks(field.name)[0] || null;
     const sources = link
       ? lineSources(link).map((name) => sourceMap.value[name] || { name: name, label: name, type: "string" })
@@ -574,6 +609,8 @@ const allVisibleMappingSelected = computed(() => {
 const expandedRows = ref([]);
 const mappingTypeFilter = ref("");
 const batchType = ref("direct");
+const scopeFilter = ref("scope");
+const showOutOfScope = ref(false);
 
 function rowExpanded(name) {
   return expandedRows.value.includes(name);
@@ -727,7 +764,7 @@ const issues = computed(() => {
   links.value.forEach((link) => {
     (issueMap.value[link.id] || []).forEach((message) => list.push({ link: link, message: message }));
   });
-  targetFields.value.filter((field) => field.required && !mappedTargets.value.has(field.name)).forEach((field) => {
+  baseTargetFields.value.filter((field) => field.required && !mappedTargets.value.has(field.name)).forEach((field) => {
     list.push({ link: null, message: "必填目标字段 " + field.name + " 还没有映射" });
   });
   return list;
@@ -1278,6 +1315,10 @@ watch([searchTarget, groupTarget, statusTarget], () => {
 });
 watch(mappingSearch, () => { mappingLimit.value = 20; });
 watch(mappingStatus, () => { mappingLimit.value = 20; });
+watch(scopeActive, (active) => {
+  scopeFilter.value = active ? "scope" : "all";
+  showOutOfScope.value = false;
+});
 watch(() => [selectedSources.value.join("\n"), selectedTargets.value.join("\n")], () => { mappingLimit.value = 20; });
 
 watch(
@@ -1329,6 +1370,18 @@ function onKey(event) {
       <button type="button" class="btn sm primary" @click="save">保存映射</button>
     </div>
 
+    <div class="fm-scope-bar">
+      <span class="fm-scope-label">适用风险暴露类型</span>
+      <template v-if="scopeActive">
+        <span v-for="code in scopeClasses" :key="code" class="tag blue" :title="code">{{ scopeClassLabels[code] || code }}</span>
+        <span class="dim" style="font-size: 10.5px">范围内目标字段 {{ scopedTargetFields.length }} · 范围外 {{ outOfScopeTargetFields.length }}</span>
+      </template>
+      <span v-else class="tag amber">未选择</span>
+      <span v-if="!scopeActive" class="dim" style="font-size: 10.5px">未选择时显示全部非计算字段，建议先选择</span>
+      <span class="spacer"></span>
+      <button type="button" class="btn sm" @click="emit('edit-scope')">调整范围</button>
+    </div>
+
     <div class="fm-overview">
       <span>产品标准字段 <b>{{ overview.sourceUsed }}</b> / {{ overview.sourceTotal }}</span>
       <span>监管目标字段 <b>{{ overview.targetMapped }}</b> / {{ overview.targetTotal }}</span>
@@ -1345,70 +1398,76 @@ function onKey(event) {
 
     <template v-else>
       <div class="fm-layout">
-        <aside class="fm-side">
+        <aside class="fm-side target">
           <div class="fm-side-head">
-            <strong>产品标准字段</strong><span class="dim">{{ filteredSources.length }} / {{ sourceFields.length }}</span>
+            <strong>监管目标字段</strong><span class="dim">{{ filteredTargets.length }} / {{ visibleScopeTargets.length }}</span>
           </div>
-          <input v-model="searchSource" class="fm-search" type="search" placeholder="搜索字段" />
+          <input v-model="searchTarget" class="fm-search" type="search" placeholder="搜索字段" />
           <div class="fm-filters">
-            <select v-model="groupSource">
-              <option value="">全部字段大类</option>
-              <option v-for="group in sourceGroupOptions" :key="group.code" :value="group.code">{{ group.label }}</option>
+            <select v-if="scopeActive" v-model="scopeFilter">
+              <option value="scope">范围内</option>
+              <option value="out">范围外</option>
+              <option value="all">全部</option>
             </select>
-            <select v-model="statusSource">
+            <select v-model="groupTarget">
+              <option value="">全部字段大类</option>
+              <option v-for="group in targetGroupOptions" :key="group.code" :value="group.code">{{ group.label }}</option>
+            </select>
+            <select v-model="statusTarget">
               <option value="all">全部状态</option>
               <option value="mapped">已映射</option>
               <option value="unmapped">未映射</option>
+              <option value="required">必填</option>
             </select>
           </div>
           <div class="fm-select-bar">
-            <span>已选 <b>{{ selectedSources.length }}</b></span>
-            <button type="button" class="btn sm" @click="selectAllSources">全选</button>
-            <button type="button" class="btn sm" @click="clearSources">取消选择</button>
-            <button type="button" class="btn sm" @click="clearSourceFilters">清空筛选</button>
+            <span>已选 <b>{{ selectedTargets.length }}</b></span>
+            <button type="button" class="btn sm" @click="selectAllTargets">全选</button>
+            <button type="button" class="btn sm" @click="clearTargets">取消选择</button>
+            <button type="button" class="btn sm" @click="clearTargetFilters">清空筛选</button>
           </div>
           <div class="fm-group-tools">
-            <span>按标准字段所属分组</span>
-            <button type="button" class="btn sm" @click="expandGroups('source', true)">展开</button>
-            <button type="button" class="btn sm" @click="expandGroups('source', false)">收起</button>
+            <span>按敞口划分字段分组</span>
+            <button type="button" class="btn sm" @click="expandGroups('target', true)">展开</button>
+            <button type="button" class="btn sm" @click="expandGroups('target', false)">收起</button>
           </div>
           <div class="fm-side-list">
-            <div v-for="group in sourceGroups" :key="group.key" class="fm-group">
-              <button type="button" class="fm-group-head" @click="toggleGroup('source', group.key)">
+            <div v-for="group in targetGroups" :key="group.key" class="fm-group">
+              <button type="button" class="fm-group-head" @click="toggleGroup('target', group.key)">
                 <span>{{ group.label }}（{{ group.fields.length }}）</span>
                 <span v-if="group.selected" class="fm-group-sel">已选 {{ group.selected }}</span>
-                <span class="fm-group-arrow">{{ groupOpen('source', group.key) ? '▾' : '▸' }}</span>
+                <span class="fm-group-arrow">{{ groupOpen('target', group.key) ? '▾' : '▸' }}</span>
               </button>
-              <div v-show="groupOpen('source', group.key)">
+              <div v-show="groupOpen('target', group.key)">
                 <div
                   v-for="field in group.fields"
                   :key="field.name"
                   class="fm-field-row"
-                  :class="{ active: selectedSources.includes(field.name) || highlight === 's_' + field.name }"
+                  :class="{ active: selectedTargets.includes(field.name) || highlight === 't_' + field.name }"
                   role="button"
                   tabindex="0"
-                  @click="pickSourceRow(field, indexOfSource(field.name), $event)"
-                  @dblclick="openSource(field)"
+                  @click="pickTargetRow(field, indexOfTarget(field.name), $event)"
+                  @dblclick="openTarget(field)"
                 >
                   <input
                     type="checkbox"
                     class="fm-check"
-                    :checked="selectedSources.includes(field.name)"
+                    :checked="selectedTargets.includes(field.name)"
                     @click.stop
-                    @change="toggleSource(field.name)"
+                    @change="toggleTarget(field.name)"
                   />
-                  <span class="fm-dot" :class="{ on: mappedSourceCount.has(field.name) }"></span>
+                  <span class="fm-dot" :class="{ on: mappedTargets.has(field.name) }"></span>
                   <span class="fm-field-main">
                     <span class="mono fm-field-code" :title="field.name">{{ field.name }}</span>
                     <span class="fm-field-label" :title="field.label">{{ field.label }}</span>
                   </span>
                   <span class="fm-field-type">{{ field.type }}</span>
-                  <span v-if="sourceLinkCount(field.name)" class="fm-field-count">{{ sourceLinkCount(field.name) }}</span>
+                  <span v-if="field.required" class="fm-field-required">必填</span>
                 </div>
               </div>
             </div>
-            <p v-if="!sourceGroups.length" class="dim" style="padding: 8px">
-              {{ statusSource === 'unmapped' && sourceFields.length ? '源字段都已有映射，切换「全部状态」查看。' : '没有符合条件的源字段。' }}
+            <p v-if="!targetGroups.length" class="dim" style="padding: 8px">
+              {{ statusTarget === 'unmapped' && visibleScopeTargets.length ? '目标字段都已有映射，切换「全部状态」查看。' : '没有符合条件的目标字段。' }}
             </p>
           </div>
         </aside>
@@ -1486,6 +1545,11 @@ function onKey(event) {
         </section>
 
         <section v-else class="fm-map-panel">
+          <div v-if="(scopeActive && outOfScopeLinkCount) || calcLinkCount" class="fm-scope-banner">
+            <span v-if="scopeActive && outOfScopeLinkCount">有 {{ outOfScopeLinkCount }} 条已有映射不在当前适用风险暴露类型范围内。</span>
+            <span v-if="calcLinkCount">有 {{ calcLinkCount }} 条映射指向系统计算字段，字段映射中不显示。</span>
+            <button v-if="scopeActive && outOfScopeLinkCount" type="button" class="btn sm" @click="showOutOfScope = !showOutOfScope">{{ showOutOfScope ? "隐藏范围外映射" : "显示范围外映射" }}</button>
+          </div>
           <div class="fm-map-toolbar">
             <h3>映射关系 <span class="sub">{{ linkedMappingRows.length }} / {{ mappingRows.length }}</span></h3>
             <input v-model="mappingSearch" class="fm-search" type="search" placeholder="搜索目标字段、源字段或说明" />
@@ -1621,71 +1685,70 @@ function onKey(event) {
           </div>
         </section>
 
-        <aside class="fm-side right">
+        <aside class="fm-side source">
           <div class="fm-side-head">
-            <strong>监管目标字段</strong><span class="dim">{{ filteredTargets.length }} / {{ targetFields.length }}</span>
+            <strong>产品标准字段</strong><span class="dim">{{ filteredSources.length }} / {{ sourceFields.length }}</span>
           </div>
-          <input v-model="searchTarget" class="fm-search" type="search" placeholder="搜索字段" />
+          <input v-model="searchSource" class="fm-search" type="search" placeholder="搜索字段" />
           <div class="fm-filters">
-            <select v-model="groupTarget">
+            <select v-model="groupSource">
               <option value="">全部字段大类</option>
-              <option v-for="group in targetGroupOptions" :key="group.code" :value="group.code">{{ group.label }}</option>
+              <option v-for="group in sourceGroupOptions" :key="group.code" :value="group.code">{{ group.label }}</option>
             </select>
-            <select v-model="statusTarget">
+            <select v-model="statusSource">
               <option value="all">全部状态</option>
               <option value="mapped">已映射</option>
               <option value="unmapped">未映射</option>
-              <option value="required">必填</option>
             </select>
           </div>
           <div class="fm-select-bar">
-            <span>已选 <b>{{ selectedTargets.length }}</b></span>
-            <button type="button" class="btn sm" @click="selectAllTargets">全选</button>
-            <button type="button" class="btn sm" @click="clearTargets">取消选择</button>
-            <button type="button" class="btn sm" @click="clearTargetFilters">清空筛选</button>
+            <span>已选 <b>{{ selectedSources.length }}</b></span>
+            <button type="button" class="btn sm" @click="selectAllSources">全选</button>
+            <button type="button" class="btn sm" @click="clearSources">取消选择</button>
+            <button type="button" class="btn sm" @click="clearSourceFilters">清空筛选</button>
           </div>
           <div class="fm-group-tools">
-            <span>按敞口划分字段分组</span>
-            <button type="button" class="btn sm" @click="expandGroups('target', true)">展开</button>
-            <button type="button" class="btn sm" @click="expandGroups('target', false)">收起</button>
+            <span>按标准字段所属分组</span>
+            <button type="button" class="btn sm" @click="expandGroups('source', true)">展开</button>
+            <button type="button" class="btn sm" @click="expandGroups('source', false)">收起</button>
           </div>
           <div class="fm-side-list">
-            <div v-for="group in targetGroups" :key="group.key" class="fm-group">
-              <button type="button" class="fm-group-head" @click="toggleGroup('target', group.key)">
+            <div v-for="group in sourceGroups" :key="group.key" class="fm-group">
+              <button type="button" class="fm-group-head" @click="toggleGroup('source', group.key)">
                 <span>{{ group.label }}（{{ group.fields.length }}）</span>
                 <span v-if="group.selected" class="fm-group-sel">已选 {{ group.selected }}</span>
-                <span class="fm-group-arrow">{{ groupOpen('target', group.key) ? '▾' : '▸' }}</span>
+                <span class="fm-group-arrow">{{ groupOpen('source', group.key) ? '▾' : '▸' }}</span>
               </button>
-              <div v-show="groupOpen('target', group.key)">
+              <div v-show="groupOpen('source', group.key)">
                 <div
                   v-for="field in group.fields"
                   :key="field.name"
                   class="fm-field-row"
-                  :class="{ active: selectedTargets.includes(field.name) || highlight === 't_' + field.name }"
+                  :class="{ active: selectedSources.includes(field.name) || highlight === 's_' + field.name }"
                   role="button"
                   tabindex="0"
-                  @click="pickTargetRow(field, indexOfTarget(field.name), $event)"
-                  @dblclick="openTarget(field)"
+                  @click="pickSourceRow(field, indexOfSource(field.name), $event)"
+                  @dblclick="openSource(field)"
                 >
                   <input
                     type="checkbox"
                     class="fm-check"
-                    :checked="selectedTargets.includes(field.name)"
+                    :checked="selectedSources.includes(field.name)"
                     @click.stop
-                    @change="toggleTarget(field.name)"
+                    @change="toggleSource(field.name)"
                   />
-                  <span class="fm-dot" :class="{ on: mappedTargets.has(field.name) }"></span>
+                  <span class="fm-dot" :class="{ on: mappedSourceCount.has(field.name) }"></span>
                   <span class="fm-field-main">
                     <span class="mono fm-field-code" :title="field.name">{{ field.name }}</span>
                     <span class="fm-field-label" :title="field.label">{{ field.label }}</span>
                   </span>
                   <span class="fm-field-type">{{ field.type }}</span>
-                  <span v-if="field.required" class="fm-field-required">必填</span>
+                  <span v-if="sourceLinkCount(field.name)" class="fm-field-count">{{ sourceLinkCount(field.name) }}</span>
                 </div>
               </div>
             </div>
-            <p v-if="!targetGroups.length" class="dim" style="padding: 8px">
-              {{ statusTarget === 'unmapped' && targetFields.length ? '目标字段都已有映射，切换「全部状态」查看。' : '没有符合条件的目标字段。' }}
+            <p v-if="!sourceGroups.length" class="dim" style="padding: 8px">
+              {{ statusSource === 'unmapped' && sourceFields.length ? '源字段都已有映射，切换「全部状态」查看。' : '没有符合条件的源字段。' }}
             </p>
           </div>
         </aside>
@@ -1693,7 +1756,7 @@ function onKey(event) {
 
       <div class="fm-stats">
         <span>源字段 {{ sourceFields.length }}</span>
-        <span>目标字段 {{ targetFields.length }}</span>
+        <span>目标字段 {{ baseTargetFields.length }}</span>
         <span>已映射目标 {{ completion.mapped }} / {{ completion.total }}（{{ completion.rate }}%）</span>
         <span>必填已映射 {{ completion.requiredMapped }} / {{ completion.required }}（{{ completion.requiredRate }}%）</span>
         <span>映射关系 {{ links.length }}</span>

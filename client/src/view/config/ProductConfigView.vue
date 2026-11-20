@@ -5,6 +5,7 @@ import {
 } from "@/api/config";
 import { onBeforeRouteLeave, useRoute, useRouter } from "vue-router";
 import { useContext } from "@/composables/useContext";
+import { buildExposureModel } from "@/utils/exposureModel";
 import AsyncView from "@/components/AsyncView.vue";
 import ProductWizard from "@/components/ProductWizard.vue";
 import JsonDocEditor from "@/components/JsonDocEditor.vue";
@@ -79,7 +80,56 @@ function requiredTargetsOf(entry, body) {
   return targets;
 }
 
+const exposureModel = computed(() => buildExposureModel(classRuleDoc.value, weightRuleDoc.value, [], []));
+const targetFieldDefs = computed(() => {
+  const map = {};
+  [classRuleDoc.value, weightRuleDoc.value].forEach((doc) => {
+    ((doc && doc.fields) || []).forEach((field) => {
+      if (field && field.name && !map[field.name]) map[field.name] = field;
+    });
+  });
+  return map;
+});
+
+function scopedTargetsOf(entry) {
+  const classes = new Set(entry && entry.candidate_exposure_classes || []);
+  if (!classes.size) return null;
+  const fields = new Set();
+  exposureModel.value.matrix.filter((row) => classes.has(row.code)).forEach((row) => {
+    [...row.clsIds, ...row.weightIds].forEach((id) => {
+      const node = exposureModel.value.nodes[id];
+      (node && node.fields || []).forEach((name) => {
+        if (!name || name === "exposure_class") return;
+        const def = targetFieldDefs.value[name];
+        if (def && def.source === "calc") return;
+        fields.add(name);
+      });
+    });
+  });
+  Object.values(targetFieldDefs.value).forEach((def) => {
+    if (def && def.name && def.required === true && (def.source || "column") === "column" && def.name !== "exposure_class") {
+      fields.add(def.name);
+    }
+  });
+  return fields.size ? fields : null;
+}
+
 function coverageOf(entry, body) {
+  const scoped = scopedTargetsOf(entry);
+  const mappedTargets = mappingTargetSet(body);
+  if (scoped) {
+    const required = new Set([...scoped].filter((name) => {
+      const def = targetFieldDefs.value[name];
+      return def && (def.required === true || def.missing_policy === "fail");
+    }));
+    const targets = required.size ? required : scoped;
+    const mappedCount = [...targets].filter((name) => mappedTargets.has(name)).length;
+    return {
+      required: targets.size,
+      mapped: mappedCount,
+      pct: targets.size ? Math.round(mappedCount / targets.size * 100) : 0
+    };
+  }
   const reported = (body && body.coverage) || {};
   if (reported.target_fields || reported.mapped_required) {
     const mapped = Number(reported.mapped_required || 0);
@@ -537,6 +587,7 @@ onBeforeRouteLeave(async () => {
                   <footer class="pr-quick" @click.stop>
                     <button type="button" @click.stop="openWorkbench(card, 'info')">产品组信息</button>
                     <button type="button" @click.stop="openWorkbench(card, 'fields')">标准字段</button>
+                    <button type="button" @click.stop="openWorkbench(card, 'exposure')">暴露类型</button>
                     <button type="button" @click.stop="openWorkbench(card, 'mapping')">字段映射<i>{{ card.mappingPct }}%</i></button>
                     <button type="button" @click.stop="openWorkbench(card, 'rules')">规则预览</button>
                   </footer>
@@ -573,6 +624,7 @@ onBeforeRouteLeave(async () => {
                       <td class="pr-quickcell" @click.stop>
                         <button type="button" @click.stop="openWorkbench(card, 'info')">信息</button>
                         <button type="button" @click.stop="openWorkbench(card, 'fields')">字段</button>
+                        <button type="button" @click.stop="openWorkbench(card, 'exposure')">暴露</button>
                         <button type="button" @click.stop="openWorkbench(card, 'mapping')">映射</button>
                         <button type="button" @click.stop="openWorkbench(card, 'rules')">规则</button>
                       </td>

@@ -89,8 +89,17 @@ cd client && npm run dev
 
 服务器上已有 MySQL 和 Docker 时，可以把前端、Koa、Flask 打进一个镜像，导出成 tar 拷过去运行。MySQL 不在镜像里。
 
+本机有 Docker 时：
+
 ```bash
 ./docker/build-and-save.sh          # 生成 release/rwa-agent-1.0.0-linux-amd64.tar
+```
+
+本机没有 Docker、但能 SSH 到服务器时，直接在服务器上构建：
+
+```bash
+cp docker/deploy.env.example docker/deploy.env
+./docker/deploy-remote.sh
 ```
 
 完整的服务器准备、数据库初始化、启动和排错步骤见 [docker/README.md](docker/README.md)。
