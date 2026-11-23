@@ -243,7 +243,7 @@ export function buildExposureModel(classification, weight, tableMeta, listMeta) 
     return node || null;
   }
 
-  const overlayClasses = new Set(["OUT_OF_SCOPE", "CAPITAL_DEDUCTION"]);
+  const overlayClasses = new Set(["OUT_OF_SCOPE", "CAPITAL_DEDUCTION", "DEFAULTED"]);
   const overlayIds = [];
   topClsIds.forEach((id) => {
     const node = nodes[id];

@@ -1,4 +1,5 @@
 import request from './request'
+import { currentUser } from '@/utils/auth'
 
 const codeOf = (code) => encodeURIComponent(code)
 
@@ -9,6 +10,73 @@ export const fetchProductStandardProducts = (version = '') =>
 
 export const fetchProductGroupMappings = (version = '') =>
   request.get('/product-standard/group-mappings', { params: version ? { version } : {} })
+
+export const assistProductGroup = (body) =>
+  request.post('/product-standard/assist/group', body, { timeout: 240000 })
+
+/**
+ * 分组生成的流式版本：事件为 status / token / decision / field / dictionary / mapping / result / error。
+ * action=answer 时只有 status / token / result / error。
+ */
+export async function assistProductGroupStream(body, handlers = {}, signal) {
+  const base = import.meta.env.VITE_API_BASE_URL || '/api'
+  const user = currentUser()
+  const response = await fetch(base + '/product-standard/assist/group/stream', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(user && user.username ? { 'X-RWA-User': user.username } : {})
+    },
+    body: JSON.stringify(body),
+    signal
+  })
+  if (!response.ok) {
+    const text = await response.text().catch(() => '')
+    let message = text
+    try {
+      const parsed = JSON.parse(text)
+      message = parsed.error || text
+    } catch {
+      // keep raw text
+    }
+    throw new Error(message || '请求失败')
+  }
+  if (!response.body) throw new Error('浏览器不支持流式响应')
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  const dispatch = (frame) => {
+    let event = 'message'
+    const data = []
+    frame.split('\n').forEach((line) => {
+      if (line.startsWith('event:')) event = line.slice(6).trim()
+      else if (line.startsWith('data:')) data.push(line.slice(5).trim())
+    })
+    if (!data.length) return
+    let payload = null
+    try {
+      payload = JSON.parse(data.join('\n'))
+    } catch {
+      payload = { text: data.join('\n') }
+    }
+    const handler = handlers[event]
+    if (typeof handler === 'function') handler(payload)
+  }
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    let index = buffer.indexOf('\n\n')
+    while (index >= 0) {
+      const frame = buffer.slice(0, index)
+      buffer = buffer.slice(index + 2)
+      if (frame.trim()) dispatch(frame)
+      index = buffer.indexOf('\n\n')
+    }
+  }
+  if (buffer.trim()) dispatch(buffer)
+}
 
 export const createProduct = (body) => request.post('/products', body)
 

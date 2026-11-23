@@ -241,18 +241,20 @@
 /* 抽屉，对齐页面弹窗：圆角、浅色标题底、模糊遮罩 */
 .drawer-mask{
   position: fixed; inset: 0; background: rgba(15, 23, 42, .45); backdrop-filter: blur(2px);
-  z-index: 900; opacity: 0; pointer-events: none; transition: opacity .18s;
+  z-index: 900; opacity: 0; pointer-events: none; transition: opacity .14s;
 }
 .drawer-mask.open{ opacity: 1; pointer-events: auto; }
 .drawer{
   position: fixed; top: 12px; right: 12px; bottom: 12px; width: 640px; max-width: calc(100vw - 24px);
   background: #fff; border: 1px solid var(--border); border-radius: 16px; overflow: hidden;
   box-shadow: 0 24px 64px rgba(15, 23, 42, .22); z-index: 901;
-  transform: translateX(calc(100% + 24px)); transition: transform .22s cubic-bezier(.4,0,.2,1);
+  transform: translateX(calc(100% + 24px)); transition: transform .16s cubic-bezier(.4,0,.2,1);
   display: flex; flex-direction: column;
 }
 .drawer.open{ transform: translateX(0); }
 .drawer.wide{ width: min(920px, calc(100vw - 24px)); }
+.drawer.full{ width: calc(100vw - 24px); }
+.drawer.flush .drawer-body{ padding: 0; overflow: hidden; background: #f4f6f8; }
 .drawer-head{
   padding: 16px 18px; border-bottom: 1px solid var(--border);
   background: linear-gradient(135deg, #eef7f3, #fff 70%);
@@ -817,4 +819,28 @@
 .drawer .field input, .drawer .field select,
 .modal .field input, .modal .field select {
   height: auto; min-height: 34px; width: 100%; padding: 6px 10px;
+}
+
+/* 禁用字段统一灰显，避免只有部分下拉框看起来可编辑。 */
+#auditBody .field select:disabled,
+#auditBody .field input:disabled,
+#auditBody .field textarea:disabled,
+#auditBody .inline-fields select:disabled,
+#auditBody .inline-fields input:disabled,
+.drawer .field select:disabled,
+.drawer .field input:disabled,
+.modal .field select:disabled,
+.modal .field input:disabled {
+  background: #f8fafc;
+  color: #94a3b8;
+  border-color: #e2e8f0;
+  cursor: not-allowed;
+}
+#auditBody .field select:disabled,
+#auditBody .inline-fields select:disabled,
+.drawer .field select:disabled,
+.modal .field select:disabled {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: none;
 }

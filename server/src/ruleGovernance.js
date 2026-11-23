@@ -141,13 +141,18 @@ async function rawConfig(row) {
     query("SELECT * FROM rule_clause_relation WHERE rule_version_id = ? ORDER BY clause_id, rule_node_id", [row.id]),
     configProducts(row.version)
   ]);
+  const liquidityRows = await Promise.all(
+    LIQUIDITY_TABLES.map((table) =>
+      query(
+        `SELECT * FROM ${table} WHERE jurisdiction = ? AND rule_version = ?`,
+        [row.jurisdiction, row.version]
+      )
+    )
+  );
   const liquidity = {};
-  for (const table of LIQUIDITY_TABLES) {
-    liquidity[table] = await query(
-      `SELECT * FROM ${table} WHERE jurisdiction = ? AND rule_version = ?`,
-      [row.jurisdiction, row.version]
-    );
-  }
+  LIQUIDITY_TABLES.forEach((table, index) => {
+    liquidity[table] = liquidityRows[index];
+  });
   return { row, documents, tables, lists, eadConfigs, eadRules, crmConfigs, crmSlots, crmTypes, clauses, relations, products, liquidity };
 }
 

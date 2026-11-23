@@ -829,6 +829,15 @@ function validateProductRegistry(doc) {
           nonEmptyString(field.group, fieldPath + ".group", errors);
           if (field.group && !groupIds.has(field.group)) errors.push(fieldPath + ".group：分组 " + field.group + " 不在 standard_field_groups 内");
           enumValue(field.status, ["ACTIVE", "DISABLED"], fieldPath + ".status", errors);
+          if (field.input_mode != null) {
+            enumValue(field.input_mode, ["manual", "default"], fieldPath + ".input_mode", errors);
+            if (field.shared_defaults != null && typeof field.shared_defaults !== "boolean") {
+              errors.push(fieldPath + ".shared_defaults：必须是布尔值");
+            }
+            if (field.input_mode === "default" && !String(field.default_value == null ? "" : field.default_value).trim() && field.shared_defaults !== true) {
+              errors.push(fieldPath + ".default_value：输入方式为 default 时必填");
+            }
+          }
           if (field.dictionary != null && String(field.dictionary) !== "") {
             const dict = dictionaryMap.get(field.dictionary);
             if (!dict) errors.push(fieldPath + ".dictionary：字典 " + field.dictionary + " 不存在");
@@ -893,7 +902,14 @@ function validateDataMapping(doc) {
       "required", "missing_policy", "default_value", "description", "regulatory_reference",
       "target_group", "role"
     ], path, errors);
-    nonEmptyString(mapping.source_field, path + ".source_field", errors);
+    const constantTransform = isObject(mapping.transform) && mapping.transform.type === "constant";
+    if (constantTransform) {
+      if (mapping.source_field != null && typeof mapping.source_field !== "string") {
+        errors.push(path + ".source_field：必须是字符串");
+      }
+    } else {
+      nonEmptyString(mapping.source_field, path + ".source_field", errors);
+    }
     if (!TARGET_FIELD.test(String(mapping.target_field || ""))) errors.push(path + ".target_field：必须匹配 ^[a-z][a-z0-9_]*$");
     else if (seen.has(mapping.target_field)) errors.push(path + ".target_field：目标字段 " + mapping.target_field + " 重复");
     else seen.add(mapping.target_field);
@@ -910,6 +926,9 @@ function validateDataMapping(doc) {
       enumValue(transform.type, TRANSFORM_TYPES, path + ".transform.type", errors);
       enumValue(transform.on_unmapped_code, ["manual_review", "fail", "null"], path + ".transform.on_unmapped_code", errors);
       if (transform.type === "code_mapping" && !isObject(transform.mapping)) errors.push(path + ".transform.mapping：code_mapping 需要对照表");
+      if (transform.type === "constant" && (!isObject(transform.parameters) || transform.parameters.value == null || String(transform.parameters.value).trim() === "")) {
+        errors.push(path + ".transform.parameters.value：constant 转换必须填写默认值");
+      }
     }
   });
   if (doc.validation_rules != null) {

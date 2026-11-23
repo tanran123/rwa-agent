@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import io
+import json
 import os
 import re
 import shutil
@@ -37,7 +38,7 @@ def _load_local_env() -> None:
 
 _load_local_env()
 
-from flask import Flask, jsonify, request, send_file
+from flask import Flask, jsonify, request, send_file, Response, stream_with_context
 
 from agent.core.market.calculator import field_catalog, inspect_workbook, list_type_columns, run_with_mappings, write_rwa_workbook
 from agent.core.market.compare import compare_module, module_catalog, write_comparison
@@ -1121,6 +1122,65 @@ def hqla_recognize_fields():
     except Exception as exc:
         return jsonify({"error": f"字段识别建议失败：{exc}"}), 500
     return jsonify({"mapping": mapping.get("mapping", {}), **_hqla_agent_meta("liquidity-standard-field-matcher")})
+
+
+@app.post("/api/product/assist/group")
+def product_assist_group():
+    """按监管字段分组生成标准字段和映射。只返回当前分组建议稿。"""
+    from agent.llm.capabilities.product_group import answer_group, assist_group
+
+    data = _hqla_payload()
+    action = str(data.get("action") or "propose")
+    if action not in {"propose", "refine", "answer"}:
+        return jsonify({"error": "不支持的分组动作：" + action}), 400
+    group = data.get("group") if isinstance(data.get("group"), dict) else {}
+    targets = data.get("targetFields") if isinstance(data.get("targetFields"), list) else []
+    if not group.get("id"):
+        return jsonify({"error": "缺少当前监管字段分组"}), 400
+    if not targets and action != "answer":
+        return jsonify({"error": "当前分组没有目标字段"}), 400
+    try:
+        with use_llm_config(_llm_of(data)):
+            result = answer_group(data) if action == "answer" else assist_group(data)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": f"分组字段建议失败：{exc}"}), 500
+    return jsonify({**result, **_hqla_agent_meta("product-field-group")})
+
+
+@app.post("/api/product/assist/group/stream")
+def product_assist_group_stream():
+    """按监管字段分组生成建议的流式版本。只返回 SSE 事件，不写库。"""
+    from agent.llm.capabilities.product_group import answer_group_stream, assist_group_stream
+
+    data = _hqla_payload()
+    action = str(data.get("action") or "propose")
+    if action not in {"propose", "refine", "answer"}:
+        return jsonify({"error": "不支持的分组动作：" + action}), 400
+    group = data.get("group") if isinstance(data.get("group"), dict) else {}
+    targets = data.get("targetFields") if isinstance(data.get("targetFields"), list) else []
+    if not group.get("id"):
+        return jsonify({"error": "缺少当前监管字段分组"}), 400
+    if not targets and action != "answer":
+        return jsonify({"error": "当前分组没有目标字段"}), 400
+
+    def generate():
+        with use_llm_config(_llm_of(data)):
+            events = answer_group_stream(data) if action == "answer" else assist_group_stream(data)
+            for item in events:
+                payload = json.dumps(item.get("data") or {}, ensure_ascii=False)
+                yield "event: " + str(item.get("event") or "message") + "\n"
+                yield "data: " + payload + "\n\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+            **_hqla_agent_meta("product-field-group")
+        }
+    )
 
 
 @app.post("/api/hqla/compute")

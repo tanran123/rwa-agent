@@ -174,6 +174,13 @@ function buildFacts(loan, product, mappingDoc, suggestions, columns) {
       if (value != null && facts[entry.target_field] == null) facts[entry.target_field] = value;
     });
   });
+  // 产品级默认值可以不挂标准字段：source_field 为空，只按目标字段写常量。
+  ((mappingDoc && mappingDoc.mappings) || []).forEach((entry) => {
+    if (!entry || entry.source_field) return;
+    if (!entry.transform || entry.transform.type !== "constant") return;
+    const value = entry.transform.parameters && entry.transform.parameters.value;
+    if (value != null && facts[entry.target_field] == null) facts[entry.target_field] = value;
+  });
   return facts;
 }
 

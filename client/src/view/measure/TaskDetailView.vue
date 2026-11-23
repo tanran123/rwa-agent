@@ -130,6 +130,7 @@ async function openHqla(data, sub) {
 
   <AsyncView ref="view" :load="load">
     <template #default="{ data }">
+      <div class="task-detail-page">
       <div class="panel">
         <div class="panel-head">
           <h3>主任务信息</h3>
@@ -269,11 +270,13 @@ async function openHqla(data, sub) {
           </table>
         </div>
       </div>
+      </div>
     </template>
   </AsyncView>
 </template>
 
 <style scoped>
+.task-detail-page { padding-bottom: 110px; }
 .lq-progress { display: flex; align-items: center; gap: 6px; }
 .lq-progress-bar { flex: 1; min-width: 70px; height: 6px; background: #eef2ff; border-radius: 5px; overflow: hidden; }
 .lq-progress-bar i { display: block; height: 100%; background: #f59e0b; }

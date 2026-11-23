@@ -43,13 +43,15 @@ function eadGroupKey(field) {
 const eadFieldGroups = computed(() => {
   const list = (product.value && product.value.fields) || [];
   const map = new Map();
+  const labels = new Map();
   list.forEach((field) => {
     const key = eadGroupKey(field);
+    if (!map.has(key)) labels.set(key, field.groupLabel || key);
     map.set(key, (map.get(key) || 0) + 1);
   });
   return [
     { code: EAD_ALL_FIELDS, label: "全部字段", count: list.length },
-    ...Array.from(map.entries()).map(([code, count]) => ({ code, label: code, count }))
+    ...Array.from(map.entries()).map(([code, count]) => ({ code, label: labels.get(code) || code, count }))
   ];
 });
 const filteredEadFields = computed(() => {

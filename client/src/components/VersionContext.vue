@@ -3,6 +3,7 @@ import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useContext } from "@/composables/useContext";
 import { CAPITAL_LINKS, LIQUIDITY_LINKS, ruleLinkActive } from "@/utils/ruleLinks";
+import { configStatusLabel } from "@/utils/versionText";
 
 const props = defineProps({
   version: { type: Object, default: null },
@@ -68,7 +69,7 @@ function active(path) {
           </div>
           <div class="vc-item vc-meta">
             <span>配置状态</span>
-            <b>{{ shown.configStatus || "—" }}</b>
+            <b>{{ configStatusLabel(shown.configStatus) }}</b>
           </div>
           <div v-if="completeness != null" class="vc-item vc-meta">
             <span>完整度</span>

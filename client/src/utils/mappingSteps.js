@@ -3,6 +3,7 @@
 
 export const MAPPING_TYPES = [
   { key: "direct", label: "直接映射" },
+  { key: "constant", label: "默认值/常量" },
   { key: "transform", label: "转换映射" },
   { key: "conditional", label: "条件映射" },
   { key: "calculation", label: "计算映射" },
@@ -543,18 +544,26 @@ export function validateStep(step) {
 
 export function validateLink(link, sourceFields, targetDefs) {
   const issues = [];
-  const sources = link.sources && link.sources.length ? link.sources : [link.source];
+  const constant = link.mappingType === "constant";
+  const sources = link.sources && link.sources.length
+    ? link.sources
+    : (constant ? [] : [link.source]);
   if (!targetDefs[link.target]) issues.push("目标字段 " + link.target + " 不存在");
   sources.forEach((name) => {
+    if (!name) return;
     if (!sourceFields[name]) issues.push("源字段 " + name + " 不存在");
   });
   if (link.mappingType === "composite" && sources.length < 2) issues.push("组合映射至少需要两个源字段");
+  if (!constant && !sources.length) issues.push("还没有选择源字段");
+  if (constant && !String(link.defaultValue == null ? "" : link.defaultValue).trim()) {
+    issues.push("默认值映射必须填写默认值");
+  }
   if (!link.mappingType) issues.push("还没有选择映射方式");
   (link.steps || []).forEach((step, index) => {
     validateStep(step).forEach((item) => issues.push("步骤 " + (index + 1) + "（" + step.name + "）：" + item));
   });
   const target = targetDefs[link.target];
-  if (target && sources.length === 1 && sourceFields[sources[0]] && target.type && sourceFields[sources[0]].type) {
+  if (link.mappingType !== "constant" && target && sources.length === 1 && sourceFields[sources[0]] && target.type && sourceFields[sources[0]].type) {
     const sourceType = sourceFields[sources[0]].type;
     const typed = ["string", "number", "date", "boolean"].includes(sourceType);
     if (typed && sourceType !== target.type && ["number", "date", "boolean"].includes(target.type) && !(link.steps || []).length) {
@@ -566,6 +575,7 @@ export function validateLink(link, sourceFields, targetDefs) {
 
 export function engineTransformType(mappingType, steps) {
   if (mappingType === "direct") return "direct";
+  if (mappingType === "constant") return "constant";
   if (mappingType === "conditional") return "conditional";
   if (mappingType === "calculation") return "calculation";
   if ((steps || []).some((step) => step.type === "code_map" || step.type === "code_map2")) return "code_mapping";

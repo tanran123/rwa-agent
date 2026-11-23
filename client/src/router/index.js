@@ -61,7 +61,7 @@ const routes = [
   { path: '/mappings', name: 'mappings', component: MappingsView, meta: { group: '规则配置', title: '字段映射', blurb: '源系统字段对到标准字段。', sections: fieldTabs, versionContext: true } },
   { path: '/product-config', name: 'product-config', component: ProductConfigView, meta: { group: '规则配置', title: '产品标准字段配置', blurb: '产品规则注册决定用哪套映射和哪套规则集，数据字段映射决定源字段如何变成规则输入。', versionContext: true } },
   { path: '/exposure-config', name: 'exposure-config', component: ExposureOverviewPage, meta: { group: '规则配置', title: '敞口划分', blurb: '按全景图、分类矩阵和决策流程查看分类与权重规则，点击节点查看规则、参数表和名单。', versionContext: true } },
-  { path: '/product-workbench/:family/:module?', name: 'product-workbench', component: ProductWorkbenchView, meta: { group: '规则配置', title: '产品配置工作台', blurb: '单个产品的产品组、标准字段、字段映射和规则预览统一在这里配置。', versionContext: true } },
+  { path: '/product-workbench/:family/:module?', name: 'product-workbench', component: ProductWorkbenchView, meta: { group: '规则配置', title: '产品配置工作台', blurb: '单个产品的产品组、标准字段与映射、适用风险暴露类型和规则预览统一在这里配置。', versionContext: true } },
   { path: '/generic', name: 'generic', component: GenericView, meta: { group: '规则配置', title: '通用暴露分类规则', blurb: '分类瀑布。命中进入下级，本层都不成立再看下一条。', sections: classTabs, versionContext: true } },
   { path: '/exposure', name: 'exposure', component: ExposureView, meta: { group: '规则配置', title: '产品线路', blurb: '每个产品挂在通用分类上的专属规则。', sections: classTabs, versionContext: true } },
   { path: '/crm', name: 'crm', component: CrmView, meta: { group: '规则配置', title: '信用风险缓释', blurb: '合格工具，以及什么情况下这条缓释不计入。', sections: classTabs, versionContext: true } },

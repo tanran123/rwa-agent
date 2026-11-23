@@ -116,6 +116,7 @@
 | `llm/skills/reference-data/SKILL.md` | `hqla_reference` 的来源、匹配键、手工补录和 stale 口径。 |
 | `llm/skills/working-paper/SKILL.md` | 底稿缓存的字段和只读口径，明确不要调用 `load_or_compute()`。 |
 | `llm/skills/rule-learn/SKILL.md` | 从规则 Excel 学规则。对应 `llm/capabilities/rule_learn.py`。 |
+| `llm/skills/product-field-group/SKILL.md` | 按监管字段分组逐组生成标准字段、字典和映射：只处理当前组目标字段，基于服务端提供的 `profile` 字段画像和 `usedBy` 规则用途解释字段，为每个目标字段输出一条决策（复用/新建/默认值/系统计算/跳过/缺失），并给出标准字段、字典、完整映射转换、原因和置信度；库表映射的转换规则以已有映射文档为准；支持流式逐条决策、对话修订和纯问答（`action=answer`，只回答不改决策）。对应 `llm/capabilities/product_group.py` 的 `assist_group` / `assist_group_stream` / `answer_group` / `answer_group_stream`，不是流水线步骤。 |
 | `llm/skills/rule-chat/SKILL.md` | 知识库没命中时的兜底回答。对应 `llm/capabilities/rule_chat.py` 的 `answer`。 |
 | `llm/skills/rule-basis/SKILL.md` | 知识库没有原文时的规则依据概括。对应 `rule_chat.basis`。 |
 

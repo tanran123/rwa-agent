@@ -128,11 +128,15 @@ function present(row, full) {
 const DOC_SQL = "SELECT * FROM rule_document";
 
 export async function ruleDocuments({ jurisdiction = "", version = "", kind = "" } = {}) {
+  // 不在 SQL 里 ORDER BY：rule_document.body 很大，全量排序会触发
+  // MySQL 的 out-of-sort-memory（尤其不传 version 时）。取回后再排序。
   const rows = await query(
-    DOC_SQL + " WHERE (? = '' OR jurisdiction = ?) AND (? = '' OR rule_version = ?) AND (? = '' OR kind = ?) ORDER BY kind, name",
+    DOC_SQL + " WHERE (? = '' OR jurisdiction = ?) AND (? = '' OR rule_version = ?) AND (? = '' OR kind = ?)",
     [jurisdiction, jurisdiction, version, version, kind, kind]
   );
-  return rows.map((row) => present(row, false));
+  return rows.map((row) => present(row, false)).sort((left, right) => (
+    String(left.kind).localeCompare(String(right.kind)) || String(left.name).localeCompare(String(right.name))
+  ));
 }
 
 export async function ruleDocument(id) {

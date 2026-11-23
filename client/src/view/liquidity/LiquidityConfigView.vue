@@ -98,6 +98,7 @@ const filtered = computed(() => {
 const PAGE_SIZES = [12, 24, 48];
 const page = ref(1);
 const pageSize = ref(12);
+const viewMode = ref("list");
 
 const totalPages = computed(() => Math.max(1, Math.ceil(filtered.value.length / pageSize.value)));
 const currentPage = computed(() => Math.min(Math.max(page.value, 1), totalPages.value));
@@ -115,6 +116,7 @@ const pageNumbers = computed(() => {
 
 watch(filters, () => { page.value = 1; }, { deep: true });
 watch(pageSize, () => { page.value = 1; });
+watch(viewMode, () => { page.value = 1; });
 
 function goPage(value) {
   page.value = Math.min(Math.max(1, value), totalPages.value);
@@ -328,6 +330,11 @@ onBeforeUnmount(() => document.removeEventListener("click", closeMenu));
       <option value="DISABLED">已停用</option>
     </select>
     <button type="button" class="btn sm" @click="resetFilters">重置</button>
+    <span class="spacer"></span>
+    <div class="lq-seg" role="group" aria-label="视图切换">
+      <button type="button" :class="{ on: viewMode === 'card' }" @click="viewMode = 'card'">卡片</button>
+      <button type="button" :class="{ on: viewMode === 'list' }" @click="viewMode = 'list'">列表</button>
+    </div>
   </div>
 
   <div class="lq-list-head">
@@ -368,7 +375,7 @@ onBeforeUnmount(() => document.removeEventListener("click", closeMenu));
     <p class="dim">请调整筛选条件或重置筛选。</p>
     <button type="button" class="btn sm" @click="resetFilters">重置筛选</button>
   </div>
-  <div v-else class="lq-cards">
+  <div v-else-if="viewMode === 'card'" class="lq-cards">
     <div
       v-for="product in pageItems"
       :key="product.code"
@@ -423,6 +430,67 @@ onBeforeUnmount(() => document.removeEventListener("click", closeMenu));
       </div>
       <span class="lq-card-open">点击卡片进入配置工作台 →</span>
     </div>
+  </div>
+  <div v-else class="lq-table-wrap">
+    <table class="lq-table">
+      <thead>
+        <tr>
+          <th>产品名称</th>
+          <th>产品编码</th>
+          <th>业务大类</th>
+          <th>侧别</th>
+          <th>状态</th>
+          <th>产品组</th>
+          <th>标准字段</th>
+          <th>关联规则</th>
+          <th>配置完整性</th>
+          <th>快捷入口</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr
+          v-for="product in pageItems"
+          :key="product.code"
+          role="button"
+          tabindex="0"
+          @click="openProduct(product, 'overview')"
+          @keydown.enter.self.prevent="openProduct(product, 'overview')"
+          @keydown.space.self.prevent="openProduct(product, 'overview')"
+        >
+          <td><b>{{ product.name }}</b></td>
+          <td class="mono">{{ product.code }}</td>
+          <td>{{ product.category }}</td>
+          <td>{{ SIDE_LABEL[product.side] || product.side }}</td>
+          <td>
+            <span class="tag" :class="product.status === 'LIVE' ? 'green' : product.status === 'DRAFT' ? 'amber' : 'muted'">
+              {{ STATUS_LABEL[product.status] || product.status }}
+            </span>
+          </td>
+          <td>{{ product.groupMode === "GROUP" ? product.productGroups.length : "—" }}</td>
+          <td>{{ product.fields.length }}</td>
+          <td>{{ product.ruleCount }}</td>
+          <td>
+            <div class="lq-row-completeness" :title="completenessTip(product)" @click.stop="openProduct(product, 'check')">
+              <div class="lq-progress-bar"><i :style="{ width: product.completeness.score + '%' }"></i></div>
+              <b :class="{ ok: product.completeness.score >= 100 }">{{ product.completeness.score }}%</b>
+            </div>
+          </td>
+          <td class="lq-row-links" @click.stop>
+            <button type="button" @click="openProduct(product, 'groups')">产品组</button>
+            <button type="button" @click="openProduct(product, 'fields')">字段</button>
+            <button type="button" @click="openProduct(product, 'rules')">规则</button>
+            <button type="button" @click="openProduct(product, 'preview')">预览</button>
+          </td>
+          <td class="lq-row-actions" @click.stop>
+            <button type="button" @click="openEdit(product)">编辑</button>
+            <button type="button" @click="openCopy(product)">复制</button>
+            <button type="button" @click="toggleStatus(product)">{{ product.status === "DISABLED" ? "启用" : "停用" }}</button>
+            <button type="button" class="danger" @click="remove(product)">删除</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
   </div>
   <div v-if="!loading && totalPages > 1" class="lq-pager">
     <span class="dim">共 {{ filtered.length }} 个产品 · 第 {{ currentPage }} / {{ totalPages }} 页</span>
@@ -560,8 +628,7 @@ onBeforeUnmount(() => document.removeEventListener("click", closeMenu));
   display: flex;
   align-items: center;
   gap: 6px;
-  flex-wrap: nowrap;
-  overflow-x: auto;
+  flex-wrap: wrap;
   padding: 2px 0 8px;
 }
 .lq-toolbar .lq-search {
@@ -589,6 +656,54 @@ onBeforeUnmount(() => document.removeEventListener("click", closeMenu));
   box-sizing: border-box;
 }
 .lq-toolbar .btn { flex: 0 0 auto; height: 34px; padding: 0 12px; }
+.lq-seg { display: inline-flex; padding: 3px; gap: 2px; border-radius: 9px; background: #f2f4f7; }
+.lq-seg button {
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.lq-seg button.on { background: #fff; color: var(--ink); box-shadow: 0 1px 2px rgba(15, 23, 42, 0.10); font-weight: 650; }
+.lq-table-wrap { overflow: auto; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+.lq-table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+.lq-table th {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  background: #fafbfc;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 650;
+  text-align: left;
+  white-space: nowrap;
+}
+.lq-table td { padding: 7px 10px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+.lq-table tbody tr { cursor: pointer; }
+.lq-table tbody tr:hover td { background: #fafbff; }
+.lq-table tbody tr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.lq-table tbody tr:last-child td { border-bottom: 0; }
+.lq-table td b { font-size: 12px; }
+.lq-row-completeness { display: flex; align-items: center; gap: 8px; min-width: 110px; cursor: pointer; }
+.lq-row-completeness .lq-progress-bar { flex: 1; height: 5px; }
+.lq-table .lq-row-completeness b { font-size: 10.5px; color: #b45309; white-space: nowrap; }
+.lq-table .lq-row-completeness b.ok { color: #047857; }
+.lq-row-links, .lq-row-actions { white-space: nowrap; }
+.lq-row-links button, .lq-row-actions button {
+  margin-right: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #3730a3;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.lq-row-links button:hover, .lq-row-actions button:hover { text-decoration: underline; }
+.lq-row-actions button { color: #475569; }
+.lq-row-actions button.danger { color: #b91c1c; }
 .lq-cards {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));

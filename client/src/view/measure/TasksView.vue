@@ -13,6 +13,7 @@ const error = ref("");
 const busy = ref(false);
 const form = ref(null);
 const editingId = ref("");
+const introOpen = ref(false);
 const tasks = ref([]);
 const total = ref(0);
 const page = ref(1);
@@ -226,10 +227,16 @@ function openTask(task) {
 <template>
   <p v-if="error" class="notice danger">{{ error }}</p>
 
-  <p class="notice info">
-    每个季度是一个主任务。主任务创建时固定监管规则版本和机构；任务清单统计两个工作模块的子任务数量和进度，
-    点任务进入详情工作台，再在资本充足率或流动性模块下新增子任务。
-  </p>
+  <div class="task-intro">
+    <button type="button" class="btn xs" @click="introOpen = !introOpen">
+      {{ introOpen ? "收起说明" : "任务说明" }}
+    </button>
+    <span v-if="!introOpen" class="dim">每个季度一个主任务；点任务进入详情工作台。</span>
+    <p v-else class="notice info" style="margin: 8px 0 0">
+      每个季度是一个主任务。主任务创建时固定监管规则版本和机构；任务清单统计两个工作模块的子任务数量和进度，
+      点任务进入详情工作台，再在资本充足率或流动性模块下新增子任务。
+    </p>
+  </div>
 
   <div class="panel task-filters">
     <div class="panel-body">
@@ -339,7 +346,12 @@ function openTask(task) {
               <tr v-for="task in tasks" :key="task.id" class="clickable" @click="openTask(task)">
                 <td>
                   <strong>{{ task.name }}</strong>
-                  <span v-if="duplicateNames.has(task.name)" class="tag amber" style="margin-left: 6px">同名</span>
+                  <span
+                    v-if="duplicateNames.has(task.name)"
+                    class="tag amber"
+                    style="margin-left: 6px"
+                    title="本清单内还有同名任务，请按监管版本、机构和基准日区分"
+                  >同名任务</span>
                   <div class="dim" style="font-size: 10.5px">{{ task.id }} · 基准日 {{ task.baseDate }}</div>
                 </td>
                 <td>
@@ -353,7 +365,7 @@ function openTask(task) {
                 </td>
                 <td>
                   <div v-if="task.capitalCount" style="min-width: 110px">
-                    <div class="dim" style="font-size: 11px">{{ task.archivedCount }} / {{ task.capitalCount }} 已归档 · {{ capitalPercent(task) }}%</div>
+                    <div class="dim" style="font-size: 11px">已归档 {{ task.archivedCount }} / {{ task.capitalCount }} · {{ capitalPercent(task) }}%</div>
                     <div class="progress" :class="{ ok: capitalPercent(task) === 100 }">
                       <i :style="{ width: capitalPercent(task) + '%' }"></i>
                     </div>
@@ -362,7 +374,8 @@ function openTask(task) {
                 </td>
                 <td>
                   <div v-if="task.liquidityCount" style="min-width: 110px">
-                    <div class="dim" style="font-size: 11px">{{ task.liquidityArchived || 0 }} / {{ task.liquidityCount }} 已归档 · {{ liquidityPercent(task) }}%</div>
+                    <div class="dim" style="font-size: 11px">归档 {{ task.liquidityArchived || 0 }} / {{ task.liquidityCount }}</div>
+                    <div class="dim" style="font-size: 11px">LCR 进度 {{ liquidityPercent(task) }}%</div>
                     <div class="progress" :class="{ ok: liquidityPercent(task) === 100 }">
                       <i :style="{ width: liquidityPercent(task) + '%' }"></i>
                     </div>

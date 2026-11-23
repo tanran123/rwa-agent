@@ -8,6 +8,7 @@ import AsyncView from "@/components/AsyncView.vue";
 import RuleForm from "@/components/RuleForm.vue";
 import { fillForm, finishSave, useAgentForm } from "@/composables/useAgentForm";
 import { askConfirm } from "@/utils/confirm";
+import { configStatusLabel } from "@/utils/versionText";
 
 const { session } = useContext();
 const router = useRouter();
@@ -251,7 +252,7 @@ async function removeRow(row) {
                 <td>{{ row.effectiveFrom }}{{ row.effectiveTo ? " 至 " + row.effectiveTo : " 起" }}</td>
                 <td>{{ row.institution }}</td>
                 <td><span class="tag" :class="tones[row.status]">{{ labels[row.status] || row.status }}</span></td>
-                <td class="small">{{ row.configStatus || "—" }}</td>
+                <td class="small">{{ configStatusLabel(row.configStatus) }}</td>
                 <td>{{ row.author }}</td>
                 <td>
                   <div class="btn-group">

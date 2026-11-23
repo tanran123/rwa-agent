@@ -6,6 +6,9 @@ const props = defineProps({
   open: { type: Boolean, default: false },
   title: { type: String, default: "" },
   wide: { type: Boolean, default: false },
+  full: { type: Boolean, default: false },
+  flush: { type: Boolean, default: false },
+  headless: { type: Boolean, default: false },
   to: { type: [String, Object], default: "body" }
 });
 const emit = defineEmits(["close"]);
@@ -38,8 +41,8 @@ onBeforeUnmount(() => {
 <template>
   <Teleport :to="to">
     <div v-if="open" class="drawer-mask" :class="{ open: shown }" @click="emit('close')"></div>
-    <aside v-if="open" class="drawer" :class="{ wide, open: shown }" role="dialog" aria-modal="true">
-      <div class="drawer-head">
+    <aside v-if="open" class="drawer" :class="{ wide, full, flush, open: shown }" role="dialog" aria-modal="true">
+      <div v-if="!headless" class="drawer-head">
         <h3>{{ title }}</h3>
         <div class="spacer"></div>
         <button type="button" class="modal-close" aria-label="关闭" @click="emit('close')">×</button>

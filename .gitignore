@@ -16,6 +16,7 @@ Dockerfile
 .dockerignore
 docker-compose.yml
 docker-compose.local.yml
+docker-compose.offline.yml
 docker/
 # Docker 部署用的环境变量文件（含密码/密钥），任何情况下都不提交
 docker/deploy.env

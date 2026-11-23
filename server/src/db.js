@@ -23,7 +23,7 @@ export const pool = mysql.createPool({
   database: process.env.MYSQL_DATABASE || "rwa",
   charset: "utf8mb4",
   waitForConnections: true,
-  connectionLimit: 8,
+  connectionLimit: 16,
   maxIdle: 4,
   idleTimeout: 30000,
   connectTimeout: 10000,

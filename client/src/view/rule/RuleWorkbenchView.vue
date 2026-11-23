@@ -11,6 +11,7 @@ import VersionContext from "@/components/VersionContext.vue";
 import VersionInfoForm from "@/components/VersionInfoForm.vue";
 import VersionModules from "@/components/VersionModules.vue";
 import { askConfirm } from "@/utils/confirm";
+import { configStatusLabel } from "@/utils/versionText";
 
 const route = useRoute();
 const router = useRouter();
@@ -26,6 +27,7 @@ const form = ref(blankForm());
 const formError = ref("");
 const saving = ref(false);
 const validation = ref(null);
+const validationAt = ref("");
 
 function blankForm() {
   return {
@@ -166,6 +168,7 @@ async function runValidate() {
   message.value = "";
   try {
     validation.value = await validateRuleVersion(route.params.id);
+    validationAt.value = new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
     message.value = validation.value.ok ? "校验通过" : "校验发现 " + validation.value.errors.length + " 个阻断问题";
   } catch (err) {
     error.value = err.message;
@@ -260,20 +263,21 @@ async function runPublish() {
           <div class="panel">
             <div class="panel-head">
               <h3>版本治理</h3>
-              <span class="sub">完整度 {{ data.validation.completeness }}% · 修订 {{ data.revision }}</span>
+              <span class="sub" title="配置修订来自 config_revision，与下方「版本修订号」不是同一个数字">完整度 {{ data.validation.completeness }}% · 配置修订 {{ data.revision }}</span>
               <span class="spacer"></span>
-              <button type="button" class="btn sm" :disabled="busy" @click="runValidate">校验</button>
-              <button v-if="data.version.status === 'draft'" type="button" class="btn sm primary" :disabled="busy" @click="runPublish">发布</button>
+              <button type="button" class="btn sm" :disabled="busy" title="按当前配置实时校验，不写入版本记录" @click="runValidate">重新校验</button>
+              <button v-if="data.version.status === 'draft'" type="button" class="btn sm" :disabled="busy" title="发布后版本只读并生成正式配置快照" @click="runPublish">发布</button>
               <button v-if="data.version.status === 'published'" type="button" class="btn sm" :disabled="busy" @click="runWithdraw">撤回发布</button>
             </div>
             <div class="panel-body">
               <div class="grid c4">
-                <div class="field"><label>配置状态</label><div>{{ data.version.configStatus || "—" }}</div></div>
+                <div class="field"><label>配置状态</label><div>{{ configStatusLabel(data.version.configStatus) }}</div></div>
                 <div class="field"><label>版本修订号</label><div>{{ data.version.revision }}</div></div>
                 <div class="field"><label>发布快照</label><div class="mono">{{ data.version.publishedSnapshotId || "—" }}</div></div>
               </div>
               <div v-if="validation" class="governance-result" style="margin-top: 12px">
                 <span class="tag" :class="validation.ok ? 'green' : 'red'">{{ validation.ok ? "校验通过" : "存在阻断问题" }}</span>
+                <span class="dim" style="font-size: 11.5px">实时校验{{ validationAt ? " · 本次 " + validationAt : "" }}</span>
                 <span v-if="validation.warnings && validation.warnings.length" class="tag amber">{{ validation.warnings.length }} 条提示</span>
                 <ul v-if="validation.errors && validation.errors.length" class="governance-list">
                   <li v-for="text in validation.errors.slice(0, 8)" :key="text">{{ text }}</li>

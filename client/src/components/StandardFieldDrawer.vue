@@ -13,6 +13,10 @@ const props = defineProps({
 const emit = defineEmits(["close", "save", "dictionaries"]);
 
 const TYPES = ["string", "number", "boolean", "date", "enum", "derived", "constant"];
+const INPUT_MODES = [
+  { value: "manual", label: "人工输入（逐笔数据/列映射）" },
+  { value: "default", label: "默认值（产品级，无需逐笔输入）" }
+];
 const form = ref(blank());
 const enumText = ref("");
 const errors = ref([]);
@@ -23,6 +27,7 @@ function blank() {
     label: "",
     label_en: "",
     type: "string",
+    input_mode: "manual",
     group: "",
     required: false,
     status: "ACTIVE",
@@ -31,6 +36,7 @@ function blank() {
     scale: null,
     format: "",
     default_value: "",
+    shared_defaults: false,
     description: "",
     description_en: "",
     dictionary: "",
@@ -46,6 +52,8 @@ function reset() {
     if (source[key] !== undefined && source[key] !== null) next[key] = source[key];
   });
   next.required = !!source.required;
+  next.input_mode = source.input_mode || (source.type === "constant" ? "default" : "manual");
+  next.shared_defaults = !!source.shared_defaults;
   next.dictionary = source.dictionary || "";
   next.label_en = source.label_en || source.labelEn || "";
   next.aliases = Array.isArray(source.aliases) ? source.aliases.slice() : [];
@@ -92,6 +100,8 @@ function save() {
   if (!next.label_en.trim()) list.push("英文名称不能为空");
   if (!next.group) list.push("请选择字段所属分组");
   if (!TYPES.includes(next.type)) list.push("数据类型不合法");
+  if (!INPUT_MODES.some((item) => item.value === next.input_mode)) list.push("输入方式不合法");
+  if (next.input_mode === "default" && !String(next.default_value || "").trim() && !next.shared_defaults) list.push("默认值字段必须填写默认值");
   if (next.type === "enum" && !next.dictionary && !parsedEnums().length) list.push("enum 字段必须选择字典或填写临时枚举值");
   if (next.dictionary && !selectedDictionary.value) list.push("所选字典不存在或已停用");
   if (next.dictionary && selectedDictionary.value && !dictionaryItems.value.length) list.push("所选字典没有可用码值");
@@ -102,6 +112,7 @@ function save() {
     label: next.label.trim(),
     label_en: next.label_en.trim(),
     type: next.type,
+    input_mode: next.input_mode,
     group: next.group,
     required: !!next.required,
     status: next.status,
@@ -143,6 +154,11 @@ function save() {
           <div class="field"><label>数据类型</label>
             <select v-model="form.type"><option v-for="type in TYPES" :key="type" :value="type">{{ type }}</option></select>
           </div>
+          <div class="field"><label>输入方式</label>
+            <select v-model="form.input_mode">
+              <option v-for="mode in INPUT_MODES" :key="mode.value" :value="mode.value">{{ mode.label }}</option>
+            </select>
+          </div>
           <div class="field"><label>状态</label>
             <select v-model="form.status"><option value="ACTIVE">启用</option><option value="DISABLED">停用</option></select>
           </div>
@@ -160,7 +176,11 @@ function save() {
           <div class="field"><label>小数位</label><input v-model.number="form.scale" type="number" min="0" /></div>
           <div class="field"><label>格式</label><input v-model="form.format" placeholder="YYYY-MM-DD" /></div>
         </div>
-        <div class="field" style="margin-top: 10px"><label>默认值</label><input v-model="form.default_value" /></div>
+        <div v-if="form.input_mode === 'default'" class="field" style="margin-top: 10px">
+          <label>默认值（映射到目标字段时使用这个常量，不需要逐笔数据列）</label>
+          <input v-model="form.default_value" placeholder="如 LOAN / HKD / 100" />
+        </div>
+        <p v-else class="hint">人工输入字段需要在字段映射中对应到源字段或数据列；默认值字段不需要逐笔输入。</p>
       </div>
     </div>
 

@@ -118,7 +118,7 @@ const liquidity = computed(() => {
             </span>
             <span class="go">
               <span v-if="link.module" class="tag" :class="TONE[link.module.status]">{{ LABEL[link.module.status] }}</span>
-              进入 →
+              配置 →
             </span>
           </button>
         </div>

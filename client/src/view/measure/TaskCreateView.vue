@@ -52,6 +52,15 @@ const liquidityReady = computed(() => {
   const liquidity = readiness.value && readiness.value.liquidity;
   return !!liquidity && liquidity.usableCount > 0 && liquidity.tableCount > 0 && liquidity.paramCount > 0 && liquidity.listCount > 0;
 });
+const crmNeededCount = computed(() => (readiness.value && readiness.value.crm ? readiness.value.crm.neededCount : 0));
+const liquidityPartial = computed(() => {
+  const liquidity = readiness.value && readiness.value.liquidity;
+  return !!liquidity && liquidity.productCount > 0 && liquidity.usableCount > 0 && liquidity.usableCount < liquidity.productCount;
+});
+const liquidityMissingCount = computed(() => {
+  const liquidity = readiness.value && readiness.value.liquidity;
+  return liquidity ? Math.max(0, liquidity.productCount - liquidity.usableCount) : 0;
+});
 
 const VERSION_STATUS_TEXT = {
   draft: "草稿",
@@ -346,9 +355,19 @@ onMounted(async () => {
           </div>
           <div class="grid c4" style="margin-bottom: 14px">
             <div class="kpi"><div class="k-label">EAD 配置</div><div class="k-value sm">{{ readiness.ead ? readiness.ead.readyCount + " / " + readiness.ead.neededCount : "—" }}</div><div class="k-foot">已配置 / 需配置产品</div></div>
-            <div class="kpi"><div class="k-label">缓释配置</div><div class="k-value sm">{{ readiness.crm ? readiness.crm.readyCount + " / " + readiness.crm.neededCount : "—" }}</div><div class="k-foot">已配置 / 需配置产品</div></div>
+            <div class="kpi"><div class="k-label">缓释配置</div><div class="k-value sm">{{ readiness.crm ? readiness.crm.readyCount + " / " + readiness.crm.neededCount : "—" }}</div><div class="k-foot">{{ crmNeededCount === 0 ? "本版本无缓释配置要求" : "已配置 / 需配置产品" }}</div></div>
             <div class="kpi"><div class="k-label">参数表 / 名单</div><div class="k-value sm">{{ readiness.parameterTableCount }} / {{ readiness.referenceListCount }}</div><div class="k-foot">资本充足率配置</div></div>
-            <div class="kpi"><div class="k-label">流动性配置</div><div class="k-value sm">{{ readiness.liquidity ? readiness.liquidity.usableCount + " / " + readiness.liquidity.productCount : "—" }}</div><div class="k-foot">{{ readiness.liquidity ? readiness.liquidity.tableCount + " 张参数表 · " + readiness.liquidity.listCount + " 份名单" : "未读取" }}</div></div>
+            <div class="kpi">
+              <div class="k-label">流动性配置</div>
+              <div class="k-value sm">
+                {{ readiness.liquidity ? readiness.liquidity.usableCount + " / " + readiness.liquidity.productCount : "—" }}
+                <span v-if="liquidityPartial" class="tag amber" style="font-size: 9.5px">待完善</span>
+              </div>
+              <div class="k-foot" :style="liquidityPartial ? 'color:#92400e' : ''">
+                <template v-if="liquidityPartial">{{ liquidityMissingCount }} 个产品未配置完整 · </template>
+                {{ readiness.liquidity ? readiness.liquidity.tableCount + " 张参数表 · " + readiness.liquidity.listCount + " 份名单" : "未读取" }}
+              </div>
+            </div>
           </div>
           <div class="task-check-list">
             <div :class="readiness.published ? 'ok' : 'bad'">{{ readiness.published ? "✓" : "✗" }} 监管规则版本已发布</div>
@@ -359,10 +378,12 @@ onMounted(async () => {
             <div :class="readiness.mappingCount ? 'ok' : 'bad'">{{ readiness.mappingCount ? "✓" : "✗" }} 字段映射文档 {{ readiness.mappingCount }} 份</div>
             <div :class="readiness.fieldCount ? 'ok' : 'bad'">{{ readiness.fieldCount ? "✓" : "✗" }} 产品标准字段 {{ readiness.fieldCount }} 个</div>
             <div :class="eadReady ? 'ok' : 'bad'">{{ eadReady ? "✓" : "✗" }} EAD 计算规则</div>
-            <div :class="crmReady ? 'ok' : 'bad'">{{ crmReady ? "✓" : "✗" }} 信用风险缓释</div>
+            <div :class="crmReady ? 'ok' : 'bad'">{{ crmReady ? "✓" : "✗" }} 信用风险缓释{{ crmNeededCount === 0 ? "（本版本无要求）" : "" }}</div>
             <div :class="readiness.parameterTableCount ? 'ok' : 'bad'">{{ readiness.parameterTableCount ? "✓" : "✗" }} 规则参数表 {{ readiness.parameterTableCount }} 张</div>
             <div :class="readiness.referenceListCount ? 'ok' : 'bad'">{{ readiness.referenceListCount ? "✓" : "✗" }} 监管名单 {{ readiness.referenceListCount }} 份</div>
-            <div :class="liquidityReady ? 'ok' : 'bad'">{{ liquidityReady ? "✓" : "✗" }} 流动性产品、参数和名单</div>
+            <div :class="liquidityReady ? (liquidityPartial ? 'warn' : 'ok') : 'bad'">
+              {{ liquidityReady ? (liquidityPartial ? "⚠" : "✓") : "✗" }} 流动性产品、参数和名单{{ liquidityPartial ? "（" + liquidityMissingCount + " 个产品未配置完整）" : "" }}
+            </div>
           </div>
           <div v-if="!readiness.ok" class="notice danger" style="margin-top: 12px">
             <span class="ni">!</span>
@@ -372,6 +393,10 @@ onMounted(async () => {
             </div>
           </div>
           <div v-else class="notice ok" style="margin-top: 12px"><span class="ni">✓</span><div>规则配置完整，可以创建主任务。</div></div>
+          <div v-if="readiness.ok && liquidityPartial" class="notice warn" style="margin-top: 12px">
+            <span class="ni">!</span>
+            <div>流动性有 {{ liquidityMissingCount }} 个产品未配置完整；仍可创建主任务，进入 LCR 配置后补齐。</div>
+          </div>
         </template>
         <div v-else class="empty">还没有检查结果。点「重新检查」。</div>
         <div class="btn-group">
@@ -441,6 +466,7 @@ onMounted(async () => {
 .task-check-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 6px 12px; font-size: 12px; }
 .task-check-list .ok { color: #047857; }
 .task-check-list .bad { color: #b42318; }
+.task-check-list .warn { color: #92400e; }
 .task-subtask-option {
   display: grid; grid-template-columns: 1fr 260px; gap: 12px; align-items: center;
   padding: 10px 12px; margin-bottom: 10px; border: 1px solid var(--border); border-radius: 10px; background: #fff;

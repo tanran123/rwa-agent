@@ -63,7 +63,19 @@ watch(() => props.form.jurisdiction, () => {
             </option>
           </select>
         </label>
+        <label class="field">规则文件
+          <input v-model="form.rulesetFile" type="text" placeholder="如 ruleset_hk.json" />
+        </label>
+        <label class="field">维护人
+          <input v-model="form.author" type="text" placeholder="如 规则管理员·黄嘉怡" />
+        </label>
+        <label class="field" style="grid-column: 1 / -1">变更说明
+          <textarea v-model="form.changelog" rows="3" placeholder="记录本次版本的核心变更、监管依据或待确认事项"></textarea>
+        </label>
       </div>
+      <p class="dim" style="margin: 8px 0 0; font-size: 11.5px">
+        规则文件只记录文件名，不在此上传；维护人和变更说明会随版本一起保存。
+      </p>
       <div style="margin-top: 12px; display: flex; gap: 8px">
         <button v-if="creating" type="button" class="btn primary" :disabled="saving" @click="$emit('save', 'draft')">
           {{ saving ? "正在保存" : "保存并进入工作台" }}

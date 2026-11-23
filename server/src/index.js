@@ -2,6 +2,7 @@ import Koa from "koa";
 import Router from "@koa/router";
 import cors from "@koa/cors";
 import bodyParser from "koa-bodyparser";
+import { Readable } from "node:stream";
 import { query } from "./db.js";
 import { annotatedUpload, applyMeasureChoices, auditWorkbook, classifyUpload, detectMeasureProducts, mapMeasureFields, measureDemo, readClassifyTrace, readMeasureRun, readUploadedWorkbook, saveMeasureRun, weightUpload } from "./measure.js";
 import { paperView, uploadSamples } from "./paper.js";
@@ -13,6 +14,7 @@ import { trialEad } from "./ead.js";
 import { checkEadFormula, readEadConfig, saveEadConfig } from "./eadConfig.js";
 import { readCrmConfig, saveCrmConfig } from "./crmConfig.js";
 import { configProducts, productGroupMappings } from "./productStandard.js";
+import { buildProductAssistContext } from "./productAssist.js";
 import {
   archiveTask, computeLcr, computeTask, computeTaskRun, confirmTaskFields, confirmTaskRecognitions,
   deleteDataset, deleteList, deleteTask, demoData,
@@ -544,6 +546,215 @@ router.get("/product-standard/products", async (ctx) => {
 
 router.get("/product-standard/group-mappings", async (ctx) => {
   ctx.body = await productGroupMappings(String(ctx.query.version || ""));
+});
+
+function groupAssistRequest(context, body) {
+  const plan = context.groupPlan || [];
+  const group = plan.find((item) => item.id === String(body.groupId || ""));
+  if (!group) throw Object.assign(new Error("没有这个监管字段分组"), { status: 404 });
+  // 问答模式要能解释本组全部字段（包括系统计算字段），生成模式只处理需要人工映射的字段。
+  const action = String(body.action || "propose");
+  const targetFields = action === "answer" ? group.fields : group.fields.filter((field) => !field.systemCalc);
+  const allowedGroups = (context.standardFieldGroups || []).slice();
+  plan.forEach((item) => {
+    if (!item.standardGroup && item.suggestedStandardGroup) {
+      if (!allowedGroups.some((entry) => entry.group_id === item.suggestedStandardGroup.group_id)) {
+        allowedGroups.push(item.suggestedStandardGroup);
+      }
+    }
+  });
+  const groupContext = {
+    action: String(body.action || "propose"),
+    mode: "group_flow",
+    product: context.product,
+    exposureClasses: context.exposureClasses,
+    group: {
+      id: group.id,
+      label: group.label,
+      description: group.description,
+      standardGroup: group.standardGroup,
+      suggestedStandardGroup: group.suggestedStandardGroup,
+      targetFields
+    },
+    targetFields,
+    existingStandardFields: context.existingStandardFields,
+    existingMappings: context.existingMappings,
+    dictionaries: context.dictionaries,
+    messages: Array.isArray(body.messages) ? body.messages.slice(-20) : [],
+    currentProposal: body.currentProposal || null,
+    previousProposal: body.previousProposal || null,
+    currentSelections: Array.isArray(body.currentSelections) ? body.currentSelections : [],
+    standardFieldGroups: allowedGroups,
+    knownTargetFields: context.knownTargetFields
+  };
+  return { group, groupContext };
+}
+
+router.post("/product-standard/assist/group", async (ctx) => {
+  const body = ctx.request.body || {};
+  const action = String(body.action || "plan");
+  try {
+    const context = await buildProductAssistContext({
+      version: String(body.version || ""),
+      family: String(body.family || ""),
+      entryIndex: body.entryIndex,
+      mode: "group_flow",
+      messages: body.messages,
+      currentProposal: body.currentProposal,
+      draftStandardFields: body.draftStandardFields,
+      draftMappings: body.draftMappings,
+      draftDirty: body.draftDirty,
+      scopeClasses: body.exposureClasses
+    });
+    const plan = context.groupPlan || [];
+    if (action === "plan") {
+      ctx.body = {
+        stage: "plan",
+        groups: plan.map((group) => ({
+          id: group.id,
+          label: group.label,
+          description: group.description,
+          order: group.order,
+          stats: group.stats,
+          standardGroup: group.standardGroup,
+          suggestedStandardGroup: group.suggestedStandardGroup
+        }))
+      };
+      return;
+    }
+    if (action === "scope") {
+      const fields = [];
+      const seen = new Set();
+      plan.forEach((group) => {
+        (group.fields || []).forEach((field) => {
+          if (!field || !field.name || seen.has(field.name)) return;
+          seen.add(field.name);
+          fields.push({
+            name: field.name,
+            label: field.label || field.name,
+            group: group.id,
+            groupLabel: group.label || group.id,
+            groupOrder: group.order,
+            required: field.required === true,
+            systemCalc: field.systemCalc === true
+          });
+        });
+      });
+      ctx.body = {
+        stage: "scope",
+        fields,
+        fieldNames: fields.map((field) => field.name),
+        requiredFields: fields.filter((field) => field.required && !field.systemCalc).map((field) => field.name)
+      };
+      return;
+    }
+    if (action === "summary") {
+      ctx.body = {
+        stage: "summary",
+        message: "共 " + plan.length + " 组监管字段，已返回分组统计。",
+        groups: plan.map((item) => ({ id: item.id, label: item.label, stats: item.stats }))
+      };
+      return;
+    }
+    const { group, groupContext } = groupAssistRequest(context, body);
+    if (action === "brief") {
+      ctx.body = { stage: "brief", group };
+      return;
+    }
+    if (action !== "propose" && action !== "refine" && action !== "answer") ctx.throw(400, "不支持的分组动作：" + action);
+    const llm = await requestLlm(ctx);
+    const response = await fetch("http://127.0.0.1:8766/api/product/assist/group", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...groupContext, ...(llm ? { llm } : {}) }),
+      signal: AbortSignal.timeout(200000)
+    });
+    const text = await response.text();
+    let payload;
+    try { payload = text ? JSON.parse(text) : { error: "服务异常" }; }
+    catch { payload = { error: "服务异常" }; }
+    ctx.status = response.status;
+    ctx.body = payload;
+  } catch (err) {
+    console.error(err);
+    ctx.status = err.status || 502;
+    ctx.body = { error: err.message || "分组生成失败" };
+  }
+});
+
+router.post("/product-standard/assist/group/stream", async (ctx) => {
+  const body = ctx.request.body || {};
+  const action = String(body.action || "propose");
+  let groupContext;
+  try {
+    if (action !== "propose" && action !== "refine" && action !== "answer") ctx.throw(400, "不支持的分组动作：" + action);
+    const context = await buildProductAssistContext({
+      version: String(body.version || ""),
+      family: String(body.family || ""),
+      entryIndex: body.entryIndex,
+      mode: "group_flow",
+      messages: body.messages,
+      currentProposal: body.currentProposal,
+      draftStandardFields: body.draftStandardFields,
+      draftMappings: body.draftMappings,
+      draftDirty: body.draftDirty,
+      scopeClasses: body.exposureClasses
+    });
+    groupContext = groupAssistRequest(context, body).groupContext;
+  } catch (err) {
+    ctx.status = err.status || 502;
+    ctx.body = { error: err.message || "分组生成失败" };
+    return;
+  }
+  const llm = await requestLlm(ctx);
+  const controller = new AbortController();
+  ctx.res.setTimeout(0);
+  ctx.res.writeHead(200, {
+    "Content-Type": "text/event-stream; charset=utf-8",
+    "Cache-Control": "no-cache, no-transform",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no"
+  });
+  ctx.res.flushHeaders();
+  ctx.respond = false;
+  ctx.res.on("close", () => controller.abort());
+  const writeEvent = (name, data) => {
+    if (ctx.res.writableEnded) return;
+    ctx.res.write("event: " + name + "\n");
+    ctx.res.write("data: " + JSON.stringify(data || {}) + "\n\n");
+  };
+  writeEvent("status", {
+    stage: "reading_group",
+    message: "正在读取本组 " + groupContext.targetFields.length + " 个监管字段的画像与规则用途…",
+    total: groupContext.targetFields.length
+  });
+  try {
+    const response = await fetch("http://127.0.0.1:8766/api/product/assist/group/stream", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...groupContext, ...(llm ? { llm } : {}) }),
+      signal: controller.signal
+    });
+    if (!response.ok || !response.body) {
+      const text = await response.text();
+      writeEvent("error", { error: text || "分组字段建议失败" });
+      ctx.res.end();
+      return;
+    }
+    for await (const chunk of Readable.fromWeb(response.body)) {
+      if (ctx.res.writableEnded) break;
+      ctx.res.write(chunk);
+    }
+    ctx.res.end();
+  } catch (err) {
+    if (err && err.name === "AbortError") {
+      if (!ctx.res.writableEnded) ctx.res.end();
+      return;
+    }
+    console.error(err);
+    writeEvent("error", { error: err.message || "分组字段建议失败" });
+    if (!ctx.res.writableEnded) ctx.res.end();
+  }
 });
 
 router.get("/products", async (ctx) => {

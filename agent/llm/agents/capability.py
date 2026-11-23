@@ -47,17 +47,21 @@ class Capability:
             checkpointer=False,
         )
 
-    def ask(self, payload: dict[str, Any]) -> str:
-        return self.ask_text(json.dumps(payload, ensure_ascii=False))
-
-    def ask_text(self, text: str) -> str:
-        current = active_settings()
+    def _compiled(self, current):
         compiled = self._graphs.get(current)
         if compiled is None:
             compiled = self._build(current)
             if len(self._graphs) >= 4:
                 self._graphs.clear()
             self._graphs[current] = compiled
+        return compiled
+
+    def ask(self, payload: dict[str, Any]) -> str:
+        return self.ask_text(json.dumps(payload, ensure_ascii=False))
+
+    def ask_text(self, text: str) -> str:
+        current = active_settings()
+        compiled = self._compiled(current)
         state = compiled.invoke({"messages": [{"role": "user", "content": text}]})
         messages = state.get("messages") if isinstance(state, dict) else None
         if not messages:
@@ -71,6 +75,25 @@ class Capability:
         if not text:
             raise RuntimeError("模型没有返回内容")
         return text
+
+    def stream_text(self, text: str):
+        """Yield model text chunks for one call.
+
+        The graph is the same one used by ``ask_text``; only the transport
+        changes. Tool calls are not emitted because capabilities have no tools.
+        """
+        current = active_settings()
+        compiled = self._compiled(current)
+        for chunk in compiled.stream(
+            {"messages": [{"role": "user", "content": text}]},
+            stream_mode="messages",
+        ):
+            message = chunk[0] if isinstance(chunk, tuple) else chunk
+            if getattr(message, "type", "") == "tool":
+                continue
+            piece = _text_of(message)
+            if piece:
+                yield piece
 
 
 def capability(name: str, skill: str, role: str = MAPPING, timeout: float = 120) -> Capability:
