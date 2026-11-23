@@ -636,15 +636,31 @@ router.post("/product-standard/assist/group", async (ctx) => {
             groupLabel: group.label || group.id,
             groupOrder: group.order,
             required: field.required === true,
-            systemCalc: field.systemCalc === true
+            systemCalc: field.systemCalc === true,
+            preparedInput: field.preparedInput === true
           });
+        });
+      });
+      (context.externalInputs || []).forEach((field) => {
+        if (!field || !field.name || seen.has(field.name)) return;
+        seen.add(field.name);
+        const group = plan.find((item) => (item.fields || []).some((entry) => entry.name === field.name));
+        fields.push({
+          name: field.name,
+          label: field.label || field.name,
+          group: field.group || (group && group.id) || "",
+          groupLabel: (group && group.label) || field.group || "",
+          groupOrder: group ? group.order : 999,
+          required: false,
+          systemCalc: false,
+          externalInput: true
         });
       });
       ctx.body = {
         stage: "scope",
         fields,
         fieldNames: fields.map((field) => field.name),
-        requiredFields: fields.filter((field) => field.required && !field.systemCalc).map((field) => field.name)
+        requiredFields: fields.filter((field) => field.required && !field.systemCalc && !field.externalInput).map((field) => field.name)
       };
       return;
     }

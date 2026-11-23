@@ -1961,3 +1961,5 @@ table.jw-decision .weight.manual { color: #b45309; font-family: inherit; font-we
   font-size: 11px;
   line-height: 1.3;
 }
+.fm-field-row.external { border-left-color: #f59e0b; }
+.fm-field-row.external .fm-check-calc { color: #b45309; background: #fffbeb; }

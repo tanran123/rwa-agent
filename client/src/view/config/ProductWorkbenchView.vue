@@ -297,18 +297,19 @@ const scopedRequiredFieldNames = computed(() => {
   const serverRequired = new Set(serverScopeRequiredFields.value);
   return scopedFieldNames.value.filter((name) => {
     const def = targetFieldDefs.value[name];
-    return (def && def.required === true && (def.source || "column") === "column")
+    return ((def && def.required === true && (def.source || "column") === "column")
       || overlayFieldSet.value.has(name)
-      || serverRequired.has(name);
+      || serverRequired.has(name))
+      && !(def && def.source === "external");
   });
 });
 const scopedMappableFieldNames = computed(() => {
   const scopeMap = new Map(serverScopeFields.value.map((field) => [field.name, field]));
   return scopedFieldNames.value.filter((name) => {
     const scopeDef = scopeMap.get(name);
-    if (scopeDef) return !scopeDef.systemCalc;
+    if (scopeDef) return !scopeDef.systemCalc && !scopeDef.externalInput;
     const def = targetFieldDefs.value[name];
-    return !def || (def.source || "column") !== "calc";
+    return !def || ((def.source || "column") !== "calc" && (def.source || "column") !== "external");
   });
 });
 const scopedMappingCoverage = computed(() => {

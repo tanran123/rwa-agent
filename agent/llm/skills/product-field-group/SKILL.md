@@ -211,6 +211,8 @@ description: 按监管字段分组逐组生成产品标准字段、字典和映�
 | `reuse` | 复用已有标准字段 | `standardField`（字段名或完整字段对象）和 `mapping` |
 | `create` | 新建标准字段 | `standardField` 完整对象和 `mapping` |
 | `default` | 本产品固定默认值，不建标准字段 | `mapping.mappingType = constant`、非空 `mapping.defaultValue` |
+
+布尔字段的固定默认值必须写在 `mapping.defaultValue` 里，并用字符串 `"true"` 或 `"false"`；用户说“是/否”时分别写成 `"true"`/`"false"`。不要只放在 `transform.parameters.value`，也不要省略 `mappingType = "constant"`。
 | `system` | 系统计算字段，不生成人工字段和映射 | 无 |
 | `skip` | 用户明确要求暂不处理 | 无 |
 | `missing` | 信息不足，需人工处理 | 说明原因 |

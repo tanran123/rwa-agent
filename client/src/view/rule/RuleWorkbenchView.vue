@@ -15,7 +15,7 @@ import { configStatusLabel } from "@/utils/versionText";
 
 const route = useRoute();
 const router = useRouter();
-const { session } = useContext();
+const { session, loadBootstrap } = useContext();
 const view = ref(null);
 const error = ref("");
 const message = ref("");
@@ -116,9 +116,13 @@ async function saveForm(status) {
       const saved = await createRuleVersion(payload(form.value));
       session.jurisdiction = saved.jurisdiction;
       session.versionId = saved.id;
+      await loadBootstrap();
+      session.jurisdiction = saved.jurisdiction;
+      session.versionId = saved.id;
       router.replace({ name: "version-workbench", params: { id: saved.id } });
     } else {
       const saved = await saveRuleVersion(form.value.id, payload(form.value));
+      await loadBootstrap();
       session.jurisdiction = saved.jurisdiction;
       session.versionId = saved.id;
       editing.value = false;
@@ -186,6 +190,7 @@ async function runWithdraw() {
   error.value = "";
   try {
     await withdrawRuleVersion(route.params.id);
+    await loadBootstrap();
     message.value = "已撤回发布，当前版本恢复可编辑";
     await reload();
   } catch (err) {
@@ -204,6 +209,7 @@ async function runPublish() {
   error.value = "";
   try {
     const result = await publishRuleVersion(route.params.id);
+    await loadBootstrap();
     message.value = "已发布，正式配置快照已生成";
     await reload();
   } catch (err) {

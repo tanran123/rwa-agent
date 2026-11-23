@@ -17,7 +17,7 @@ const TARGET_FIELD = /^[a-z][a-z0-9_]*$/;
 const VALIDATION_RULE_ID = /^V[0-9]{3,}$/;
 
 const FIELD_TYPES = ["enum", "list", "number", "string", "boolean", "date"];
-const FIELD_SOURCES = ["column", "calc", "manual", "prepared"];
+const FIELD_SOURCES = ["column", "calc"];
 const FIELD_LEVELS = ["OBLIGOR", "FACILITY", "COLLATERAL", "SETTLEMENT", "PORTFOLIO", "DATA_PREP", "OUTPUT"];
 const MISSING_POLICIES = ["fail", "manual_review", "not_applicable", "default"];
 const RULE_TYPES = ["exposure_classification", "risk_weight"];
@@ -154,7 +154,7 @@ function validateFields(fields, errors, groups) {
     only(field, [
       "name", "label", "meaning", "note", "type", "source", "unit", "required",
       "missing_policy", "default_value", "extensible", "options", "prepared",
-      "derivation", "parameter_refs", "traceability", "legacy_calc", "group", "level"
+      "derivation", "parameter_refs", "traceability", "legacy_calc", "external_input", "external_provider", "group", "level"
     ], path, errors);
     if (!FIELD_NAME.test(String(field.name || ""))) errors.push(path + ".name：必须匹配 ^[A-Za-z][A-Za-z0-9_]*$");
     else if (seen.has(field.name)) errors.push(path + ".name：字段 " + field.name + " 重复");
@@ -194,8 +194,17 @@ function validateFields(fields, errors, groups) {
       if (field.source !== "calc") errors.push(path + ".derivation：只有 source 为 calc 时才能声明");
       validateDerivation(field.derivation, path + ".derivation", errors);
     }
-    if ((field.source === "column" || field.source === "manual") && (field.prepared != null || field.derivation != null)) {
-      errors.push(path + "：column / manual 字段不得声明 prepared 或 derivation");
+    if ((field.source === "column" || field.source === "manual" || field.source === "external") && (field.prepared != null || field.derivation != null)) {
+      errors.push(path + "：column / manual / external 字段不得声明 prepared 或 derivation");
+    }
+    if (field.external_input != null && typeof field.external_input !== "boolean") {
+      errors.push(path + ".external_input：必须是布尔值");
+    }
+    if (field.source === "external" && field.external_input !== true) {
+      errors.push(path + ".external_input：source 为 external 时必须为 true");
+    }
+    if (field.source !== "external" && field.external_input === true) {
+      errors.push(path + ".external_input：只有 source 为 external 时才能为 true");
     }
     if (Array.isArray(field.parameter_refs)) {
       field.parameter_refs.forEach((ref, at) => {

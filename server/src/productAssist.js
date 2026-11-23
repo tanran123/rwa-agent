@@ -48,6 +48,17 @@ function conditionFields(condition, out) {
   if (condition.not) conditionFields(condition.not, out);
 }
 
+function inputRefs(value, out) {
+  if (value == null) return;
+  if (typeof value === "string") {
+    const match = value.match(/^\$input\.([A-Za-z][A-Za-z0-9_]*)$/);
+    if (match) out.add(match[1]);
+    return;
+  }
+  if (Array.isArray(value)) { value.forEach((item) => inputRefs(item, out)); return; }
+  if (typeof value === "object") Object.values(value).forEach((item) => inputRefs(item, out));
+}
+
 function scopedFieldNames(docs, selected) {
   const found = new Set();
   const walk = (nodes, inherited) => {
@@ -60,6 +71,9 @@ function scopedFieldNames(docs, selected) {
       if (inScope) {
         (node.fields || []).forEach((name) => { if (name) found.add(name); });
         conditionFields(node.when, found);
+        inputRefs(node.result, found);
+        inputRefs(node.parameter_lookup, found);
+        inputRefs(node.adjustments, found);
       }
       walk(node.children, classes);
       if (node.otherwise) walk([node.otherwise], classes);
@@ -289,6 +303,7 @@ function buildGroupPlan(
   const meta = groupMetaOf(documents);
   const groups = new Map();
   allTargets.forEach((field) => {
+    if (field.externalInput) return;
     if (inScopeNames.size && !inScopeNames.has(field.name)) return;
     const groupId = field.group || "UNGROUPED";
     if (!groups.has(groupId)) {
@@ -316,6 +331,8 @@ function buildGroupPlan(
       required: field.required,
       options: field.options || [],
       systemCalc: field.systemCalc,
+      externalInput: field.externalInput === true,
+      preparedInput: field.preparedInput === true,
       mapped: coveredTargets.has(field.name),
       usedBy: rules,
       profile: {
@@ -390,6 +407,8 @@ function targetFields(docs, mapping) {
       options: (field.options || []).slice(0, 50).map((item) => ({ code: item.code, label: item.label || item.code })),
       source: field.source || "column",
       systemCalc: (field.source || "column") === "calc",
+      externalInput: (field.source || "column") === "external",
+      preparedInput: (field.source || "column") === "prepared",
       meaning: clip(field.meaning || "", 600),
       note: clip(field.note || "", 400),
       description: clip(field.meaning || field.note || field.description, 200),
@@ -415,6 +434,8 @@ function targetFields(docs, mapping) {
       options: [],
       source: "column",
       systemCalc: false,
+      externalInput: false,
+      preparedInput: false,
       meaning: clip(item.description || "", 600),
       note: "",
       description: clip(item.description, 200),
@@ -585,8 +606,8 @@ export async function buildProductAssistContext({
   const selectedCodes = new Set((scopeCodes || []).map(String));
   const inScopeNames = scopedFieldNames([classification, weight], selectedCodes);
   const scopedTargets = inScopeNames.size
-    ? allTargets.filter((field) => !field.systemCalc && (field.required || inScopeNames.has(field.name)))
-    : allTargets.filter((field) => !field.systemCalc);
+    ? allTargets.filter((field) => !field.systemCalc && !field.externalInput && (field.required || inScopeNames.has(field.name)))
+    : allTargets.filter((field) => !field.systemCalc && !field.externalInput);
   const coveredTargets = new Set((mappingDoc.mappings || []).map((item) => item && item.target_field).filter(Boolean));
   // 只把必填字段和尚未覆盖的目标字段发给模型，控制上下文和生成稿长度。
   // refine 时保留全部目标字段，方便根据对话调整已覆盖字段。
@@ -677,7 +698,18 @@ export async function buildProductAssistContext({
     },
     exposureClasses: classes,
     targetFields: targetList,
-    knownTargetFields: allTargets.filter((field) => !field.systemCalc).map((field) => field.name),
+    externalInputs: allTargets
+      .filter((field) => field.externalInput && (!inScopeNames.size || inScopeNames.has(field.name)))
+      .map((field) => ({
+        name: field.name,
+        label: field.label,
+        type: field.type,
+        group: field.group,
+        required: false,
+        systemCalc: false,
+        externalInput: true
+      })),
+    knownTargetFields: allTargets.filter((field) => !field.systemCalc && !field.externalInput).map((field) => field.name),
     scopedTargetFields: targetList.map((field) => field.name),
     standardFieldGroups: standardGroups,
     groupPlan: plan,

@@ -1300,7 +1300,7 @@ function resetFilters() {
                             </div>
                             <div class="pgw-profile-block">
                               <h6>类型与取值</h6>
-                              <p>{{ fieldTypeLabel(fieldProfile(field).type) }} · 来源 {{ fieldProfile(field).source === "calc" ? "系统计算" : "数据字段" }}</p>
+                              <p>{{ fieldTypeLabel(fieldProfile(field).type) }} · 来源 {{ fieldProfile(field).source === "calc" ? "系统计算" : fieldProfile(field).source === "external" ? "外部输入" : fieldProfile(field).source === "prepared" ? "平台预处理" : "数据字段" }}</p>
                               <div v-if="(fieldProfile(field).options || []).length" class="pgw-option-list">
                                 <span v-for="option in fieldProfile(field).options" :key="option.code" class="pgw-option">{{ optionText(option) }}</span>
                               </div>

@@ -14,8 +14,8 @@ from typing import Any
 from agent.llm.agents.capability import capability
 from agent.llm.capabilities.jsonx import extract_json
 from agent.llm.capabilities.product_mapping import (
-    _array_items, _clamp, _missing, _normalize_fields, _normalize_mappings,
-    _text, standard_field_view,
+    _array_items, _clamp, _constant_default, _default_text, _missing, _normalize_fields,
+    _normalize_mappings, _text, standard_field_view,
 )
 
 _NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
@@ -250,12 +250,12 @@ def _normalize_decisions(
             mapping = mapping_by_target.get(target)
 
         if decision_type == "default":
-            default_value = _text(
+            default_value = _default_text(
                 item.get("defaultValue") if item.get("defaultValue") is not None else item.get("default_value"),
-                400,
+                (targets.get(target) or {}).get("type") or "",
             )
             if not default_value and mapping:
-                default_value = _text(mapping.get("defaultValue"), 400)
+                default_value = _constant_default(mapping, (targets.get(target) or {}).get("type") or "")
             if not default_value:
                 warnings.append(target + " 需要固定默认值，但模型没有给出默认值，已改为缺失")
                 decision_type = "missing"
@@ -290,8 +290,8 @@ def _normalize_decisions(
             if mapping["mappingType"] == "constant":
                 mapping["sourceField"] = _text(mapping.get("sourceField"))
                 if not mapping["sourceField"]:
-                    mapping["defaultValue"] = _text(mapping.get("defaultValue"), 400)
-                if not _text(mapping.get("defaultValue")):
+                    mapping["defaultValue"] = _constant_default(mapping, (targets.get(target) or {}).get("type") or "")
+                if not _constant_default(mapping, (targets.get(target) or {}).get("type") or ""):
                     mapping = None
         if mapping:
             mapping_by_target[target] = mapping
@@ -312,7 +312,7 @@ def _normalize_decisions(
             "standardField": standard if decision_type in ("reuse", "create") else None,
             "dictionary": dictionary,
             "mapping": mapping,
-            "defaultValue": _text(mapping.get("defaultValue"), 400) if decision_type == "default" and mapping else "",
+            "defaultValue": _constant_default(mapping, (targets.get(target) or {}).get("type") or "") if decision_type == "default" and mapping else "",
             "reason": _text(item.get("reason"), 300),
             "ruleReason": _text(item.get("ruleReason") or item.get("rule_reason"), 500),
             "confidence": decision_confidence

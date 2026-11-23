@@ -101,7 +101,7 @@ function scopedTargetsOf(entry) {
       (node && node.fields || []).forEach((name) => {
         if (!name || name === "exposure_class") return;
         const def = targetFieldDefs.value[name];
-        if (def && def.source === "calc") return;
+        if (def && (def.source === "calc" || def.source === "external")) return;
         fields.add(name);
       });
     });

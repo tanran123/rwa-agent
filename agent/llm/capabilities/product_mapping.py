@@ -17,7 +17,44 @@ _MAPPING_TYPES = {"direct", "constant", "transform", "conditional", "calculation
 
 
 def _text(value: Any, limit: int = 200) -> str:
-    return str(value or "").strip()[:limit]
+    if value is None:
+        return ""
+    # False 和 0 是合法的常量默认值，不能用 ``value or ""`` 丢掉。
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value).strip()[:limit]
+
+
+def _default_text(value: Any, target_type: str = "", limit: int = 400) -> str:
+    """规范化常量默认值；布尔字段接受 false/true 以及中文的是/否。"""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if value is None:
+        return ""
+    text = str(value).strip()
+    if str(target_type or "").lower() == "boolean":
+        lowered = text.lower()
+        if lowered in {"否", "false", "0", "no", "n", "f"}:
+            return "false"
+        if lowered in {"是", "true", "1", "yes", "y", "t"}:
+            return "true"
+    return text[:limit]
+
+
+def _constant_default(item: dict, target_type: str = "") -> str:
+    """取常量映射的默认值，兼容 defaultValue 和 transform.parameters.value 两种写法。"""
+    value = item.get("defaultValue") if item.get("defaultValue") is not None else item.get("default_value")
+    if value is None:
+        transform = item.get("transform")
+        if isinstance(transform, dict):
+            params = transform.get("parameters")
+            if isinstance(params, dict) and "value" in params:
+                value = params.get("value")
+            elif "value" in transform:
+                value = transform.get("value")
+            elif _text(transform.get("type")) == "constant":
+                value = transform.get("expression")
+    return _default_text(value, target_type)
 
 
 def _transform_view(value: Any) -> dict | None:
@@ -102,7 +139,10 @@ def _normalize_fields(parsed: dict, payload: dict, warnings: list[str]) -> list[
         mode = _text(item.get("inputMode") or item.get("input_mode")) or "manual"
         if mode not in _INPUT_MODES:
             mode = "manual"
-        default_value = _text(item.get("defaultValue") if item.get("defaultValue") is not None else item.get("default_value"), 400)
+        default_value = _default_text(
+            item.get("defaultValue") if item.get("defaultValue") is not None else item.get("default_value"),
+            field_type,
+        )
         if mode == "default" and not default_value:
             warnings.append(name + " 是默认值字段但没有默认值，已改为人工输入")
             mode = "manual"
@@ -167,14 +207,19 @@ def _normalize_mappings(parsed: dict, payload: dict, fields: list[dict], warning
         if source and source not in fields_by_name:
             warnings.append("映射引用了不存在的标准字段，已跳过：" + source + " → " + target)
             continue
-        mapping_type = _text(item.get("mappingType") or item.get("mapping_type")) or "direct"
+        raw_mapping_type = _text(item.get("mappingType") or item.get("mapping_type"))
+        mapping_type = raw_mapping_type or "direct"
+        if not raw_mapping_type:
+            raw_transform = item.get("transform")
+            if isinstance(raw_transform, dict) and _text(raw_transform.get("type")) == "constant":
+                mapping_type = "constant"
         if mapping_type not in _MAPPING_TYPES:
             mapping_type = "direct"
-        default_value = _text(item.get("defaultValue") if item.get("defaultValue") is not None else item.get("default_value"), 400)
+        default_value = _constant_default(item, (targets.get(target) or {}).get("type") or "")
         field = fields_by_name.get(source) if source else None
         if field and field.get("inputMode") == "default":
             mapping_type = "constant"
-            default_value = default_value or _text(field.get("defaultValue"))
+            default_value = default_value or _default_text(field.get("defaultValue"), (targets.get(target) or {}).get("type") or "")
         if mapping_type == "constant" and not default_value:
             warnings.append("目标字段 " + target + " 的常量映射没有默认值，已跳过")
             continue

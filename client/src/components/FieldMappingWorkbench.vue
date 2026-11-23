@@ -241,6 +241,8 @@ const allTargetFields = computed(() => {
       missingPolicy: field.missing_policy || "",
       source: source,
       systemCalc: source === "calc" || !!(scopeDef && scopeDef.systemCalc),
+      externalInput: source === "external" || !!(scopeDef && scopeDef.externalInput),
+      preparedInput: source === "prepared" || !!(scopeDef && scopeDef.preparedInput),
       inScope: !scopeActive.value || scopeFieldSet.value.has(field.name),
       doc: docLabel
     });
@@ -264,6 +266,8 @@ const allTargetFields = computed(() => {
       missingPolicy: mapping.missing_policy || "",
       source: "",
       systemCalc: !!(scopeDef && scopeDef.systemCalc),
+      externalInput: !!(scopeDef && scopeDef.externalInput),
+      preparedInput: !!(scopeDef && scopeDef.preparedInput),
       inScope: !scopeActive.value || scopeFieldSet.value.has(mapping.target_field),
       doc: "未定义"
     });
@@ -271,7 +275,8 @@ const allTargetFields = computed(() => {
   return list;
 });
 
-const targetFields = computed(() => allTargetFields.value.filter((field) => !field.systemCalc));
+const targetFields = computed(() => allTargetFields.value.filter((field) => !field.systemCalc && !field.externalInput));
+const externalTargetFields = computed(() => allTargetFields.value.filter((field) => field.externalInput && field.inScope));
 const scopedTargetFields = computed(() => targetFields.value.filter((field) => field.inScope));
 const outOfScopeTargetFields = computed(() => targetFields.value.filter((field) => !field.inScope));
 const baseTargetFields = computed(() => (scopeActive.value ? scopedTargetFields.value : targetFields.value));
@@ -302,10 +307,28 @@ const filteredSystemTargets = computed(() => {
     return (field.name + " " + field.label + " " + field.doc).toLowerCase().includes(text);
   });
 });
+const scopedExternalTargets = computed(() => {
+  const list = allTargetFields.value.filter((field) => field.externalInput);
+  if (!scopeActive.value || scopeFilter.value === "all") return list;
+  if (scopeFilter.value === "out") return list.filter((field) => !scopeFieldSet.value.has(field.name));
+  return list.filter((field) => scopeFieldSet.value.has(field.name));
+});
+const filteredExternalTargets = computed(() => {
+  const text = searchTarget.value.trim().toLowerCase();
+  if (statusTarget.value === "mapped" || statusTarget.value === "unmapped" || statusTarget.value === "required-unmapped") return [];
+  return scopedExternalTargets.value.filter((field) => {
+    if (statusTarget.value === "required" && !field.required) return false;
+    if (groupTarget.value && (field.group || "UNGROUPED") !== groupTarget.value) return false;
+    if (!text) return true;
+    return (field.name + " " + field.label + " " + field.doc).toLowerCase().includes(text);
+  });
+});
 const scopedSystemTargetCount = computed(() => allTargetFields.value.filter((field) => field.systemCalc && (!scopeActive.value || scopeFieldSet.value.has(field.name))).length);
 const outOfScopeSystemTargetCount = computed(() => allTargetFields.value.filter((field) => field.systemCalc && scopeActive.value && !scopeFieldSet.value.has(field.name)).length);
-const displayTargets = computed(() => filteredTargets.value.concat(filteredSystemTargets.value));
-const displayScopeTargets = computed(() => visibleScopeTargets.value.concat(scopedSystemTargets.value));
+const scopedExternalTargetCount = computed(() => allTargetFields.value.filter((field) => field.externalInput && (!scopeActive.value || scopeFieldSet.value.has(field.name))).length);
+const outOfScopeExternalTargetCount = computed(() => allTargetFields.value.filter((field) => field.externalInput && scopeActive.value && !scopeFieldSet.value.has(field.name)).length);
+const displayTargets = computed(() => filteredTargets.value.concat(filteredSystemTargets.value).concat(filteredExternalTargets.value));
+const displayScopeTargets = computed(() => visibleScopeTargets.value.concat(scopedSystemTargets.value).concat(scopedExternalTargets.value));
 const calcTargetNames = computed(() => new Set(allTargetFields.value.filter((field) => field.systemCalc).map((field) => field.name)));
 const outOfScopeLinkCount = computed(() => {
   if (!scopeActive.value) return 0;
@@ -313,6 +336,8 @@ const outOfScopeLinkCount = computed(() => {
   return links.value.filter((link) => targetFields.value.some((field) => field.name === link.target) && !names.has(link.target)).length;
 });
 const calcLinkCount = computed(() => links.value.filter((link) => calcTargetNames.value.has(link.target)).length);
+const externalTargetNames = computed(() => new Set(externalTargetFields.value.map((field) => field.name)));
+const externalLinkCount = computed(() => links.value.filter((link) => externalTargetNames.value.has(link.target)).length);
 
 const sourceMap = computed(() => {
   const map = {};
@@ -1077,6 +1102,8 @@ const issues = computed(() => {
   links.value.forEach((link) => {
     if (calcTargetNames.value.has(link.target)) {
       list.push({ severity: "info", category: "calc", message: "映射目标 " + link.target + " 是系统计算字段，字段映射页不显示", link: link, action: "edit" });
+    } else if (externalTargetNames.value.has(link.target)) {
+      list.push({ severity: "info", category: "external", message: "映射目标 " + link.target + " 是外部输入字段，不需要产品字段映射", link: link, action: "edit" });
     }
   });
   baseTargetFields.value.filter((field) => field.required && !mappedTargets.value.has(field.name)).forEach((field) => {
@@ -1092,9 +1119,10 @@ const ISSUE_GROUP_LABELS = {
   disabled: "已停用映射",
   steps: "未配置处理步骤",
   "out-scope": "范围外映射",
-  calc: "系统计算字段"
+  calc: "系统计算字段",
+  external: "外部输入字段"
 };
-const ISSUE_GROUP_ORDER = ["invalid", "required", "disabled", "steps", "out-scope", "calc"];
+const ISSUE_GROUP_ORDER = ["invalid", "required", "disabled", "steps", "out-scope", "calc", "external"];
 const issueGroupOpen = ref({});
 
 const groupedIssues = computed(() => {
@@ -1529,8 +1557,8 @@ function pickSourceRow(field, index, event) {
 }
 
 function pickTargetRow(field, index, event) {
-  if (field && field.systemCalc) {
-    notice.value = "系统计算字段由计算引擎生成，不需要人工映射。";
+  if (field && (field.systemCalc || field.externalInput)) {
+    notice.value = field.externalInput ? "外部输入字段由外部系统提供，不需要建立产品字段映射。" : "系统计算字段由计算引擎生成，不需要人工映射。";
     return;
   }
   if (event && event.shiftKey && targetAnchor >= 0) {
@@ -1552,8 +1580,8 @@ function toggleSource(name) {
 }
 function toggleTarget(name) {
   const field = allTargetFields.value.find((item) => item.name === name);
-  if (field && field.systemCalc) {
-    notice.value = "系统计算字段由计算引擎生成，不需要人工映射。";
+  if (field && (field.systemCalc || field.externalInput)) {
+    notice.value = field.externalInput ? "外部输入字段由外部系统提供，不需要建立产品字段映射。" : "系统计算字段由计算引擎生成，不需要人工映射。";
     return;
   }
   selectedTargets.value = selectedTargets.value.includes(name)
@@ -1734,8 +1762,8 @@ function openSource(field) {
 }
 
 function openTarget(field) {
-  if (field && field.systemCalc) {
-    notice.value = "系统计算字段由计算引擎生成，不需要人工映射。";
+  if (field && (field.systemCalc || field.externalInput)) {
+    notice.value = field.externalInput ? "外部输入字段由外部系统提供，不需要建立产品字段映射。" : "系统计算字段由计算引擎生成，不需要人工映射。";
     return;
   }
   focusNode(targetNodes.value.find((node) => node.name === field.name));
@@ -2436,7 +2464,7 @@ function onKey(event) {
         </template>
         <span v-else class="tag amber">未选择</span>
         <span class="dim fm-scope-note">
-          <template v-if="scopeActive">范围内 {{ scopedTargetFields.length + scopedSystemTargetCount }}（含系统计算 {{ scopedSystemTargetCount }}） · 范围外 {{ outOfScopeTargetFields.length + outOfScopeSystemTargetCount }}</template>
+          <template v-if="scopeActive">范围内 {{ scopedTargetFields.length + scopedSystemTargetCount + scopedExternalTargetCount }}（系统计算 {{ scopedSystemTargetCount }} · 外部输入 {{ scopedExternalTargetCount }}） · 范围外 {{ outOfScopeTargetFields.length + outOfScopeSystemTargetCount + outOfScopeExternalTargetCount }}</template>
           <template v-else>未选择时显示全部非计算字段，建议先选择</template>
         </span>
         <span class="fm-scope-acts">
@@ -2524,28 +2552,30 @@ function onKey(event) {
                   v-for="field in group.fields"
                   :key="field.name"
                   class="fm-field-row"
-                  :class="{ active: selectedTargets.includes(field.name) || highlight === 't_' + field.name, calc: field.systemCalc }"
+                  :class="{ active: selectedTargets.includes(field.name) || highlight === 't_' + field.name, calc: field.systemCalc, external: field.externalInput }"
                   role="button"
                   tabindex="0"
                   @click="pickTargetRow(field, indexOfTarget(field.name), $event)"
                   @dblclick="openTarget(field)"
                 >
                   <input
-                    v-if="!field.systemCalc"
+                    v-if="!field.systemCalc && !field.externalInput"
                     type="checkbox"
                     class="fm-check"
                     :checked="selectedTargets.includes(field.name)"
                     @click.stop
                     @change="toggleTarget(field.name)"
                   />
-                  <span v-else class="fm-check-calc" title="系统计算字段">ƒ</span>
+                  <span v-else class="fm-check-calc" :title="field.externalInput ? '外部输入字段' : '系统计算字段'">{{ field.externalInput ? "外" : "ƒ" }}</span>
                   <span class="fm-dot" :class="{ on: mappedTargets.has(field.name) }"></span>
                   <span class="fm-field-main">
                     <span class="fm-field-name" :title="field.label">{{ field.label }}</span>
                     <span class="fm-field-code" :title="field.name">{{ fieldEnglishName(field) }}</span>
                   </span>
                   <span class="fm-field-type">{{ field.type }}</span>
-                  <span v-if="field.systemCalc" class="tag blue">系统计算</span>
+                  <span v-if="field.externalInput" class="tag amber">外部输入</span>
+                  <span v-else-if="field.systemCalc" class="tag blue">系统计算</span>
+                  <span v-else-if="field.preparedInput" class="tag">平台预处理</span>
                   <span v-else-if="field.required" class="fm-field-required">必填</span>
                 </div>
               </div>

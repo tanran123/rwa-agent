@@ -60,6 +60,8 @@ function childWeight(child) {
 function sourceTag(source) {
   if (source === "manual") return { cls: "warn", text: "人工填写" };
   if (source === "calc") return { cls: "info", text: "计算得出" };
+  if (source === "external") return { cls: "warn", text: "外部输入" };
+  if (source === "prepared") return { cls: "info", text: "平台预处理" };
   if (source) return { cls: "muted", text: "表中有列" };
   return null;
 }
