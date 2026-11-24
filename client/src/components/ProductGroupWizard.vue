@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import Drawer from "@/components/Drawer.vue";
 import { assistProductGroup, assistProductGroupStream } from "@/api/product";
 import { agentHtml } from "@/utils/agentText";
@@ -68,6 +68,10 @@ const EMPTY_PROGRESS = () => ({
   dictionaries: []
 });
 const EMPTY_SELECTION = () => ({ decisions: [], fields: [], mappings: [], dictionaries: [] });
+// 对话按产品保存完整历史；发给模型时再按条数和字符预算裁剪。
+const SESSION_SCHEMA = 2;
+const MESSAGE_LIMIT = 16;
+const MESSAGE_CHAR_BUDGET = 12000;
 
 const loading = ref(false);
 const bulkRunning = ref(false);
@@ -92,6 +96,7 @@ const appliedStats = ref({});
 const proposalTab = ref("overview");
 const generatedAt = ref("");
 const confirmSkip = ref(false);
+const confirmFresh = ref(false);
 const progress = ref(EMPTY_PROGRESS());
 const expandedField = ref("");
 const expandedDecision = ref("");
@@ -101,6 +106,7 @@ const liveAnswer = ref("");
 const fieldFilters = ref({ required: false, unmapped: false, system: false, type: "", keyword: "" });
 let saveTimer = null;
 let controller = null;
+let storageWarned = false;
 
 const storageKey = computed(() => "rwa.productGroupWizard." + (props.version || "") + "." + (props.family || ""));
 const exposureClassKey = computed(() => props.exposureClasses.slice().sort().join("|"));
@@ -239,6 +245,7 @@ const proposalDiff = computed(() => {
 watch(() => props.open, (open) => {
   if (!open) {
     if (controller) controller.abort();
+    saveSession();
     return;
   }
   error.value = "";
@@ -281,8 +288,12 @@ watch([plan, currentIndex, statuses, proposals, previousProposals, selections, a
 }, { deep: true });
 
 function saveSession() {
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  if (!plan.value.length) return;
   try {
     localStorage.setItem(storageKey.value, JSON.stringify({
+      schema: SESSION_SCHEMA,
       plan: plan.value,
       currentIndex: currentIndex.value,
       statuses: statuses.value,
@@ -290,11 +301,37 @@ function saveSession() {
       previousProposals: previousProposals.value,
       selections: selections.value,
       appliedStats: appliedStats.value,
-      messages: messages.value.slice(-30),
+      messages: messages.value,
       classes: props.exposureClasses.slice().sort(),
       at: Date.now()
     }));
-  } catch { /* ignore quota */ }
+    storageWarned = false;
+  } catch {
+    if (!storageWarned) {
+      storageWarned = true;
+      notice.value = "浏览器存储空间不足，本次对话没有保存；请先导出草稿或清理站点数据。";
+    }
+  }
+}
+
+function restoreMessages(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => {
+      if (typeof item === "string") {
+        return { role: "assistant", text: item, note: "", groupId: "", groupLabel: "", at: 0 };
+      }
+      if (!item || typeof item !== "object" || typeof item.text !== "string" || !item.text) return null;
+      return {
+        role: item.role === "user" ? "user" : "assistant",
+        text: item.text,
+        note: item.note ? String(item.note) : "",
+        groupId: item.groupId ? String(item.groupId) : "",
+        groupLabel: item.groupLabel ? String(item.groupLabel) : "",
+        at: Number(item.at) || 0
+      };
+    })
+    .filter(Boolean);
 }
 
 function restoreSession() {
@@ -316,11 +353,45 @@ function restoreSession() {
     previousProposals.value = data.previousProposals || {};
     selections.value = data.selections || {};
     appliedStats.value = data.appliedStats || {};
-    messages.value = Array.isArray(data.messages) ? data.messages : [];
+    messages.value = restoreMessages(data.messages);
     return true;
   } catch {
     return false;
   }
+}
+
+onMounted(() => window.addEventListener("beforeunload", saveSession));
+onBeforeUnmount(() => {
+  window.removeEventListener("beforeunload", saveSession);
+  clearTimeout(saveTimer);
+});
+
+function messageSize(item) {
+  return String(item.text || "").length + String(item.note || "").length;
+}
+
+// 保存和展示用完整对话；调用模型时保留首条 + 最近若干条，并按字符预算裁剪。
+function historyForModel() {
+  const list = messages.value.filter((item) => item && item.text);
+  if (!list.length) return [];
+  const first = list[0];
+  const recent = [];
+  let chars = messageSize(first);
+  for (let index = list.length - 1; index >= 1; index -= 1) {
+    if (recent.length >= MESSAGE_LIMIT - 1) break;
+    const item = list[index];
+    const size = messageSize(item);
+    if (recent.length && chars + size > MESSAGE_CHAR_BUDGET) break;
+    recent.unshift(item);
+    chars += size;
+  }
+  return [first, ...recent].map((item) => ({
+    role: item.role === "user" ? "user" : "assistant",
+    text: item.text,
+    note: item.note || "",
+    groupId: item.groupId || "",
+    groupLabel: item.groupLabel || ""
+  }));
 }
 
 function basePayload(action, extra = {}) {
@@ -333,7 +404,7 @@ function basePayload(action, extra = {}) {
     entryIndex: props.entryIndex,
     groupId: id,
     exposureClasses: props.exposureClasses.slice(),
-    messages: messages.value,
+    messages: historyForModel(),
     draftStandardFields: (draft && draft.standardFields) || [],
     draftMappings: (draft && draft.mappings) || [],
     draftDirty: !!(draft && draft.dirty),
@@ -354,7 +425,7 @@ async function start() {
   try {
     if (restoreSession()) {
       loadedClassKey.value = exposureClassKey.value;
-      await openGroup(currentIndex.value, false);
+      await openGroup(currentIndex.value, true);
       return;
     }
     const data = await assistProductGroup({
@@ -372,7 +443,7 @@ async function start() {
     previousProposals.value = {};
     selections.value = {};
     messages.value = [];
-    if (plan.value.length) await openGroup(0, false);
+    if (plan.value.length) await openGroup(0, true);
   } catch (err) {
     error.value = err.message || "读取监管字段分组失败";
   } finally {
@@ -380,14 +451,15 @@ async function start() {
   }
 }
 
-async function openGroup(index, reset = true) {
-  if (bulkRunning.value && reset) return;
+async function openGroup(index, internal = false) {
+  if (bulkRunning.value && !internal) return;
   if (index < 0 || index >= plan.value.length) return;
   if (controller) controller.abort();
   currentIndex.value = index;
   brief.value = null;
   proposal.value = proposals.value[plan.value[index].id] || null;
   confirmSkip.value = false;
+  confirmFresh.value = false;
   generatedAt.value = "";
   expandedField.value = "";
   expandedDecision.value = "";
@@ -397,7 +469,6 @@ async function openGroup(index, reset = true) {
   progress.value = EMPTY_PROGRESS();
   liveAnswer.value = "";
   proposalTab.value = "overview";
-  if (reset) messages.value = [];
   briefLoading.value = true;
   try {
     const data = await assistProductGroup(basePayload("brief", { groupId: plan.value[index].id }));
@@ -430,6 +501,7 @@ function selectProposal(body) {
 function applyProposal(data, preserve = false, previous = null) {
   if (!current.value || !data) return;
   const id = current.value.id;
+  const groupLabel = current.value.label || id;
   if (previous) {
     previousProposals.value = { ...previousProposals.value, [id]: previous };
   }
@@ -485,13 +557,17 @@ function applyProposal(data, preserve = false, previous = null) {
   messages.value = messages.value.concat([{
     role: "assistant",
     text: message || summary,
-    note: message && message !== summary ? summary : ""
+    note: message && message !== summary ? summary : "",
+    groupId: id,
+    groupLabel,
+    at: Date.now()
   }]);
 }
 
 async function runGeneration(action, options = {}) {
   if (!current.value || props.readOnly || loading.value) return;
   const id = current.value.id;
+  const groupLabel = current.value.label || id;
   const previous = proposal.value || proposals.value[id] || null;
   const isAnswer = action === "answer";
   loading.value = true;
@@ -572,7 +648,13 @@ async function runGeneration(action, options = {}) {
   }
   if (isAnswer) {
     const answer = String((result && (result.message || result.reply)) || liveAnswer.value || "").trim();
-    messages.value = messages.value.concat([{ role: "assistant", text: answer || "没有返回回答。" }]);
+    messages.value = messages.value.concat([{
+      role: "assistant",
+      text: answer || "没有返回回答。",
+      groupId: id,
+      groupLabel,
+      at: Date.now()
+    }]);
     liveAnswer.value = "";
     progress.value = EMPTY_PROGRESS();
     error.value = "";
@@ -582,12 +664,43 @@ async function runGeneration(action, options = {}) {
   }
   progress.value = EMPTY_PROGRESS();
   error.value = "";
+  // 请求期间切了分组就不要把结果写进新分组。
+  if (!current.value || current.value.id !== id) {
+    loading.value = false;
+    controller = null;
+    return;
+  }
   applyProposal(result, options.preserve === true, previous);
   loading.value = false;
   controller = null;
 }
 
 function generate() {
+  runGeneration("propose", { preserve: false });
+}
+
+function noteRegenerate(text) {
+  if (!current.value || props.readOnly || loading.value || bulkRunning.value) return false;
+  confirmFresh.value = false;
+  const group = current.value;
+  messages.value = messages.value.concat([{
+    role: "user",
+    text,
+    groupId: group.id,
+    groupLabel: group.label,
+    at: Date.now()
+  }]);
+  return true;
+}
+
+function regenerate() {
+  if (!noteRegenerate("重新生成本组")) return;
+  runGeneration("propose", { preserve: true });
+}
+
+function regenerateFresh() {
+  confirmFresh.value = false;
+  if (!noteRegenerate("清空勾选后重新生成本组")) return;
   runGeneration("propose", { preserve: false });
 }
 
@@ -623,7 +736,7 @@ async function generateAll() {
     if (!props.open || bulkStop.value) break;
     const group = plan.value[index];
     if (!hasMappableTargets(group)) continue;
-    await openGroup(index, false);
+    await openGroup(index, true);
     if (!props.open) break;
     if (!brief.value) {
       failed.push(group.label);
@@ -658,7 +771,14 @@ async function send() {
   const text = input.value.trim();
   if (!text || loading.value || props.readOnly) return;
   input.value = "";
-  messages.value = messages.value.concat([{ role: "user", text }]);
+  const group = current.value;
+  messages.value = messages.value.concat([{
+    role: "user",
+    text,
+    groupId: group ? group.id : "",
+    groupLabel: group ? group.label : "",
+    at: Date.now()
+  }]);
   await runGeneration(looksLikeQuestion(text) ? "answer" : "refine", { preserve: true });
 }
 
@@ -800,8 +920,10 @@ function resetFlow() {
   selections.value = {};
   appliedStats.value = {};
   messages.value = [];
+  confirmSkip.value = false;
+  confirmFresh.value = false;
   progress.value = EMPTY_PROGRESS();
-  notice.value = "已重置分组进度。";
+  notice.value = "已重置分组进度和对话。";
   start();
 }
 
@@ -853,7 +975,7 @@ function exportAllDraft() {
 
 function quickAction(text) {
   if (text === "重新生成本组") {
-    generate();
+    regenerate();
     return;
   }
   input.value = text;
@@ -888,6 +1010,13 @@ function statusText(group) {
   if (status === "skipped") return "已跳过";
   if (status === "proposal_ready") return "已生成";
   return "未处理";
+}
+
+function showGroupDivider(index) {
+  const item = messages.value[index];
+  if (!item || !item.groupId) return false;
+  if (index === 0) return true;
+  return messages.value[index - 1].groupId !== item.groupId;
 }
 
 function saveAll() {
@@ -1407,7 +1536,15 @@ function resetFilters() {
                     </div>
                   </div>
                   <div class="pgw-banner-actions">
-                    <button type="button" class="btn sm" :disabled="readOnly || loading || bulkRunning" @click="generate">重新生成</button>
+                    <button type="button" class="btn sm" :disabled="readOnly || loading || bulkRunning || !brief" @click="regenerate">重新生成</button>
+                    <template v-if="confirmFresh">
+                      <span class="pgw-confirm-inline">
+                        确认清空勾选？
+                        <button type="button" class="btn sm" @click="regenerateFresh">重生成</button>
+                        <button type="button" class="btn sm" @click="confirmFresh = false">取消</button>
+                      </span>
+                    </template>
+                    <button v-else type="button" class="btn sm" :disabled="readOnly || loading || bulkRunning || !brief" @click="confirmFresh = true">清空勾选重生成</button>
                     <button type="button" class="btn sm primary" :disabled="readOnly || (!selectedDecisionCount && !selection.fields.length)" @click="applyGroup">确认本组并应用（{{ selectedDecisionCount }}）</button>
                   </div>
                 </div>
@@ -1739,14 +1876,17 @@ function resetFilters() {
           <div class="pgw-chat">
             <div class="pgw-chat-log">
               <div v-if="!messages.length" class="pgw-chat-empty">可以提出调整意见，也可以直接问字段、字典、规则和映射的细节。</div>
-              <div v-for="(item, index) in messages" :key="index" class="pgw-msg" :class="item.role">
-                <span class="pgw-role">{{ item.role === "user" ? "你" : "助手" }}</span>
-                <div class="pgw-msg-body">
-                  <div v-if="item.role === 'assistant'" class="pgw-rich" v-html="agentHtml(item.text)"></div>
-                  <span v-else>{{ item.text }}</span>
-                  <div v-if="item.note" class="pgw-msg-note">{{ item.note }}</div>
+              <template v-for="(item, index) in messages" :key="index">
+                <div v-if="showGroupDivider(index)" class="pgw-msg-group">{{ item.groupLabel || item.groupId }}</div>
+                <div class="pgw-msg" :class="item.role">
+                  <span class="pgw-role">{{ item.role === "user" ? "你" : "助手" }}</span>
+                  <div class="pgw-msg-body">
+                    <div v-if="item.role === 'assistant'" class="pgw-rich" v-html="agentHtml(item.text)"></div>
+                    <span v-else>{{ item.text }}</span>
+                    <div v-if="item.note" class="pgw-msg-note">{{ item.note }}</div>
+                  </div>
                 </div>
-              </div>
+              </template>
               <div v-if="liveAnswer" class="pgw-msg assistant">
                 <span class="pgw-role">助手</span>
                 <div class="pgw-msg-body"><div class="pgw-rich" v-html="agentHtml(liveAnswer)"></div></div>
@@ -1868,7 +2008,7 @@ function resetFilters() {
 .pgw-banner-title { font-size: 12px; font-weight: 600; color: #14533e; }
 .pgw-banner-sub { margin-top: 3px; color: #64748b; font-size: 10.5px; }
 .pgw-banner-counts { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
-.pgw-banner-actions { display: flex; gap: 5px; flex: 0 0 auto; }
+.pgw-banner-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; flex: 0 0 auto; }
 .pgw-diff { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 11px; border: 1px solid #bfdbfe; border-radius: 8px; background: #eff6ff; color: #1e3a8a; font-size: 10.5px; }
 .pgw-new-groups { display: flex; flex-direction: column; gap: 5px; }
 .pgw-subhead { font-size: 10.5px; font-weight: 600; color: #475569; }
@@ -1904,6 +2044,7 @@ function resetFilters() {
 .pgw-chat-log { max-height: 320px; overflow: auto; display: flex; flex-direction: column; gap: 5px; padding: 7px 10px; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; font-size: 10.5px; }
 .pgw-chat-empty { color: #94a3b8; }
 .pgw-msg { display: flex; gap: 6px; }
+.pgw-msg-group { margin: 7px 0 1px; color: #94a3b8; font-size: 9.5px; font-weight: 600; letter-spacing: .04em; }
 .pgw-msg-body { flex: 1; min-width: 0; line-height: 1.6; }
 .pgw-msg-note { margin-top: 3px; color: #94a3b8; font-size: 9.5px; }
 .pgw-rich :deep(p) { margin: 0 0 4px; }

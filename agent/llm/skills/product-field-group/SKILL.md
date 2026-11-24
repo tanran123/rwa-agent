@@ -75,7 +75,14 @@ description: 按监管字段分组逐组生成产品标准字段、字典和映�
   "currentProposal": null,
   "previousProposal": null,
   "currentSelections": [],
-  "messages": []
+  "messages": [
+    {
+      "role": "user",
+      "text": "重新生成本组",
+      "groupId": "OBLIGOR_PROFILE",
+      "groupLabel": "主体属性"
+    }
+  ]
 }
 ```
 
@@ -84,6 +91,7 @@ description: 按监管字段分组逐组生成产品标准字段、字典和映�
 - `dictionaries` 是版本级已有字典。优先复用。
 - `currentSelections` 是用户上一版勾选的决策目标字段；调整时未经用户明确要求，不要删除或改变这些选择。
 - `previousProposal` 是上一版完整建议，用于对比。
+- `messages` 是本产品跨分组的整段对话（服务端按条数和字符预算裁剪后传入），每条带 `groupId` 和 `groupLabel`。只把 `groupId` 等于当前 `group.id` 的消息当作本组上下文；其他组的内容只在用户明确提及时参考，不要越组生成或修改。
 
 ## 输出
 
