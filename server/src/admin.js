@@ -525,6 +525,12 @@ export async function testLlm(id, owner, actor) {
   const at = nowText();
   const headers = { "content-type": "application/json" };
   if (row.api_key) headers.authorization = "Bearer " + row.api_key;
+  try {
+    // OpenCode Zen 网关要求会话头，否则 400 MissingSessionID。
+    if (new URL(base).hostname.endsWith("opencode.ai")) headers["x-opencode-session"] = "rwa-" + Date.now();
+  } catch {
+    // base 不是完整 URL 时交给下面的请求自己报错
+  }
   const seconds = Number(row.timeout) > 0 ? Number(row.timeout) : 15;
   const started = Date.now();
   try {

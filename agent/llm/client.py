@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import uuid
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Iterator
+from urllib.parse import urlsplit
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
@@ -15,6 +17,16 @@ CHAT = "chat"
 MAPPING = "mapping"
 
 _ACTIVE: ContextVar[Settings | None] = ContextVar("rwa_llm_settings", default=None)
+
+# OpenCode Zen 网关要求带会话头，缺了会返回 400 MissingSessionID。
+_OPENCODE_SESSION = "rwa-" + uuid.uuid4().hex
+
+
+def _default_headers(base_url: str) -> dict:
+    host = urlsplit(base_url or "").hostname or ""
+    if host.endswith("opencode.ai"):
+        return {"x-opencode-session": _OPENCODE_SESSION}
+    return {}
 
 
 @contextmanager
@@ -50,6 +62,9 @@ def chat_model(role: str = CHAT, timeout: float | None = None, override: Setting
     }
     if current.max_tokens:
         kwargs["max_tokens"] = current.max_tokens
+    headers = _default_headers(current.base_url)
+    if headers:
+        kwargs["default_headers"] = headers
     wait = timeout if timeout is not None else current.timeout
     if wait is not None:
         kwargs["timeout"] = wait

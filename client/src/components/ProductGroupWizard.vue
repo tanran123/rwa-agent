@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import Drawer from "@/components/Drawer.vue";
 import { assistProductGroup, assistProductGroupStream } from "@/api/product";
 import { agentHtml } from "@/utils/agentText";
@@ -104,6 +104,20 @@ const expandedProposalField = ref("");
 const expandedProposalMapping = ref("");
 const liveAnswer = ref("");
 const fieldFilters = ref({ required: false, unmapped: false, system: false, type: "", keyword: "" });
+// 对话区流式输出：模型运行中的事件按到达顺序追加成日志。
+const runLog = ref([]);
+const chatLogRef = ref(null);
+// 左侧分组计划可拖窄、可收起。
+const leftWidth = ref(300);
+const leftCollapsed = ref(false);
+const leftResizing = ref(false);
+let resizeStartX = 0;
+let resizeStartWidth = 0;
+// 对话区高度可拖拽调整，默认不占太多纵向空间。
+const chatHeight = ref(260);
+const chatResizing = ref(false);
+let chatResizeStartY = 0;
+let chatResizeStartHeight = 0;
 let saveTimer = null;
 let controller = null;
 let storageWarned = false;
@@ -125,24 +139,6 @@ const confirmedCount = computed(() => plan.value.filter((group) => statuses.valu
 const skippedCount = computed(() => plan.value.filter((group) => statuses.value[group.id] === "skipped").length);
 const progressPct = computed(() => plan.value.length ? Math.round(((confirmedCount.value + skippedCount.value) / plan.value.length) * 100) : 0);
 const quickChips = computed(() => ["只处理必填字段", "复用已有标准字段", "固定默认值不建字段", "重新生成本组"]);
-const adoption = computed(() => {
-  let appliedFields = 0;
-  let proposedFields = 0;
-  let appliedMappings = 0;
-  let proposedMappings = 0;
-  let appliedDecisions = 0;
-  let proposedDecisions = 0;
-  Object.values(appliedStats.value).forEach((item) => {
-    appliedFields += Number(item.fields) || 0;
-    proposedFields += Number(item.proposedFields) || 0;
-    appliedMappings += Number(item.mappings) || 0;
-    proposedMappings += Number(item.proposedMappings) || 0;
-    appliedDecisions += Number(item.decisions) || 0;
-    proposedDecisions += Number(item.proposedDecisions) || 0;
-  });
-  return { fields: appliedFields, proposedFields, mappings: appliedMappings, proposedMappings, decisions: appliedDecisions, proposedDecisions };
-});
-
 const briefFields = computed(() => (brief.value && brief.value.fields) || []);
 const visibleFields = computed(() => {
   const filter = fieldFilters.value;
@@ -220,6 +216,62 @@ const streamPct = computed(() => {
   if (!progress.value.total) return progress.value.active ? 8 : 0;
   return Math.min(100, Math.round(((progress.value.done || 0) / progress.value.total) * 100));
 });
+// 问答流式内容如果还是 JSON 片段，先不往对话里渲染，等 result 里的正文。
+const liveText = computed(() => {
+  const text = String(liveAnswer.value || "").trim();
+  if (!text) return "";
+  if (text.startsWith("{") || text.startsWith("```")) return "";
+  return liveAnswer.value;
+});
+function scrollChat() {
+  nextTick(() => {
+    const el = chatLogRef.value;
+    if (el) el.scrollTop = el.scrollHeight;
+  });
+}
+function pushRunLine(kind, text) {
+  const line = String(text || "").trim();
+  if (!line) return;
+  runLog.value = runLog.value.concat([{ kind, text: line }]);
+  scrollChat();
+}
+function startResize(event) {
+  leftResizing.value = true;
+  resizeStartX = event.clientX;
+  resizeStartWidth = leftWidth.value;
+  window.addEventListener("mousemove", onResize);
+  window.addEventListener("mouseup", stopResize);
+}
+function onResize(event) {
+  if (!leftResizing.value) return;
+  const next = resizeStartWidth + (event.clientX - resizeStartX);
+  leftWidth.value = Math.max(180, Math.min(460, next));
+}
+function stopResize() {
+  leftResizing.value = false;
+  window.removeEventListener("mousemove", onResize);
+  window.removeEventListener("mouseup", stopResize);
+}
+function startChatResize(event) {
+  chatResizing.value = true;
+  chatResizeStartY = event.clientY;
+  chatResizeStartHeight = chatHeight.value;
+  window.addEventListener("mousemove", onChatResize);
+  window.addEventListener("mouseup", stopChatResize);
+}
+function onChatResize(event) {
+  if (!chatResizing.value) return;
+  // 往上拖变高，往下拖变矮；上限不超过主区高度的六成。
+  const next = chatResizeStartHeight - (event.clientY - chatResizeStartY);
+  const max = Math.round(window.innerHeight * 0.6);
+  chatHeight.value = Math.max(150, Math.min(max, next));
+}
+function stopChatResize() {
+  chatResizing.value = false;
+  window.removeEventListener("mousemove", onChatResize);
+  window.removeEventListener("mouseup", stopChatResize);
+}
+watch([messages, runLog, liveAnswer], () => scrollChat(), { flush: "post" });
 const proposalDiff = computed(() => {
   const id = current.value ? current.value.id : "";
   const previous = id ? previousProposals.value[id] : null;
@@ -363,6 +415,8 @@ function restoreSession() {
 onMounted(() => window.addEventListener("beforeunload", saveSession));
 onBeforeUnmount(() => {
   window.removeEventListener("beforeunload", saveSession);
+  stopResize();
+  stopChatResize();
   clearTimeout(saveTimer);
 });
 
@@ -467,6 +521,7 @@ async function openGroup(index, internal = false) {
   expandedProposalMapping.value = "";
   fieldFilters.value = { required: false, unmapped: false, system: false, type: "", keyword: "" };
   progress.value = EMPTY_PROGRESS();
+  runLog.value = [];
   liveAnswer.value = "";
   proposalTab.value = "overview";
   briefLoading.value = true;
@@ -574,6 +629,7 @@ async function runGeneration(action, options = {}) {
   error.value = "";
   notice.value = "";
   liveAnswer.value = "";
+  runLog.value = [];
   progress.value = {
     ...EMPTY_PROGRESS(),
     active: true,
@@ -581,6 +637,7 @@ async function runGeneration(action, options = {}) {
     message: isAnswer ? "正在读取本组字段、字典和映射…" : "正在准备本组监管字段画像…",
     total: briefFields.value.length
   };
+  pushRunLine("status", isAnswer ? "正在读取本组字段、字典和映射…" : "正在准备本组监管字段画像…");
   const payload = basePayload(action);
   let result = null;
   controller = new AbortController();
@@ -594,6 +651,7 @@ async function runGeneration(action, options = {}) {
             message: data.message || progress.value.message,
             total: data.total || progress.value.total
           };
+          pushRunLine("status", data && data.message ? data.message : stageLabel(progress.value.stage));
         },
         token(data) {
           if (data && data.text) liveAnswer.value += data.text;
@@ -608,15 +666,25 @@ async function runGeneration(action, options = {}) {
             done: data.done || list.length,
             total: data.total || progress.value.total
           };
+          const decision = data.decision;
+          const fieldName = decision.standardField && decision.standardField.name;
+          pushRunLine("decision", "✓ " + decision.targetField + " · " + decisionLabel(decision.decisionType) + (fieldName ? " → " + fieldName : ""));
         },
         field(data) {
-          if (data && data.field) progress.value.fields = progress.value.fields.concat([data.field]);
+          if (!data || !data.field) return;
+          progress.value.fields = progress.value.fields.concat([data.field]);
+          pushRunLine("field", "＋ 标准字段 " + (data.field.name || ""));
         },
         mapping(data) {
-          if (data && data.mapping) progress.value.mappings = progress.value.mappings.concat([data.mapping]);
+          if (!data || !data.mapping) return;
+          progress.value.mappings = progress.value.mappings.concat([data.mapping]);
+          const source = data.mapping.sourceField ? " ← " + data.mapping.sourceField : "";
+          pushRunLine("mapping", "↳ 映射 " + data.mapping.targetField + source);
         },
         dictionary(data) {
-          if (data && data.dictionary) progress.value.dictionaries = progress.value.dictionaries.concat([data.dictionary]);
+          if (!data || !data.dictionary) return;
+          progress.value.dictionaries = progress.value.dictionaries.concat([data.dictionary]);
+          pushRunLine("dictionary", "◈ 字典 " + (data.dictionary.dict_code || ""));
         },
         result(data) {
           result = data;
@@ -630,6 +698,7 @@ async function runGeneration(action, options = {}) {
     if (err && err.name === "AbortError") {
       loading.value = false;
       progress.value = EMPTY_PROGRESS();
+      runLog.value = [];
       return;
     }
     error.value = err.message || "";
@@ -641,6 +710,7 @@ async function runGeneration(action, options = {}) {
       error.value = err.message || (isAnswer ? "回答本组问题失败" : (action === "refine" ? "调整本组建议失败" : "生成本组建议失败"));
       progress.value = EMPTY_PROGRESS();
       liveAnswer.value = "";
+      runLog.value = [];
       loading.value = false;
       controller = null;
       return;
@@ -657,6 +727,7 @@ async function runGeneration(action, options = {}) {
     }]);
     liveAnswer.value = "";
     progress.value = EMPTY_PROGRESS();
+    runLog.value = [];
     error.value = "";
     loading.value = false;
     controller = null;
@@ -666,10 +737,12 @@ async function runGeneration(action, options = {}) {
   error.value = "";
   // 请求期间切了分组就不要把结果写进新分组。
   if (!current.value || current.value.id !== id) {
+    runLog.value = [];
     loading.value = false;
     controller = null;
     return;
   }
+  pushRunLine("status", "本组建议已生成，结果见下方「本组标准字段、字典与映射决策」。");
   applyProposal(result, options.preserve === true, previous);
   loading.value = false;
   controller = null;
@@ -1267,6 +1340,9 @@ function resetFilters() {
           <strong v-if="brief">{{ brief.label }}</strong>
         </div>
         <span class="spacer"></span>
+        <button type="button" class="btn sm" :title="leftCollapsed ? '展开左侧分组计划' : '收起左侧分组计划'" @click="leftCollapsed = !leftCollapsed">
+          {{ leftCollapsed ? "显示分组计划" : "隐藏分组计划" }}
+        </button>
         <button type="button" class="btn sm" :disabled="readOnly || (!bulkRunning && loading) || !plan.length" :title="bulkRunning ? '停止后续分组' : '按计划逐组生成，保留各组已勾选决策'" @click="toggleBulk">
           {{ bulkRunning ? "停止生成（" + bulkDone + "/" + bulkTotal + "）" : "一键生成全部分组" }}
         </button>
@@ -1276,15 +1352,10 @@ function resetFilters() {
       </div>
 
       <div class="pgw-body">
-        <aside class="pgw-left">
+        <aside v-show="!leftCollapsed" class="pgw-left" :style="{ width: leftWidth + 'px' }">
           <div class="pgw-left-head">
             <div class="pgw-left-title"><b>分组计划</b><span>{{ confirmedCount }} / {{ plan.length }} 已完成</span></div>
             <div class="pgw-progress"><i :style="{ width: progressPct + '%' }"></i></div>
-            <div class="pgw-left-stats">
-              <span>已确认 {{ confirmedCount }}</span>
-              <span>已跳过 {{ skippedCount }}</span>
-              <span>{{ progressPct }}%</span>
-            </div>
           </div>
           <div class="pgw-groups">
             <div
@@ -1315,6 +1386,14 @@ function resetFilters() {
             <span>{{ finished ? "已全部完成" : confirmedCount + "/" + plan.length }}</span>
           </div>
         </aside>
+        <div
+          v-if="!leftCollapsed"
+          class="pgw-splitter"
+          :class="{ active: leftResizing }"
+          title="拖动调整分组计划宽度，双击收起"
+          @mousedown.prevent="startResize"
+          @dblclick="leftCollapsed = true"
+        ></div>
 
         <main class="pgw-main">
           <div class="pgw-main-head">
@@ -1351,13 +1430,6 @@ function resetFilters() {
           <div class="pgw-scroll">
             <p v-if="error" class="notice danger">{{ error }}</p>
             <p v-if="notice" class="notice info">{{ notice }}</p>
-
-            <div class="pgw-kpis">
-              <div class="pgw-kpi"><div class="k">已确认分组</div><div class="v">{{ confirmedCount }} <small>/ {{ plan.length }}</small></div></div>
-              <div class="pgw-kpi"><div class="k">已跳过分组</div><div class="v">{{ skippedCount }}</div></div>
-              <div class="pgw-kpi"><div class="k">标准字段采纳率</div><div class="v">{{ adoption.fields }} <small>/ {{ adoption.proposedFields }}</small></div></div>
-              <div class="pgw-kpi"><div class="k">决策采纳率</div><div class="v">{{ adoption.decisions }} <small>/ {{ adoption.proposedDecisions }}</small></div></div>
-            </div>
 
             <div v-if="briefLoading" class="pgw-empty">正在读取本组监管字段…</div>
             <div v-else-if="!brief && plan.length" class="pgw-empty">选择左侧分组开始。</div>
@@ -1873,9 +1945,22 @@ function resetFilters() {
             </section>
           </div>
 
-          <div class="pgw-chat">
-            <div class="pgw-chat-log">
-              <div v-if="!messages.length" class="pgw-chat-empty">可以提出调整意见，也可以直接问字段、字典、规则和映射的细节。</div>
+          <div class="pgw-chat" :style="{ height: chatHeight + 'px' }">
+            <div
+              class="pgw-chat-resize"
+              :class="{ active: chatResizing }"
+              title="拖动调整对话区高度，双击恢复默认"
+              @mousedown.prevent="startChatResize"
+              @dblclick="chatHeight = 260"
+            ></div>
+            <div class="pgw-chat-head">
+              <b>对话与调整</b>
+              <span class="dim">提问本组字段、字典和映射，或直接给调整意见</span>
+              <span class="spacer"></span>
+              <span class="dim">{{ messages.length }} 条消息</span>
+            </div>
+            <div ref="chatLogRef" class="pgw-chat-log">
+              <div v-if="!messages.length && !runLog.length && !liveText" class="pgw-chat-empty">可以提出调整意见，也可以直接问字段、字典、规则和映射的细节。</div>
               <template v-for="(item, index) in messages" :key="index">
                 <div v-if="showGroupDivider(index)" class="pgw-msg-group">{{ item.groupLabel || item.groupId }}</div>
                 <div class="pgw-msg" :class="item.role">
@@ -1887,9 +1972,14 @@ function resetFilters() {
                   </div>
                 </div>
               </template>
-              <div v-if="liveAnswer" class="pgw-msg assistant">
+              <div v-if="runLog.length || liveText" class="pgw-msg assistant">
                 <span class="pgw-role">助手</span>
-                <div class="pgw-msg-body"><div class="pgw-rich" v-html="agentHtml(liveAnswer)"></div></div>
+                <div class="pgw-msg-body">
+                  <div v-if="runLog.length" class="pgw-run">
+                    <div v-for="(line, lineIndex) in runLog" :key="lineIndex" class="pgw-run-line" :class="line.kind">{{ line.text }}</div>
+                  </div>
+                  <div v-if="liveText" class="pgw-rich" v-html="agentHtml(liveText)"></div>
+                </div>
               </div>
             </div>
             <div class="pgw-chips">
@@ -1919,13 +2009,14 @@ function resetFilters() {
 .pgw-app .btn.primary:hover:not(:disabled) { background: #144f3c; }
 .pgw-app .btn.xs { height: 24px; padding: 0 7px; font-size: 10.5px; }
 .pgw-body { flex: 1; min-height: 0; display: flex; gap: 12px; padding: 10px 14px 12px; overflow: hidden; }
+.pgw-splitter { flex: 0 0 6px; margin: 0 -6px; border-radius: 999px; cursor: col-resize; background: transparent; transition: background .15s; }
+.pgw-splitter:hover, .pgw-splitter.active { background: #cbe2d7; }
 .pgw-left { width: 300px; flex: 0 0 auto; display: flex; flex-direction: column; min-height: 0; border: 1px solid #e2e8f0; border-radius: 14px; background: #fff; overflow: hidden; }
 .pgw-left-head { padding: 12px 14px 10px; border-bottom: 1px solid #f1f5f9; display: flex; flex-direction: column; gap: 8px; }
 .pgw-left-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12.5px; }
 .pgw-left-title span { color: #94a3b8; font-size: 10.5px; }
 .pgw-progress { height: 6px; border-radius: 999px; background: #f1f5f9; overflow: hidden; }
 .pgw-progress i { display: block; height: 100%; border-radius: 999px; background: #19614a; transition: width .25s; }
-.pgw-left-stats { display: flex; justify-content: space-between; color: #64748b; font-size: 10px; }
 .pgw-groups { flex: 1; min-height: 0; overflow: auto; padding: 7px; display: flex; flex-direction: column; gap: 4px; }
 .pgw-group-card { display: flex; gap: 4px; padding: 9px 9px 8px; border: 1px solid transparent; border-radius: 10px; cursor: pointer; }
 .pgw-group-card:hover { background: #f8fafc; border-color: #e2e8f0; }
@@ -1956,11 +2047,6 @@ function resetFilters() {
 .pgw-actions { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
 .pgw-confirm-inline { display: inline-flex; align-items: center; gap: 5px; padding: 2px 6px; border: 1px solid #fde68a; border-radius: 7px; background: #fffbeb; color: #92400e; font-size: 10.5px; }
 .pgw-scroll { flex: 1; min-height: 0; overflow: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 16px; }
-.pgw-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; }
-.pgw-kpi { padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 10px; background: #fafbfc; }
-.pgw-kpi .k { color: #64748b; font-size: 10.5px; }
-.pgw-kpi .v { margin-top: 3px; font-size: 20px; font-weight: 700; color: #0f172a; font-variant-numeric: tabular-nums; }
-.pgw-kpi .v small { font-size: 10.5px; font-weight: 400; color: #94a3b8; }
 .pgw-section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
 .pgw-section-title { font-size: 12.5px; font-weight: 650; color: #0f172a; }
 .pgw-check { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; color: #64748b; }
@@ -2040,8 +2126,20 @@ function resetFilters() {
 .pgw-stream-list { max-height: 150px; overflow: auto; margin: 2px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 3px; font-size: 10.5px; }
 .pgw-stream-list li { display: flex; align-items: center; gap: 6px; }
 .pgw-empty { padding: 14px; color: #94a3b8; font-size: 11px; }
-.pgw-chat { flex: 0 0 auto; display: flex; flex-direction: column; gap: 6px; padding: 9px 14px; border-top: 1px solid #e2e8f0; background: #f8fafc; }
-.pgw-chat-log { max-height: 320px; overflow: auto; display: flex; flex-direction: column; gap: 5px; padding: 7px 10px; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; font-size: 10.5px; }
+.pgw-chat { flex: 0 0 auto; min-height: 150px; display: flex; flex-direction: column; gap: 6px; padding: 0 14px 10px; border-top: 1px solid #e2e8f0; background: #f8fafc; }
+.pgw-chat-resize { flex: 0 0 auto; height: 8px; margin: 0 -14px; cursor: row-resize; background: transparent; transition: background .15s; }
+.pgw-chat-resize:hover, .pgw-chat-resize.active { background: #cbe2d7; }
+.pgw-chat-head { display: flex; align-items: center; gap: 8px; padding-bottom: 2px; font-size: 11.5px; }
+.pgw-chat-head b { color: #334155; font-size: 12px; }
+.pgw-chat-head .spacer { flex: 1; }
+.pgw-chat-log { flex: 1 1 auto; min-height: 0; max-height: none; overflow: auto; display: flex; flex-direction: column; gap: 5px; padding: 8px 11px; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; font-size: 11.5px; }
+.pgw-run { display: flex; flex-direction: column; gap: 2px; }
+.pgw-run-line { color: #475569; font-size: 11px; line-height: 1.55; }
+.pgw-run-line.status { color: #64748b; }
+.pgw-run-line.decision { color: #14533e; }
+.pgw-run-line.field { color: #1d4ed8; }
+.pgw-run-line.mapping { color: #475569; }
+.pgw-run-line.dictionary { color: #6d28d9; }
 .pgw-chat-empty { color: #94a3b8; }
 .pgw-msg { display: flex; gap: 6px; }
 .pgw-msg-group { margin: 7px 0 1px; color: #94a3b8; font-size: 9.5px; font-weight: 600; letter-spacing: .04em; }
@@ -2063,8 +2161,8 @@ function resetFilters() {
 .pgw-chip { border: 1px solid #e2e8f0; background: #fff; color: #475569; padding: 2px 7px; border-radius: 5px; font-size: 10px; cursor: pointer; }
 .pgw-chip:hover:not(:disabled) { background: #ebf5f1; color: #14533e; border-color: #cbe2d7; }
 .pgw-chat-form { display: flex; gap: 7px; }
-.pgw-chat-form input { flex: 1; min-width: 0; height: 34px !important; padding: 0 10px !important; font-size: 11.5px !important; border-radius: 7px; }
-.pgw-chat-form .btn { height: 34px; }
+.pgw-chat-form input { flex: 1; min-width: 0; height: 38px !important; padding: 0 11px !important; font-size: 12.5px !important; border-radius: 8px; }
+.pgw-chat-form .btn { height: 38px; padding: 0 16px; font-size: 12px; }
 .tag.mint { background: #ebf5f1; color: #14533e; }
 .tag.gray { background: #f1f5f9; color: #475569; }
 .tag.rose { background: #ffe4e6; color: #be123c; }
@@ -2072,8 +2170,7 @@ function resetFilters() {
 .tag.amber { background: #fffbeb; color: #92400e; }
 .tag.violet { background: #f5f3ff; color: #6d28d9; }
 @media (max-width: 1100px) {
-  .pgw-left { width: 250px; }
-  .pgw-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pgw-left { max-width: 44vw; }
   .pgw-profile, .pgw-decision-detail { grid-template-columns: minmax(0, 1fr); }
 }
 </style>
