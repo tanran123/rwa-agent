@@ -16,6 +16,10 @@ import { readCrmConfig, saveCrmConfig } from "./crmConfig.js";
 import { configProducts, productGroupMappings } from "./productStandard.js";
 import { buildProductAssistContext } from "./productAssist.js";
 import {
+  readGroupConstraints, readGroupProposal, readGroupRun,
+  saveGroupConstraints, streamGroupWorkflow
+} from "./productGroupWorkflow.js";
+import {
   archiveTask, computeLcr, computeTask, computeTaskRun, confirmTaskFields, confirmTaskRecognitions,
   deleteDataset, deleteList, deleteTask, demoData,
   exportTaskRunWorkbook, exportWorkbook,
@@ -696,6 +700,69 @@ router.post("/product-standard/assist/group", async (ctx) => {
     ctx.status = err.status || 502;
     ctx.body = { error: err.message || "分组生成失败" };
   }
+});
+
+router.post("/product-standard/assist/group/workflow", async (ctx) => {
+  const llm = await requestLlm(ctx);
+  await streamGroupWorkflow(ctx, ctx.request.body || {}, llm);
+});
+
+router.post("/product-standard/assist/group/workflow/resume", async (ctx) => {
+  const llm = await requestLlm(ctx);
+  await streamGroupWorkflow(ctx, ctx.request.body || {}, llm, { resume: true });
+});
+
+router.get("/product-standard/group-runs/:runId", async (ctx) => {
+  const row = await readGroupRun(ctx.params.runId);
+  if (!row) ctx.throw(404, "没有这个分组智能体运行记录");
+  ctx.body = {
+    runId: row.run_id,
+    threadId: row.thread_id,
+    proposalId: row.proposal_id,
+    version: row.rule_version,
+    family: row.product_family,
+    groupId: row.group_id,
+    action: row.action,
+    intent: row.intent,
+    status: row.status,
+    draftDigest: row.draft_digest,
+    error: row.error,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+});
+
+router.get("/product-standard/group-proposals/:proposalId", async (ctx) => {
+  const row = await readGroupProposal(ctx.params.proposalId);
+  if (!row) ctx.throw(404, "没有这个分组建议");
+  ctx.body = {
+    proposalId: row.proposal_id,
+    runId: row.run_id,
+    threadId: row.thread_id,
+    groupId: row.group_id,
+    status: row.status,
+    proposal: json(row.proposal_json),
+    diff: json(row.diff_json),
+    reviewFindings: json(row.review_json),
+    conflicts: json(row.conflicts_json),
+    createdAt: row.created_at
+  };
+});
+
+router.get("/product-standard/group-constraints", async (ctx) => {
+  const rows = await readGroupConstraints(
+    String(ctx.query.version || ""), String(ctx.query.family || ""), String(ctx.query.groupId || "")
+  );
+  ctx.body = { constraints: rows.map((row) => json(row.constraint_json)).filter(Boolean) };
+});
+
+router.put("/product-standard/group-constraints", async (ctx) => {
+  const body = ctx.request.body || {};
+  const rows = await saveGroupConstraints(
+    String(body.version || ""), String(body.family || ""), String(body.groupId || ""),
+    Array.isArray(body.constraints) ? body.constraints : [], actorOf(ctx)
+  );
+  ctx.body = { constraints: rows.map((row) => json(row.constraint_json)).filter(Boolean) };
 });
 
 router.post("/product-standard/assist/group/stream", async (ctx) => {

@@ -10,7 +10,7 @@
 | --- | --- |
 | `client/` | Vue 前端。页面、菜单、调用接口。说明见 `client/README.md`。 |
 | `server/` | Koa 接口，读 MySQL。说明见 `server/README.md`。 |
-| `sql/` | 库表。`001_schema.sql` 建表，`002_seed.sql` 灌数。表的用途写在后端说明里。 |
+| `sql/` | 库表。`001_schema.sql` 建表，`002_seed.sql` 灌数；已有库执行 `003_product_group_agent.sql` 补分组智能配置表。表的用途写在后端说明里。 |
 | `agent/` | 计算智能体。总控、流水线、底稿页和市场风险公式见 `agent/README.md`。 |
 | `knowledge/` | 规则库。本地规则在 `local/`，微信知识库对话在 `weknora/`。说明见 `knowledge/README.md`。 |
 | `app.py` | Flask。把 `/api/agent/chat`、`/api/rules/chat` 交给 Python，并提供底稿和规则库接口。 |

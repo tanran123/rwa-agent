@@ -1147,6 +1147,60 @@ def product_assist_group():
     return jsonify({**result, **_hqla_agent_meta("product-field-group")})
 
 
+@app.post("/api/product/assist/group/workflow")
+def product_group_workflow():
+    """分组智能配置工作流：意图识别 + 子图 + Proposal Manager + Review。"""
+    from agent.llm.workflows.group_config.graph import stream_group_workflow
+
+    data = _hqla_payload()
+    group = data.get("group") if isinstance(data.get("group"), dict) else {}
+    if not group.get("id"):
+        return jsonify({"error": "缺少当前监管字段分组"}), 400
+    if not isinstance(data.get("targetFields"), list):
+        data["targetFields"] = []
+    action = str(data.get("action") or "auto")
+    data["action"] = action
+
+    def generate():
+        with use_llm_config(_llm_of(data)):
+            for item in stream_group_workflow(data):
+                payload = json.dumps(item.get("data") or {}, ensure_ascii=False)
+                yield "event: " + str(item.get("event") or "message") + "\n"
+                yield "data: " + payload + "\n\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
+    )
+
+
+@app.post("/api/product/assist/group/workflow/resume")
+def product_group_workflow_resume():
+    """恢复等待人工确认的分组智能配置任务。"""
+    data = _hqla_payload()
+    data["approvalStatus"] = str(data.get("approvalStatus") or "approved")
+    data["action"] = "auto"
+    from agent.llm.workflows.group_config.graph import stream_group_workflow
+
+    group = data.get("group") if isinstance(data.get("group"), dict) else {}
+    if not group.get("id"):
+        return jsonify({"error": "缺少当前监管字段分组"}), 400
+
+    def generate():
+        with use_llm_config(_llm_of(data)):
+            for item in stream_group_workflow(data):
+                payload = json.dumps(item.get("data") or {}, ensure_ascii=False)
+                yield "event: " + str(item.get("event") or "message") + "\n"
+                yield "data: " + payload + "\n\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
+    )
+
+
 @app.post("/api/product/assist/group/stream")
 def product_assist_group_stream():
     """按监管字段分组生成建议的流式版本。只返回 SSE 事件，不写库。"""

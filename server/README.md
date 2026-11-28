@@ -33,6 +33,7 @@ Koa 2，前缀 `/api`，默认 `http://127.0.0.1:8780`。数据在 MySQL，连�
 | `.env.example` | 数据库变量名。真实密码只写在 `.env`。 |
 | `../sql/001_schema.sql` | 建库建表。先执行这一份。 |
 | `../sql/002_seed.sql` | 初始数据。由 `tools/build-seed.mjs` 生成，不要手改大段内容。 |
+| `../sql/003_product_group_agent.sql` | 已有库增量补分组智能配置表：运行、建议、用户约束、决策审计。 |
 
 ## 路由
 
@@ -55,6 +56,10 @@ Koa 2，前缀 `/api`，默认 `http://127.0.0.1:8780`。数据在 MySQL，连�
 | GET、POST、PUT、DELETE | `/rule-documents`、`/rule-documents/:id` | 敞口划分和产品标准字段的规则文档。列表按 `jurisdiction`、`version`（监管版本编号）和 `kind` 筛选；`kind` 是 `exposure_classification`、`risk_weight`、`product_registry`、`data_mapping` 之一。`GET /rule-documents/:id` 返回 `body` 整份 JSON。`POST /rule-documents/:id/validate` 校验已保存文档，`POST /rule-documents/validate` 校验还没保存的 `{ kind, body, jurisdiction, ruleVersion }`。 |
 | POST | `/product-standard/assist/group` | 分组助手：`action=plan/brief/scope/propose/refine/answer/summary`。`plan` 返回监管字段分组计划和统计，`brief` 返回本组目标字段、`profile` 字段画像（定义、类型、取值、字典、系统计算派生、完整规则用途和当前映射）及 `usedBy`，`scope` 返回与分组计划完全一致的目标字段清单（含系统计算字段标记，供字段映射页复用），`propose/refine` 转发 Flask 生成本组字段级决策、标准字段、字典和映射，`answer` 只回答本组问题、不生成决策，`summary` 返回分组统计。请求带产品、版本、分组 ID、当前草稿、已确认建议、`currentSelections` 和 `previousProposal`；需要按当前页面勾选的暴露类型计算范围时带 `exposureClasses`。 |
 | POST | `/product-standard/assist/group/stream` | 分组助手流式版：返回 SSE `status / token / decision / field / dictionary / mapping / result / error`。先由 Koa 发出 `reading_group` 状态，再转发 Flask 的事件；`propose/refine` 逐条返回决策，`answer` 逐段返回 `token` 并只以 `result.message` 收尾。 |
+| POST | `/product-standard/assist/group/workflow` | 分组智能配置工作流：Koa 组装分组上下文，Flask 的 LangGraph 主图做意图识别、任务规划、Answer/Propose/Refine/Review 子图、Proposal Manager 和 Review Validator。返回 SSE `intent / plan / status / token / decision / field / mapping / dictionary / review / diff / proposal / conflict / approval_required / result / error`；运行和建议写入 `product_group_run`、`product_group_proposal`。 |
+| POST | `/product-standard/assist/group/workflow/resume` | 按同一 `threadId` + `runId` 恢复等待人工确认的工作流，`approvalStatus=approved` 时由 Proposal Manager 按批准结果合并。 |
+| GET | `/product-standard/group-runs/:runId`、`/product-standard/group-proposals/:proposalId` | 读取分组智能体运行记录和建议版本。 |
+| GET、PUT | `/product-standard/group-constraints` | 读取或保存产品分组的用户长期约束。 |
 | GET、PUT | `/parameter-tables`、`/parameter-tables/:id` | 规则集引用的监管参数表。列表带 `jurisdiction`、`version`，按当前版本取表，未版本化的旧行作为兼容回退。返回 `tableId`、`version`、`rowCount`；单张返回 `columns` 和 `rows`（二维数组）。保存时列数和每行列数必须一致。 |
 | GET、PUT | `/reference-lists`、`/reference-lists/:id` | 规则集引用的监管名单。列表同样带 `jurisdiction`、`version` 并按版本取值。结构与参数表相同，另有 `listId`、`listType`。 |
 | POST | `/exposure-tree/copy`、`/exposure-tree/delete`、`/exposure-tree/propose`、`/exposure-tree/save`、`/exposure-tree/provision` | 添加页签时复制当前版本的通用。删除页签时按 name 和版本删掉 `seq > 0` 的那一行，标签为「通用」的不删。`provision` 的请求体是 `{ "version": "版本编号" }`，这个版本还没有分类时，从同一地区已有分类复制页签。对话先判断修改或新增。修改先说明当前规则。新增把通用分类和 `clause_doc` 的条款一并交给助手，按条款从通用分类扩展。用户说全部或按条款库时，先出一版草稿，再由用户调整。确认后询问是否保存，保存才写入。改已有叶子时，权重必须出现在对话里。新增叶子的权重还要出现在监管条款里，或与通用分类里同名节点的权重相同。 |

@@ -1,8 +1,20 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import Drawer from "@/components/Drawer.vue";
-import { assistProductGroup, assistProductGroupStream } from "@/api/product";
-import { agentHtml } from "@/utils/agentText";
+import { askConfirm } from "@/utils/confirm";
+import {
+  assistProductGroup,
+  assistProductGroupStream,
+  assistProductGroupWorkflow,
+  assistProductGroupWorkflowResume
+} from "@/api/product";
+import GroupPlanRail from "./productGroup/GroupPlanRail.vue";
+import GroupHeader from "./productGroup/GroupHeader.vue";
+import RegulatoryFieldSection from "./productGroup/RegulatoryFieldSection.vue";
+import DecisionSection from "./productGroup/DecisionSection.vue";
+import ProductGroupAssistant from "./product-group/ProductGroupAssistant.vue";
+import { DECISION_CLASSES, DECISION_LABELS, emptyProgress, emptySelection } from "./productGroup/constants";
+import { decisionMappingText, decisionSignature, decisionStandardText, mappingTransformSummary, stageLabel, summarizeDecisionList } from "./productGroup/helpers";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -15,61 +27,7 @@ const props = defineProps({
 });
 const emit = defineEmits(["close", "apply-fields", "apply-mappings", "apply-groups", "apply-dictionaries", "save-all"]);
 
-const DECISION_LABELS = {
-  reuse: "复用",
-  create: "新建",
-  default: "默认值",
-  system: "系统计算",
-  skip: "跳过",
-  missing: "缺失"
-};
-const DECISION_CLASSES = {
-  reuse: "mint",
-  create: "blue",
-  default: "amber",
-  system: "violet",
-  skip: "gray",
-  missing: "rose"
-};
-const MAPPING_TYPE_LABELS = {
-  direct: "直接映射",
-  constant: "固定默认值",
-  transform: "码值转换",
-  conditional: "条件映射",
-  calculation: "计算派生",
-  composite: "组合映射"
-};
-const TRANSFORM_TYPE_LABELS = {
-  direct: "直接复制",
-  constant: "常量赋值",
-  code_mapping: "码值转换",
-  conditional: "条件映射",
-  calculation: "计算派生",
-  numeric_conversion: "数值换算",
-  date_conversion: "日期转换",
-  composite: "组合映射"
-};
-const STAGE_LABELS = {
-  reading_group: "读取监管字段",
-  analyzing: "分析规则用途",
-  generating: "生成字段级决策",
-  answering: "整理详细回答",
-  done: "生成完成"
-};
-const EMPTY_PROGRESS = () => ({
-  active: false,
-  stage: "",
-  message: "",
-  done: 0,
-  total: 0,
-  decisions: [],
-  fields: [],
-  mappings: [],
-  dictionaries: []
-});
-const EMPTY_SELECTION = () => ({ decisions: [], fields: [], mappings: [], dictionaries: [] });
-// 对话按产品保存完整历史；发给模型时再按条数和字符预算裁剪。
-const SESSION_SCHEMA = 2;
+const SESSION_SCHEMA = 3;
 const MESSAGE_LIMIT = 16;
 const MESSAGE_CHAR_BUDGET = 12000;
 
@@ -87,37 +45,46 @@ const currentIndex = ref(0);
 const brief = ref(null);
 const proposal = ref(null);
 const messages = ref([]);
-const input = ref("");
 const statuses = ref({});
 const proposals = ref({});
 const previousProposals = ref({});
 const selections = ref({});
+const confirmations = ref({});
 const appliedStats = ref({});
 const proposalTab = ref("overview");
 const generatedAt = ref("");
-const confirmSkip = ref(false);
-const confirmFresh = ref(false);
-const progress = ref(EMPTY_PROGRESS());
-const expandedField = ref("");
-const expandedDecision = ref("");
-const expandedProposalField = ref("");
-const expandedProposalMapping = ref("");
+// 时间线排序用：建议是哪个时刻生成的，本轮工作流是什么时候开始的。
+const proposalTimes = ref({});
+const runStartedAt = ref(0);
+const progress = ref(emptyProgress());
 const liveAnswer = ref("");
-const fieldFilters = ref({ required: false, unmapped: false, system: false, type: "", keyword: "" });
-// 对话区流式输出：模型运行中的事件按到达顺序追加成日志。
-const runLog = ref([]);
-const chatLogRef = ref(null);
-// 左侧分组计划可拖窄、可收起。
-const leftWidth = ref(300);
+const workflowIntent = ref(null);
+const workflowPlan = ref([]);
+const workflowFindings = ref([]);
+const workflowConflicts = ref([]);
+const workflowDiff = ref({});
+const workflowRequiresApproval = ref(false);
+const workflowThreadId = ref("");
+const workflowRunId = ref("");
+const workflowProposalId = ref("");
+const workflowDraftDigest = ref("");
+const lastWorkflowPayload = ref(null);
+const useWorkflow = ref(true);
+const activeTarget = ref("");
+const assistantOpen = ref(true);
+const assistantWidth = ref(360);
+const assistantResizing = ref(false);
+const assistantDraft = ref("");
+const assistantFilter = ref("all");
+const leftWidth = ref(250);
 const leftCollapsed = ref(false);
 const leftResizing = ref(false);
+const runLog = ref([]);
+
 let resizeStartX = 0;
 let resizeStartWidth = 0;
-// 对话区高度可拖拽调整，默认不占太多纵向空间。
-const chatHeight = ref(260);
-const chatResizing = ref(false);
-let chatResizeStartY = 0;
-let chatResizeStartHeight = 0;
+let assistantResizeStartX = 0;
+let assistantResizeStartWidth = 0;
 let saveTimer = null;
 let controller = null;
 let storageWarned = false;
@@ -125,84 +92,23 @@ let storageWarned = false;
 const storageKey = computed(() => "rwa.productGroupWizard." + (props.version || "") + "." + (props.family || ""));
 const exposureClassKey = computed(() => props.exposureClasses.slice().sort().join("|"));
 const current = computed(() => plan.value[currentIndex.value] || null);
-const currentStatus = computed(() => (current.value ? statuses.value[current.value.id] || "pending" : ""));
-const isLastPending = computed(() => plan.value.every((group, index) => {
-  if (index === currentIndex.value) return true;
-  const status = statuses.value[group.id];
-  return status === "confirmed" || status === "skipped";
-}));
+const currentStatus = computed(() => (current.value ? statuses.value[current.value.id] || "pending" : "pending"));
 const finished = computed(() => plan.value.length > 0 && plan.value.every((group) => {
   const status = statuses.value[group.id];
   return status === "confirmed" || status === "skipped";
 }));
-const confirmedCount = computed(() => plan.value.filter((group) => statuses.value[group.id] === "confirmed").length);
-const skippedCount = computed(() => plan.value.filter((group) => statuses.value[group.id] === "skipped").length);
-const progressPct = computed(() => plan.value.length ? Math.round(((confirmedCount.value + skippedCount.value) / plan.value.length) * 100) : 0);
-const quickChips = computed(() => ["只处理必填字段", "复用已有标准字段", "固定默认值不建字段", "重新生成本组"]);
-const briefFields = computed(() => (brief.value && brief.value.fields) || []);
-const visibleFields = computed(() => {
-  const filter = fieldFilters.value;
-  const keyword = String(filter.keyword || "").trim().toLowerCase();
-  return briefFields.value.filter((field) => {
-    const profile = fieldProfile(field);
-    if (filter.required && !field.required) return false;
-    if (filter.unmapped && field.mapped) return false;
-    if (filter.system && !field.systemCalc) return false;
-    if (filter.type && (field.type || "string") !== filter.type) return false;
-    if (!keyword) return true;
-    const hay = [
-      field.name, field.label, profile.definition, profile.note,
-      ...(field.usedBy || []).map((rule) => [rule.ruleId, rule.ruleLabel, rule.path, rule.whenText, rule.note].join(" "))
-    ].join(" ").toLowerCase();
-    return hay.includes(keyword);
-  });
-});
-const fieldTypeOptions = computed(() => Array.from(new Set(briefFields.value.map((field) => field.type || "string"))));
 
+const briefFields = computed(() => (brief.value && brief.value.fields) || []);
+const decisions = computed(() => (proposal.value && proposal.value.decisions) || []);
 const proposalFields = computed(() => (proposal.value && proposal.value.standardFields) || []);
 const proposalMappings = computed(() => (proposal.value && proposal.value.mappings) || []);
-const decisions = computed(() => (proposal.value && proposal.value.decisions) || []);
 const newGroups = computed(() => (proposal.value && proposal.value.newStandardGroups) || []);
 const newDictionaries = computed(() => (proposal.value && proposal.value.newDictionaries) || []);
-const dictionaryIndex = computed(() => {
-  const map = new Map();
-  briefFields.value.forEach((field) => {
-    const dict = field.profile && field.profile.dictionary;
-    if (dict && dict.dict_code) map.set(dict.dict_code, dict);
-  });
-  ((proposal.value && proposal.value.newDictionaries) || []).forEach((dict) => {
-    if (dict && dict.dict_code) map.set(dict.dict_code, dict);
-  });
-  ((proposal.value && proposal.value.standardFields) || []).forEach((field) => {
-    const dict = field && field.dictionaryDetail;
-    if (dict && dict.dict_code && !map.has(dict.dict_code)) map.set(dict.dict_code, dict);
-  });
-  return map;
-});
-const targetsByStandardField = computed(() => {
-  const map = new Map();
-  decisions.value.forEach((item) => {
-    const name = item.standardField && item.standardField.name;
-    if (!name) return;
-    if (!map.has(name)) map.set(name, []);
-    map.get(name).push({ targetField: item.targetField, targetLabel: item.targetLabel || item.targetField });
-  });
-  return map;
-});
-const missing = computed(() => (proposal.value && proposal.value.missing) || []);
-const suggestions = computed(() => (proposal.value && proposal.value.suggestions) || []);
-const decisionTotal = computed(() => decisions.value.length);
-const decisionStats = computed(() => {
-  const counts = { reuse: 0, create: 0, default: 0, system: 0, skip: 0, missing: 0 };
-  decisions.value.forEach((item) => {
-    counts[item.decisionType] = (counts[item.decisionType] || 0) + 1;
-  });
-  return counts;
-});
+
 const selection = computed(() => {
   const id = current.value ? current.value.id : "";
   const raw = selections.value[id];
-  if (!raw) return EMPTY_SELECTION();
+  if (!raw) return emptySelection();
   return {
     decisions: Array.isArray(raw.decisions) ? raw.decisions : [],
     fields: Array.isArray(raw.fields) ? raw.fields : [],
@@ -210,68 +116,33 @@ const selection = computed(() => {
     dictionaries: Array.isArray(raw.dictionaries) ? raw.dictionaries : []
   };
 });
-const selectedDecisionCount = computed(() => selection.value.decisions.length);
-const decisionSummary = computed(() => summarizeDecisionList(decisions.value));
-const streamPct = computed(() => {
-  if (!progress.value.total) return progress.value.active ? 8 : 0;
-  return Math.min(100, Math.round(((progress.value.done || 0) / progress.value.total) * 100));
-});
-// 问答流式内容如果还是 JSON 片段，先不往对话里渲染，等 result 里的正文。
-const liveText = computed(() => {
-  const text = String(liveAnswer.value || "").trim();
-  if (!text) return "";
-  if (text.startsWith("{") || text.startsWith("```")) return "";
-  return liveAnswer.value;
-});
-function scrollChat() {
-  nextTick(() => {
-    const el = chatLogRef.value;
-    if (el) el.scrollTop = el.scrollHeight;
+
+const currentConfirmations = computed(() => (current.value ? confirmations.value[current.value.id] || [] : []));
+
+const blockingFindings = computed(() => {
+  const selected = new Set(selection.value.decisions);
+  return workflowFindings.value.filter((finding) => {
+    if (!finding || finding.severity !== "error") return false;
+    if (!finding.targetField) return true;
+    return selected.has(finding.targetField);
   });
-}
-function pushRunLine(kind, text) {
-  const line = String(text || "").trim();
-  if (!line) return;
-  runLog.value = runLog.value.concat([{ kind, text: line }]);
-  scrollChat();
-}
-function startResize(event) {
-  leftResizing.value = true;
-  resizeStartX = event.clientX;
-  resizeStartWidth = leftWidth.value;
-  window.addEventListener("mousemove", onResize);
-  window.addEventListener("mouseup", stopResize);
-}
-function onResize(event) {
-  if (!leftResizing.value) return;
-  const next = resizeStartWidth + (event.clientX - resizeStartX);
-  leftWidth.value = Math.max(180, Math.min(460, next));
-}
-function stopResize() {
-  leftResizing.value = false;
-  window.removeEventListener("mousemove", onResize);
-  window.removeEventListener("mouseup", stopResize);
-}
-function startChatResize(event) {
-  chatResizing.value = true;
-  chatResizeStartY = event.clientY;
-  chatResizeStartHeight = chatHeight.value;
-  window.addEventListener("mousemove", onChatResize);
-  window.addEventListener("mouseup", stopChatResize);
-}
-function onChatResize(event) {
-  if (!chatResizing.value) return;
-  // 往上拖变高，往下拖变矮；上限不超过主区高度的六成。
-  const next = chatResizeStartHeight - (event.clientY - chatResizeStartY);
-  const max = Math.round(window.innerHeight * 0.6);
-  chatHeight.value = Math.max(150, Math.min(max, next));
-}
-function stopChatResize() {
-  chatResizing.value = false;
-  window.removeEventListener("mousemove", onChatResize);
-  window.removeEventListener("mouseup", stopChatResize);
-}
-watch([messages, runLog, liveAnswer], () => scrollChat(), { flush: "post" });
+});
+const blockingConflicts = computed(() => {
+  const selected = new Set(selection.value.decisions);
+  return workflowConflicts.value.filter((conflict) => {
+    if (!conflict) return false;
+    if (!conflict.targetField) return true;
+    return selected.has(conflict.targetField);
+  });
+});
+const blockedCount = computed(() => {
+  const targets = new Set();
+  blockingFindings.value.forEach((finding) => targets.add(finding.targetField || "__group__"));
+  blockingConflicts.value.forEach((conflict) => targets.add(conflict.targetField || "__group__"));
+  return targets.size;
+});
+const blocked = computed(() => blockedCount.value > 0);
+
 const proposalDiff = computed(() => {
   const id = current.value ? current.value.id : "";
   const previous = id ? previousProposals.value[id] : null;
@@ -294,6 +165,215 @@ const proposalDiff = computed(() => {
   return { has: added.length + removed.length + changed.length + dictionaries.length > 0, added, removed, changed, dictionaries };
 });
 
+const diffForDisplay = computed(() => {
+  const diff = workflowDiff.value || {};
+  const has = ((diff.addedDecisions || []).length
+    + (diff.changedDecisions || []).length
+    + (diff.removedDecisions || []).length
+    + (diff.addedDictionaries || []).length) > 0;
+  if (!has) return proposalDiff.value;
+  return {
+    has: true,
+    added: diff.addedDecisions || [],
+    changed: diff.changedDecisions || [],
+    removed: diff.removedDecisions || [],
+    dictionaries: diff.addedDictionaries || []
+  };
+});
+
+// 当前分组建议的生成时刻；拿不到就排在最后，保持原来的显示顺序。
+const proposalAt = computed(() => {
+  const id = current.value ? current.value.id : "";
+  return Number(proposalTimes.value[id]) || Number.MAX_SAFE_INTEGER;
+});
+
+const INTENT_LABELS = {
+  answer: "知识问答",
+  local_refine: "局部调整",
+  global_refine: "整体调整",
+  propose: "生成建议",
+  review: "质量检查",
+  composite: "复合任务"
+};
+const TASK_LABELS = {
+  answer: "知识问答",
+  local_refine: "局部调整",
+  global_refine: "整体调整",
+  propose: "生成建议",
+  review: "质量检查",
+  composite: "复合任务"
+};
+const assistantQuickActions = [
+  { key: "required", label: "只处理必填字段" },
+  { key: "reuse", label: "复用已有标准字段" },
+  { key: "no-default", label: "固定默认值不建字段" },
+  { key: "regenerate", label: "重新生成本组", primary: true }
+];
+
+const assistantStatus = computed(() => {
+  if (loading.value) return { text: "运行中", tone: "busy" };
+  if (workflowRequiresApproval.value) return { text: "待审批", tone: "warn" };
+  if (workflowFindings.value.some((finding) => finding.severity === "error")) return { text: "需要处理", tone: "error" };
+  if (proposal.value) return { text: "建议已生成", tone: "ok" };
+  return { text: "待开始", tone: "idle" };
+});
+
+const assistantEvents = computed(() => {
+  const events = [];
+  const runKey = workflowRunId.value || "current";
+  const list = messages.value;
+  const messageEvent = (message, index) => ({
+    id: "msg-" + index + "-" + (message.at || 0),
+    type: message.role === "user" ? "user_message" : "assistant_answer",
+    text: message.text,
+    note: message.note || "",
+    groupId: message.groupId || "",
+    groupLabel: message.groupLabel || "",
+    at: message.at
+  });
+  // 本轮的过程和结果卡片要落在用户这次提问之后、助手回答之前，
+  // 否则回答会被顶到上一版结果卡片上面去。
+  let split = list.length;
+  for (let index = list.length - 1; index >= 0; index -= 1) {
+    if (list[index].role === "user") {
+      split = index + 1;
+      break;
+    }
+  }
+  list.slice(0, split).forEach((message, index) => events.push(messageEvent(message, index)));
+  const runAt = runStartedAt.value || 0;
+  if (workflowIntent.value) {
+    const type = workflowIntent.value.type || "";
+    events.push({
+      id: "intent-" + runKey,
+      type: "intent",
+      title: "当前意图",
+      typeLabel: INTENT_LABELS[type] || type,
+      confidence: workflowIntent.value.confidence,
+      at: runAt
+    });
+  }
+  if (workflowPlan.value.length) {
+    events.push({
+      id: "plan-" + runKey,
+      type: "plan",
+      title: "执行计划",
+      tasks: workflowPlan.value.map((task) => TASK_LABELS[task.type] || task.type),
+      at: runAt
+    });
+  }
+  if (runLog.value.length || progress.value.active) {
+    events.push({
+      id: "stage-" + runKey,
+      type: "stage",
+      title: stageLabel(progress.value.stage),
+      message: progress.value.message,
+      done: progress.value.done,
+      total: progress.value.total,
+      lines: runLog.value.map((line) => ({ kind: line.kind, text: line.text })),
+      active: progress.value.active,
+      at: runAt
+    });
+  }
+  if (workflowFindings.value.length) {
+    events.push({ id: "review-" + runKey, type: "review", title: "质量检查", findings: workflowFindings.value, at: runAt });
+  }
+  if (workflowConflicts.value.length) {
+    events.push({ id: "conflict-" + runKey, type: "conflict", conflicts: workflowConflicts.value, at: runAt });
+  }
+  if (diffForDisplay.value && diffForDisplay.value.has) {
+    const diff = diffForDisplay.value;
+    // 本轮刚算出来的差异跟着本轮走；上一版留下的差异留在建议生成的那一刻。
+    const diffAt = diff === proposalDiff.value ? proposalAt.value : runAt;
+    events.push({
+      id: "diff-" + runKey,
+      type: "diff",
+      title: "与上一版比较",
+      diff: {
+        addedDecisions: diff.added,
+        changedDecisions: diff.changed,
+        removedDecisions: diff.removed,
+        addedDictionaries: diff.dictionaries
+      },
+      at: diffAt
+    });
+  }
+  if (workflowRequiresApproval.value && !workflowConflicts.value.length) {
+    events.push({
+      id: "approval-" + runKey,
+      type: "approval",
+      title: "当前建议需要人工确认",
+      text: "批准后工作流会继续执行并回填建议。",
+      at: runAt
+    });
+  }
+  if (proposal.value) {
+    const list = proposal.value.decisions || [];
+    const counts = { reuse: 0, create: 0, default: 0, system: 0, skip: 0, missing: 0 };
+    list.forEach((item) => { counts[item.decisionType] = (counts[item.decisionType] || 0) + 1; });
+    const stats = [
+      { label: "复用", value: counts.reuse, tone: "mint" },
+      { label: "新建", value: counts.create, tone: "blue" },
+      { label: "默认值", value: counts.default, tone: "amber" },
+      { label: "系统计算", value: counts.system, tone: "violet" },
+      { label: "跳过", value: counts.skip, tone: "gray" },
+      { label: "缺失", value: counts.missing, tone: "rose" }
+    ];
+    events.push({
+      id: "rows-" + runKey,
+      type: "field_decisions",
+      title: "字段决策明细",
+      selected: selection.value.decisions.length,
+      rows: list.map((item) => ({
+        targetField: item.targetField,
+        targetLabel: item.targetLabel,
+        tone: DECISION_CLASSES[item.decisionType] || "gray",
+        decisionLabel: DECISION_LABELS[item.decisionType] || item.decisionType,
+        standard: decisionStandardText(item),
+        mapping: decisionMappingText(item),
+        dictionary: item.dictionary ? item.dictionary.dict_code : "",
+        confidence: item.confidence,
+        reason: item.reason,
+        ruleReason: item.ruleReason,
+        mappingDetail: item.mapping ? mappingTransformSummary(item.mapping) : "",
+        standardFieldLabel: item.standardField ? item.standardField.label : "",
+        selected: selection.value.decisions.includes(item.targetField)
+      })),
+      at: proposalAt.value
+    });
+    events.push({
+      id: "result-" + runKey,
+      type: "result",
+      title: "配置建议已生成",
+      stats,
+      text: proposal.value.summary || summarizeDecisionList(list),
+      hasDiff: !!(diffForDisplay.value && diffForDisplay.value.has),
+      canApply: !blocked.value && selection.value.decisions.length > 0,
+      at: proposalAt.value
+    });
+  }
+  // 本轮产生的回答（如果有）排在过程和结果卡片下面。
+  list.slice(split).forEach((message, index) => events.push(messageEvent(message, split + index)));
+  const lastAt = Number.MAX_SAFE_INTEGER;
+  if (loading.value && liveAnswer.value.trim()) {
+    // 模型边生成边显示，避免长回答期间面板看起来卡住。
+    events.push({
+      id: "live-" + runKey,
+      type: "assistant_answer",
+      text: liveAnswer.value,
+      streaming: true,
+      groupId: current.value ? current.value.id : "",
+      groupLabel: current.value ? current.value.label : "",
+      at: lastAt
+    });
+  }
+  if (error.value) {
+    events.push({ id: "error-" + runKey, type: "error", title: "处理失败", text: error.value, at: lastAt });
+  }
+  // 按发生时间排：老建议卡片不会被顶到最新回答下面。
+  return events.sort((left, right) => (left.at || 0) - (right.at || 0));
+});
+
 watch(() => props.open, (open) => {
   if (!open) {
     if (controller) controller.abort();
@@ -303,23 +383,27 @@ watch(() => props.open, (open) => {
   error.value = "";
   notice.value = "";
   if (plan.value.length && loadedClassKey.value !== exposureClassKey.value) {
-    plan.value = [];
-    currentIndex.value = 0;
-    brief.value = null;
-    proposal.value = null;
-    statuses.value = {};
-    proposals.value = {};
-    previousProposals.value = {};
-    selections.value = {};
-    appliedStats.value = {};
-    messages.value = [];
-    progress.value = EMPTY_PROGRESS();
+    resetData();
   }
   if (!plan.value.length) start();
-});
+}, { immediate: true });
 
 watch(exposureClassKey, (key) => {
   if (!props.open || bulkRunning.value || key === loadedClassKey.value) return;
+  resetData();
+  start();
+});
+
+watch(
+  [plan, currentIndex, statuses, proposals, previousProposals, proposalTimes, selections, confirmations, appliedStats, messages, activeTarget, assistantOpen, assistantWidth],
+  () => {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveSession, 300);
+  },
+  { deep: true }
+);
+
+function resetData() {
   plan.value = [];
   currentIndex.value = 0;
   brief.value = null;
@@ -327,17 +411,27 @@ watch(exposureClassKey, (key) => {
   statuses.value = {};
   proposals.value = {};
   previousProposals.value = {};
+  proposalTimes.value = {};
   selections.value = {};
+  confirmations.value = {};
   appliedStats.value = {};
   messages.value = [];
-  progress.value = EMPTY_PROGRESS();
-  start();
-});
+  progress.value = emptyProgress();
+  activeTarget.value = "";
+  proposalTab.value = "overview";
+  runLog.value = [];
+  liveAnswer.value = "";
+  resetWorkflowState();
+}
 
-watch([plan, currentIndex, statuses, proposals, previousProposals, selections, appliedStats, messages], () => {
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(saveSession, 300);
-}, { deep: true });
+function resetWorkflowState() {
+  workflowIntent.value = null;
+  workflowPlan.value = [];
+  workflowFindings.value = [];
+  workflowConflicts.value = [];
+  workflowDiff.value = {};
+  workflowRequiresApproval.value = false;
+}
 
 function saveSession() {
   clearTimeout(saveTimer);
@@ -351,9 +445,14 @@ function saveSession() {
       statuses: statuses.value,
       proposals: proposals.value,
       previousProposals: previousProposals.value,
+      proposalTimes: proposalTimes.value,
       selections: selections.value,
+      confirmations: confirmations.value,
       appliedStats: appliedStats.value,
       messages: messages.value,
+      activeTarget: activeTarget.value,
+      assistantOpen: assistantOpen.value,
+      assistantWidth: assistantWidth.value,
       classes: props.exposureClasses.slice().sort(),
       at: Date.now()
     }));
@@ -386,6 +485,16 @@ function restoreMessages(raw) {
     .filter(Boolean);
 }
 
+function deriveConfirmations(data) {
+  const result = {};
+  (data.plan || []).forEach((group) => {
+    if ((data.statuses || {})[group.id] !== "confirmed") return;
+    const selected = ((data.selections || {})[group.id] || {}).decisions;
+    if (Array.isArray(selected)) result[group.id] = selected.slice();
+  });
+  return result;
+}
+
 function restoreSession() {
   try {
     const raw = localStorage.getItem(storageKey.value);
@@ -399,13 +508,18 @@ function restoreSession() {
       return false;
     }
     plan.value = data.plan;
-    currentIndex.value = Number(data.currentIndex) || 0;
+    currentIndex.value = Math.min(Number(data.currentIndex) || 0, data.plan.length - 1);
     statuses.value = data.statuses || {};
     proposals.value = data.proposals || {};
     previousProposals.value = data.previousProposals || {};
+    proposalTimes.value = data.proposalTimes || {};
     selections.value = data.selections || {};
+    confirmations.value = data.confirmations || deriveConfirmations(data);
     appliedStats.value = data.appliedStats || {};
     messages.value = restoreMessages(data.messages);
+    activeTarget.value = String(data.activeTarget || "");
+    assistantOpen.value = data.assistantOpen !== false;
+    assistantWidth.value = Number(data.assistantWidth) || 360;
     return true;
   } catch {
     return false;
@@ -416,7 +530,7 @@ onMounted(() => window.addEventListener("beforeunload", saveSession));
 onBeforeUnmount(() => {
   window.removeEventListener("beforeunload", saveSession);
   stopResize();
-  stopChatResize();
+  stopAssistantResize();
   clearTimeout(saveTimer);
 });
 
@@ -424,7 +538,6 @@ function messageSize(item) {
   return String(item.text || "").length + String(item.note || "").length;
 }
 
-// 保存和展示用完整对话；调用模型时保留首条 + 最近若干条，并按字符预算裁剪。
 function historyForModel() {
   const list = messages.value.filter((item) => item && item.text);
   if (!list.length) return [];
@@ -479,7 +592,9 @@ async function start() {
   try {
     if (restoreSession()) {
       loadedClassKey.value = exposureClassKey.value;
+      const savedTarget = activeTarget.value;
       await openGroup(currentIndex.value, true);
+      activeTarget.value = savedTarget;
       return;
     }
     const data = await assistProductGroup({
@@ -496,7 +611,10 @@ async function start() {
     proposals.value = {};
     previousProposals.value = {};
     selections.value = {};
+    confirmations.value = {};
+    appliedStats.value = {};
     messages.value = [];
+    activeTarget.value = "";
     if (plan.value.length) await openGroup(0, true);
   } catch (err) {
     error.value = err.message || "读取监管字段分组失败";
@@ -512,18 +630,13 @@ async function openGroup(index, internal = false) {
   currentIndex.value = index;
   brief.value = null;
   proposal.value = proposals.value[plan.value[index].id] || null;
-  confirmSkip.value = false;
-  confirmFresh.value = false;
   generatedAt.value = "";
-  expandedField.value = "";
-  expandedDecision.value = "";
-  expandedProposalField.value = "";
-  expandedProposalMapping.value = "";
-  fieldFilters.value = { required: false, unmapped: false, system: false, type: "", keyword: "" };
-  progress.value = EMPTY_PROGRESS();
+  progress.value = emptyProgress();
   runLog.value = [];
   liveAnswer.value = "";
   proposalTab.value = "overview";
+  activeTarget.value = "";
+  resetWorkflowState();
   briefLoading.value = true;
   try {
     const data = await assistProductGroup(basePayload("brief", { groupId: plan.value[index].id }));
@@ -553,7 +666,18 @@ function selectProposal(body) {
   };
 }
 
-function applyProposal(data, preserve = false, previous = null) {
+function normalizeSelection(raw) {
+  if (!raw) return null;
+  if (Array.isArray(raw)) return { decisions: raw, fields: [], mappings: [], dictionaries: [] };
+  return {
+    decisions: Array.isArray(raw.decisions) ? raw.decisions : [],
+    fields: Array.isArray(raw.fields) ? raw.fields : [],
+    mappings: Array.isArray(raw.mappings) ? raw.mappings : [],
+    dictionaries: Array.isArray(raw.dictionaries) ? raw.dictionaries : []
+  };
+}
+
+function commitProposal(data, preserve = false, previous = null, options = {}) {
   if (!current.value || !data) return;
   const id = current.value.id;
   const groupLabel = current.value.label || id;
@@ -562,9 +686,14 @@ function applyProposal(data, preserve = false, previous = null) {
   }
   proposal.value = data;
   proposals.value = { ...proposals.value, [id]: data };
+  proposalTimes.value = { ...proposalTimes.value, [id]: Date.now() };
   generatedAt.value = new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+
   const old = selections.value[id];
-  if (preserve && old) {
+  const provided = normalizeSelection(options.selection);
+  if (provided) {
+    selections.value = { ...selections.value, [id]: provided };
+  } else if (preserve && old) {
     const targets = (data.decisions || [])
       .filter((item) => item.decisionType !== "missing")
       .map((item) => item.targetField);
@@ -583,32 +712,30 @@ function applyProposal(data, preserve = false, previous = null) {
       ...selections.value,
       [id]: {
         decisions: kept.concat(added),
-        fields: keepNewOrSelected(
-          previous && previous.standardFields,
-          data.standardFields,
-          old.fields,
-          (item) => item.name
-        ),
-        mappings: keepNewOrSelected(
-          previous && previous.mappings,
-          data.mappings,
-          old.mappings,
-          (item) => item.targetField
-        ),
-        dictionaries: keepNewOrSelected(
-          previous && previous.newDictionaries,
-          data.newDictionaries,
-          old.dictionaries,
-          (item) => item.dict_code
-        )
+        fields: keepNewOrSelected(previous && previous.standardFields, data.standardFields, old.fields, (item) => item.name),
+        mappings: keepNewOrSelected(previous && previous.mappings, data.mappings, old.mappings, (item) => item.targetField),
+        dictionaries: keepNewOrSelected(previous && previous.newDictionaries, data.newDictionaries, old.dictionaries, (item) => item.dict_code)
       }
     };
   } else {
     selectProposal(data);
   }
+
+  const oldConfirmed = confirmations.value[id] || [];
+  let keptConfirmations = [];
+  if (preserve && previous) {
+    const before = new Map((previous.decisions || []).map((item) => [item.targetField, decisionSignature(item)]));
+    const after = new Map((data.decisions || []).map((item) => [item.targetField, item]));
+    keptConfirmations = oldConfirmed.filter((target) => {
+      const next = after.get(target);
+      return !!next && before.get(target) === decisionSignature(next);
+    });
+  }
+  confirmations.value = { ...confirmations.value, [id]: keptConfirmations };
   statuses.value = { ...statuses.value, [id]: "proposal_ready" };
+
   const summary = summarizeDecisionList(data.decisions || []);
-  const message = String(data.message || "").trim();
+  const message = String(options.message || data.message || "").trim();
   messages.value = messages.value.concat([{
     role: "assistant",
     text: message || summary,
@@ -619,6 +746,12 @@ function applyProposal(data, preserve = false, previous = null) {
   }]);
 }
 
+function pushRunLine(kind, text) {
+  const line = String(text || "").trim();
+  if (!line) return;
+  runLog.value = runLog.value.concat([{ kind, text: line }]);
+}
+
 async function runGeneration(action, options = {}) {
   if (!current.value || props.readOnly || loading.value) return;
   const id = current.value.id;
@@ -626,12 +759,13 @@ async function runGeneration(action, options = {}) {
   const previous = proposal.value || proposals.value[id] || null;
   const isAnswer = action === "answer";
   loading.value = true;
+  runStartedAt.value = Date.now();
   error.value = "";
   notice.value = "";
   liveAnswer.value = "";
   runLog.value = [];
   progress.value = {
-    ...EMPTY_PROGRESS(),
+    ...emptyProgress(),
     active: true,
     stage: "reading_group",
     message: isAnswer ? "正在读取本组字段、字典和映射…" : "正在准备本组监管字段画像…",
@@ -651,7 +785,7 @@ async function runGeneration(action, options = {}) {
             message: data.message || progress.value.message,
             total: data.total || progress.value.total
           };
-          pushRunLine("status", data && data.message ? data.message : stageLabel(progress.value.stage));
+          pushRunLine("status", data && data.message ? data.message : "");
         },
         token(data) {
           if (data && data.text) liveAnswer.value += data.text;
@@ -668,7 +802,7 @@ async function runGeneration(action, options = {}) {
           };
           const decision = data.decision;
           const fieldName = decision.standardField && decision.standardField.name;
-          pushRunLine("decision", "✓ " + decision.targetField + " · " + decisionLabel(decision.decisionType) + (fieldName ? " → " + fieldName : ""));
+          pushRunLine("decision", "✓ " + decision.targetField + " · " + (decision.decisionType || "") + (fieldName ? " → " + fieldName : ""));
         },
         field(data) {
           if (!data || !data.field) return;
@@ -697,7 +831,7 @@ async function runGeneration(action, options = {}) {
   } catch (err) {
     if (err && err.name === "AbortError") {
       loading.value = false;
-      progress.value = EMPTY_PROGRESS();
+      progress.value = emptyProgress();
       runLog.value = [];
       return;
     }
@@ -708,7 +842,7 @@ async function runGeneration(action, options = {}) {
       result = await assistProductGroup(payload);
     } catch (err) {
       error.value = err.message || (isAnswer ? "回答本组问题失败" : (action === "refine" ? "调整本组建议失败" : "生成本组建议失败"));
-      progress.value = EMPTY_PROGRESS();
+      progress.value = emptyProgress();
       liveAnswer.value = "";
       runLog.value = [];
       loading.value = false;
@@ -726,16 +860,15 @@ async function runGeneration(action, options = {}) {
       at: Date.now()
     }]);
     liveAnswer.value = "";
-    progress.value = EMPTY_PROGRESS();
+    progress.value = emptyProgress();
     runLog.value = [];
     error.value = "";
     loading.value = false;
     controller = null;
     return;
   }
-  progress.value = EMPTY_PROGRESS();
+  progress.value = emptyProgress();
   error.value = "";
-  // 请求期间切了分组就不要把结果写进新分组。
   if (!current.value || current.value.id !== id) {
     runLog.value = [];
     loading.value = false;
@@ -743,18 +876,18 @@ async function runGeneration(action, options = {}) {
     return;
   }
   pushRunLine("status", "本组建议已生成，结果见下方「本组标准字段、字典与映射决策」。");
-  applyProposal(result, options.preserve === true, previous);
+  commitProposal(result, options.preserve === true, previous);
   loading.value = false;
   controller = null;
 }
 
 function generate() {
-  runGeneration("propose", { preserve: false });
+  if (useWorkflow.value) runWorkflow("生成本组建议", { fallbackAction: "propose" });
+  else runGeneration("propose", { preserve: false });
 }
 
 function noteRegenerate(text) {
   if (!current.value || props.readOnly || loading.value || bulkRunning.value) return false;
-  confirmFresh.value = false;
   const group = current.value;
   messages.value = messages.value.concat([{
     role: "user",
@@ -768,13 +901,15 @@ function noteRegenerate(text) {
 
 function regenerate() {
   if (!noteRegenerate("重新生成本组")) return;
-  runGeneration("propose", { preserve: true });
+  if (useWorkflow.value) runWorkflow("重新生成本组", { fallbackAction: "propose" });
+  else runGeneration("propose", { preserve: true });
 }
 
 function regenerateFresh() {
-  confirmFresh.value = false;
   if (!noteRegenerate("清空勾选后重新生成本组")) return;
-  runGeneration("propose", { preserve: false });
+  if (current.value) confirmations.value = { ...confirmations.value, [current.value.id]: [] };
+  if (useWorkflow.value) runWorkflow("清空勾选后重新生成本组", { reset: true, fallbackAction: "propose" });
+  else runGeneration("propose", { preserve: false });
 }
 
 function hasMappableTargets(group) {
@@ -840,10 +975,169 @@ async function generateAll() {
   notice.value = parts.join("；") + "。请逐组确认后保存。";
 }
 
-async function send() {
-  const text = input.value.trim();
-  if (!text || loading.value || props.readOnly) return;
-  input.value = "";
+function draftDigest() {
+  const draft = props.getDraft ? props.getDraft() : {};
+  const text = JSON.stringify({ draft, selection: selections.value[current.value ? current.value.id : ""] || {} });
+  let hash = 2166136261;
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return "client:" + (hash >>> 0).toString(16);
+}
+
+function groupPayload(text, options = {}) {
+  const id = current.value ? current.value.id : "";
+  const selectionToSend = options.reset ? emptySelection() : (selections.value[id] || emptySelection());
+  const payload = {
+    ...basePayload("auto"),
+    text,
+    threadId: workflowThreadId.value || [props.version || "", props.family || "", id].join(":"),
+    runId: workflowRunId.value || ("RUN-" + Date.now().toString(36).toUpperCase()),
+    proposalId: workflowProposalId.value || (proposal.value && proposal.value.id) || "",
+    draftDigest: draftDigest(),
+    selection: selectionToSend,
+    constraints: options.constraints || [],
+    baseDraftDigest: workflowDraftDigest.value,
+    approvalStatus: options.approval ? "approved" : ""
+  };
+  lastWorkflowPayload.value = payload;
+  return payload;
+}
+
+function pushWorkflowDecision(data) {
+  if (!data || !data.decision) return;
+  const list = progress.value.decisions.slice();
+  if (!list.some((item) => item.targetField === data.decision.targetField)) list.push(data.decision);
+  progress.value = { ...progress.value, decisions: list, done: data.done || list.length, total: data.total || progress.value.total };
+}
+
+function handleWorkflowEvents(handlers) {
+  return {
+    status(data) { handlers.status(data); },
+    intent(data) { workflowIntent.value = data.intent || null; },
+    plan(data) { workflowPlan.value = data.plan || []; },
+    token(data) { if (data && data.text) liveAnswer.value += data.text; },
+    decision: pushWorkflowDecision,
+    field(data) { if (data && data.field) progress.value.fields = progress.value.fields.concat([data.field]); },
+    mapping(data) { if (data && data.mapping) progress.value.mappings = progress.value.mappings.concat([data.mapping]); },
+    dictionary(data) { if (data && data.dictionary) progress.value.dictionaries = progress.value.dictionaries.concat([data.dictionary]); },
+    review(data) { if (data && data.finding) workflowFindings.value = workflowFindings.value.concat([data.finding]); },
+    diff(data) { workflowDiff.value = data.diff || {}; },
+    proposal(data) { if (data && data.proposal) { workflowProposalId.value = (data.proposal && data.proposal.id) || workflowProposalId.value; } },
+    conflict(data) { if (data && data.conflict) workflowConflicts.value = workflowConflicts.value.concat([data.conflict]); },
+    approval_required() { workflowRequiresApproval.value = true; },
+    result(data) { handlers.result(data); },
+    error(data) { handlers.error(data); }
+  };
+}
+
+async function runWorkflow(text, options = {}) {
+  if (!current.value || props.readOnly || loading.value || bulkRunning.value) return;
+  const id = current.value.id;
+  const previous = proposal.value || proposals.value[id] || null;
+  loading.value = true;
+  runStartedAt.value = Date.now();
+  error.value = "";
+  notice.value = "";
+  liveAnswer.value = "";
+  runLog.value = [];
+  workflowFindings.value = [];
+  workflowConflicts.value = [];
+  workflowDiff.value = {};
+  workflowRequiresApproval.value = false;
+  progress.value = { ...emptyProgress(), active: true, stage: "reading_group", message: "正在准备分组智能配置…", total: briefFields.value.length };
+  pushRunLine("status", "正在准备分组智能配置…");
+  controller = new AbortController();
+  const payload = groupPayload(text, options);
+  workflowRunId.value = payload.runId;
+  workflowThreadId.value = payload.threadId;
+  workflowDraftDigest.value = payload.draftDigest;
+  const api = options.resume ? assistProductGroupWorkflowResume : assistProductGroupWorkflow;
+  try {
+    await api(payload, handleWorkflowEvents({
+      status(data) {
+        progress.value = {
+          ...progress.value,
+          stage: data.stage || progress.value.stage,
+          message: data.message || progress.value.message,
+          total: data.total || progress.value.total
+        };
+        pushRunLine("status", data.message || "");
+      },
+      result(result) {
+        if (!result) return;
+        if (!current.value || current.value.id !== id) return;
+        workflowIntent.value = result.intent ? { type: result.intent, confidence: result.confidence, plan: result.plan } : workflowIntent.value;
+        workflowPlan.value = result.plan || workflowPlan.value;
+        workflowFindings.value = result.reviewFindings || workflowFindings.value;
+        workflowConflicts.value = result.conflicts || workflowConflicts.value;
+        workflowDiff.value = result.diff || workflowDiff.value;
+        workflowRequiresApproval.value = !!result.requiresApproval;
+        workflowProposalId.value = result.proposalId || workflowProposalId.value;
+        if (result.intent === "answer") {
+          const answer = String(result.message || liveAnswer.value || "").trim();
+          if (answer) {
+            messages.value = messages.value.concat([{
+              role: "assistant",
+              text: answer,
+              groupId: id,
+              groupLabel: current.value ? current.value.label : id,
+              at: Date.now()
+            }]);
+          }
+          liveAnswer.value = "";
+          progress.value = emptyProgress();
+          return;
+        }
+        if (result.proposal) {
+          commitProposal(result.proposal, !options.reset, previous, {
+            selection: result.selection,
+            message: result.message || result.proposal.message || ""
+          });
+        } else if (result.message) {
+          messages.value = messages.value.concat([{
+            role: "assistant",
+            text: String(result.message),
+            groupId: id,
+            groupLabel: current.value ? current.value.label : id,
+            at: Date.now()
+          }]);
+        }
+        progress.value = emptyProgress();
+      },
+      error(data) {
+        error.value = (data && (data.error || data.message)) || "分组智能配置失败";
+      }
+    }), controller.signal);
+  } catch (err) {
+    if (err && err.name === "AbortError") {
+      loading.value = false;
+      progress.value = emptyProgress();
+      return;
+    }
+    error.value = err.message || "分组智能配置失败";
+    if (!options.resume) {
+      loading.value = false;
+      try {
+        await runGeneration(String(options.fallbackAction || "refine"), { preserve: !options.reset });
+      } catch { /* keep workflow error */ }
+    }
+  } finally {
+    loading.value = false;
+    progress.value = emptyProgress();
+    controller = null;
+  }
+}
+
+async function resumeWorkflow() {
+  if (!lastWorkflowPayload.value) return;
+  await runWorkflow(lastWorkflowPayload.value.text || "继续", { resume: true, approval: true });
+}
+
+async function applyReviewFinding(finding) {
+  if (!finding || loading.value || props.readOnly) return;
+  const text = String(finding.suggestedAction || ("按检查建议调整 " + (finding.targetField || "本组字段"))).trim();
   const group = current.value;
   messages.value = messages.value.concat([{
     role: "user",
@@ -852,15 +1146,84 @@ async function send() {
     groupLabel: group ? group.label : "",
     at: Date.now()
   }]);
-  await runGeneration(looksLikeQuestion(text) ? "answer" : "refine", { preserve: true });
+  await runWorkflow(text, { fallbackAction: "refine" });
+  if (finding.targetField) locateTarget(finding.targetField, "assistant");
+}
+
+async function handleAssistantSend(text) {
+  const value = String(text || "").trim();
+  if (!value || loading.value || props.readOnly) return;
+  const group = current.value;
+  messages.value = messages.value.concat([{
+    role: "user",
+    text: value,
+    groupId: group ? group.id : "",
+    groupLabel: group ? group.label : "",
+    at: Date.now()
+  }]);
+  await runWorkflow(value);
+}
+
+async function retryWorkflow() {
+  if (lastWorkflowPayload.value && lastWorkflowPayload.value.text) {
+    await runWorkflow(lastWorkflowPayload.value.text, { fallbackAction: "refine" });
+    return;
+  }
+  regenerate();
+}
+
+async function fixAllFindings() {
+  const actions = workflowFindings.value.map((finding) => finding.suggestedAction).filter(Boolean);
+  if (!actions.length) return;
+  await handleAssistantSend("按检查建议调整：" + actions.join("；"));
+}
+
+function focusDiff() {
+  const diff = document.querySelector(".pgw-diff-wrap");
+  if (diff) diff.scrollIntoView({ block: "center", behavior: "smooth" });
+}
+
+async function copyResult() {
+  const text = proposal.value ? (proposal.value.summary || summarizeDecisionList(proposal.value.decisions || [])) : "";
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    notice.value = "已复制本组配置结果。";
+  } catch {
+    notice.value = "复制失败，请手动选择文本。";
+  }
+}
+
+function handleAssistantAction(payload) {
+  const key = payload && payload.key;
+  if (key === "apply-finding") { applyReviewFinding(payload.finding); return; }
+  if (key === "approve") { resumeWorkflow(); return; }
+  if (key === "regenerate") { regenerate(); return; }
+  if (key === "apply-group") { applyGroup(); return; }
+  if (key === "retry") { retryWorkflow(); return; }
+  if (key === "fix-all") { fixAllFindings(); return; }
+  if (key === "focus-diff") { focusDiff(); return; }
+  if (key === "copy-result") { copyResult(); return; }
+  if (key === "keep") { notice.value = "已保留当前草稿，未应用模型建议。"; return; }
+  if (payload && payload.label) handleAssistantSend(payload.label);
+}
+
+function resetAssistantWidth() {
+  assistantWidth.value = 360;
 }
 
 function toggleSelection(kind, value) {
   if (!current.value) return;
   const id = current.value.id;
-  const currentSelection = selections.value[id] || EMPTY_SELECTION();
+  const currentSelection = selections.value[id] || emptySelection();
   const list = currentSelection[kind] || [];
   const next = list.includes(value) ? list.filter((item) => item !== value) : list.concat(value);
+  if (kind === "decisions" && list.includes(value)) {
+    confirmations.value = {
+      ...confirmations.value,
+      [id]: (confirmations.value[id] || []).filter((target) => target !== value)
+    };
+  }
   selections.value = {
     ...selections.value,
     [id]: { ...currentSelection, [kind]: next }
@@ -868,16 +1231,14 @@ function toggleSelection(kind, value) {
 }
 
 function selectAllDecisions() {
-  if (!current.value) return;
+  if (!current.value || props.readOnly) return;
   const id = current.value.id;
-  const currentSelection = selections.value[id] || EMPTY_SELECTION();
+  const currentSelection = selections.value[id] || emptySelection();
   selections.value = {
     ...selections.value,
     [id]: {
       ...currentSelection,
-      decisions: decisions.value
-        .filter((item) => item.decisionType !== "missing")
-        .map((item) => item.targetField),
+      decisions: decisions.value.filter((item) => item.decisionType !== "missing").map((item) => item.targetField),
       fields: proposalFields.value.map((item) => item.name),
       mappings: proposalMappings.value.map((item) => item.targetField),
       dictionaries: newDictionaries.value.map((item) => item.dict_code)
@@ -886,9 +1247,10 @@ function selectAllDecisions() {
 }
 
 function clearDecisions() {
-  if (!current.value) return;
+  if (!current.value || props.readOnly) return;
   const id = current.value.id;
-  const currentSelection = selections.value[id] || EMPTY_SELECTION();
+  const currentSelection = selections.value[id] || emptySelection();
+  confirmations.value = { ...confirmations.value, [id]: [] };
   selections.value = {
     ...selections.value,
     [id]: { ...currentSelection, decisions: [], fields: [], mappings: [], dictionaries: [] }
@@ -897,6 +1259,10 @@ function clearDecisions() {
 
 function applyGroup() {
   if (bulkRunning.value || props.readOnly || !current.value || !proposal.value) return;
+  if (blocked.value) {
+    error.value = "存在冲突决策，请先在右侧助手里按检查建议调整后再应用。";
+    return;
+  }
   const legacy = !decisions.value.length;
   const chosen = decisions.value.filter((item) => (
     item.decisionType !== "missing" && selection.value.decisions.includes(item.targetField)
@@ -954,6 +1320,7 @@ function applyGroup() {
   if (mappings.length) emit("apply-mappings", mappings);
   const id = current.value.id;
   statuses.value = { ...statuses.value, [id]: "confirmed" };
+  confirmations.value = { ...confirmations.value, [id]: chosen.map((item) => item.targetField) };
   appliedStats.value = {
     ...appliedStats.value,
     [id]: {
@@ -970,32 +1337,26 @@ function applyGroup() {
 }
 
 function skipGroup() {
-  if (bulkRunning.value || !current.value) return;
-  statuses.value = { ...statuses.value, [current.value.id]: "skipped" };
-  confirmSkip.value = false;
+  if (bulkRunning.value || !current.value || props.readOnly) return;
+  const id = current.value.id;
+  statuses.value = { ...statuses.value, [id]: "skipped" };
+  confirmations.value = { ...confirmations.value, [id]: [] };
   nextGroup();
 }
 
-function resetFlow() {
+async function resetFlow() {
   if (bulkRunning.value) return;
+  const yes = await askConfirm(
+    "重置会删除当前版本和产品族的本地分组进度、勾选与确认状态，并重新拉取分组计划。",
+    { title: "重置分组进度", confirmText: "重置", danger: true }
+  );
+  if (!yes) return;
   try { localStorage.removeItem(storageKey.value); } catch { /* ignore */ }
   bulkRunning.value = false;
   bulkStop.value = false;
   bulkDone.value = 0;
   bulkTotal.value = 0;
-  plan.value = [];
-  currentIndex.value = 0;
-  brief.value = null;
-  proposal.value = null;
-  statuses.value = {};
-  proposals.value = {};
-  previousProposals.value = {};
-  selections.value = {};
-  appliedStats.value = {};
-  messages.value = [];
-  confirmSkip.value = false;
-  confirmFresh.value = false;
-  progress.value = EMPTY_PROGRESS();
+  resetData();
   notice.value = "已重置分组进度和对话。";
   start();
 }
@@ -1036,6 +1397,7 @@ function exportAllDraft() {
     statuses: statuses.value,
     proposals: proposals.value,
     selections: selections.value,
+    confirmations: confirmations.value,
     appliedStats: appliedStats.value
   };
   const blob = new Blob([JSON.stringify(body, null, 2)], { type: "application/json" });
@@ -1046,22 +1408,14 @@ function exportAllDraft() {
   URL.revokeObjectURL(a.href);
 }
 
-function quickAction(text) {
-  if (text === "重新生成本组") {
-    regenerate();
-    return;
-  }
-  input.value = text;
-  send();
-}
-
 function exportGroup() {
   if (!current.value) return;
   const body = {
     group: { id: current.value.id, label: current.value.label, stats: current.value.stats },
     brief: brief.value,
     proposal: proposal.value,
-    selection: selection.value
+    selection: selection.value,
+    confirmations: currentConfirmations.value
   };
   const blob = new Blob([JSON.stringify(body, null, 2)], { type: "application/json" });
   const a = document.createElement("a");
@@ -1071,262 +1425,105 @@ function exportGroup() {
   URL.revokeObjectURL(a.href);
 }
 
-function groupAdoption(group) {
-  const stat = appliedStats.value[group.id];
-  if (!stat) return "";
-  return "决策 " + stat.decisions + "/" + stat.proposedDecisions + " · 字段 " + stat.fields + "/" + stat.proposedFields;
-}
-
-function statusText(group) {
-  const status = statuses.value[group.id];
-  if (status === "confirmed") return "已确认";
-  if (status === "skipped") return "已跳过";
-  if (status === "proposal_ready") return "已生成";
-  return "未处理";
-}
-
-function showGroupDivider(index) {
-  const item = messages.value[index];
-  if (!item || !item.groupId) return false;
-  if (index === 0) return true;
-  return messages.value[index - 1].groupId !== item.groupId;
-}
-
 function saveAll() {
   emit("save-all");
 }
 
-function fieldProfile(field) {
-  if (field && field.profile) return field.profile;
-  return {
-    definition: (field && field.label) || "",
-    note: "",
-    type: (field && field.type) || "string",
-    source: "column",
-    required: !!(field && field.required),
-    missingPolicy: "",
-    options: (field && field.options) || [],
-    dictionary: null,
-    dictionaryCode: "",
-    systemCalc: !!(field && field.systemCalc),
-    derivation: null,
-    rules: (field && field.usedBy) || [],
-    mapped: !!(field && field.mapped),
-    mapping: null,
-    standardField: null
-  };
+function closeDetails(event) {
+  const details = event && event.currentTarget && event.currentTarget.closest("details");
+  if (details) details.open = false;
 }
 
-function fieldTypeLabel(type) {
-  return {
-    string: "文本",
-    number: "数值",
-    boolean: "布尔",
-    date: "日期",
-    enum: "枚举",
-    constant: "常量",
-    derived: "派生"
-  }[type] || type || "文本";
+function handleExportAll(event) {
+  closeDetails(event);
+  exportAllDraft();
 }
 
-function dictionaryOf(code) {
-  if (!code) return null;
-  return dictionaryIndex.value.get(code) || null;
+function handleReset(event) {
+  closeDetails(event);
+  resetFlow();
 }
 
-function dictionaryItems(code) {
-  const dict = dictionaryOf(code);
-  return (dict && dict.items) || [];
-}
-
-function dictionaryTitle(code) {
-  const dict = dictionaryOf(code);
-  return dict ? (dict.dict_name || dict.dict_code) : (code || "");
-}
-
-function servedTargets(field) {
-  const attached = field && field.servedTargetFields;
-  if (Array.isArray(attached) && attached.length) return attached;
-  return targetsByStandardField.value.get(field && field.name) || [];
-}
-
-function briefFieldOf(name) {
-  return briefFields.value.find((field) => field.name === name) || null;
-}
-
-function rulesOfTarget(name) {
-  const field = briefFieldOf(name);
-  return (field && field.usedBy) || [];
-}
-
-function mappingTypeLabel(type) {
-  return MAPPING_TYPE_LABELS[type] || type || "直接映射";
-}
-
-function transformTypeLabel(type) {
-  return TRANSFORM_TYPE_LABELS[type] || (type ? type + " 转换" : "直接复制");
-}
-
-function mappingTransformLabel(mapping) {
-  const type = (mapping && mapping.transform && mapping.transform.type) || (mapping && mapping.transformType);
-  if (type) return transformTypeLabel(type);
-  return mappingTypeLabel(mapping && mapping.mappingType);
-}
-
-function mappingCodeRows(mapping) {
-  const table = mapping && mapping.transform && mapping.transform.mapping;
-  if (!table || typeof table !== "object") return [];
-  return Object.entries(table).map(([source, target]) => ({ source, target }));
-}
-
-function mappingInputs(mapping) {
-  return (mapping && mapping.transform && mapping.transform.inputs) || [];
-}
-
-function sourceFieldText(mapping) {
-  if (!mapping) return "";
-  if (mapping.mappingType === "constant") return mapping.defaultValue || "（空）";
-  return mapping.sourceField || "";
-}
-
-function sourceFieldLabel(mapping) {
-  const name = sourceFieldText(mapping);
-  if (!name) return "";
-  const label = mapping && mapping.sourceLabel;
-  return label && label !== name ? label + " · " + name : name;
-}
-
-function mappingTransformSummary(mapping) {
-  if (!mapping) return "—";
-  if (mapping.mappingType === "constant") return "固定为 " + (mapping.defaultValue || "（空）");
-  const rows = mappingCodeRows(mapping);
-  if (rows.length) return rows.length + " 条码值映射";
-  const expression = mapping.transform && mapping.transform.expression;
-  if (expression) return expression;
-  const inputs = mappingInputs(mapping);
-  if (inputs.length) return "输入 " + inputs.join("、");
-  return mapping.mappingType === "direct" ? "直接复制" : "—";
-}
-
-function toggleProposalField(name) {
-  expandedProposalField.value = expandedProposalField.value === name ? "" : name;
-}
-
-function toggleProposalMapping(target) {
-  expandedProposalMapping.value = expandedProposalMapping.value === target ? "" : target;
-}
-
-const QUESTION_HINTS = ["?", "？", "什么", "是什么", "为什么", "哪些", "哪个", "怎么", "如何", "详细", "解释", "介绍", "列出", "包含", "说明", "查一下", "看看", "是否", "有没有", "多少"];
-const REFINE_HINTS = ["重新生成", "只处理", "复用已有", "固定默认值", "不建", "跳过", "改成", "改为", "不要", "换成", "新增", "删除", "应用"];
-
-function looksLikeQuestion(text) {
-  const value = String(text || "");
-  if (REFINE_HINTS.some((word) => value.includes(word))) return false;
-  return QUESTION_HINTS.some((word) => value.includes(word));
-}
-
-function fieldValueText(field) {
-  const profile = fieldProfile(field);
-  if (profile.systemCalc) {
-    return profile.derivation ? profile.derivation.kindLabel : "系统计算";
-  }
-  if (profile.dictionary) {
-    return "字典 " + profile.dictionary.dict_name + "（" + (profile.dictionary.items || []).length + " 个码值）";
-  }
-  if ((profile.options || []).length) return (profile.options || []).length + " 个取值";
-  if (profile.type === "enum") return "待补充枚举";
-  return "—";
-}
-
-function fieldMappingText(field) {
-  const profile = fieldProfile(field);
-  if (profile.systemCalc) return "系统计算";
-  const mapping = profile.mapping;
-  if (!mapping) return field.mapped ? "已映射" : "未映射";
-  if (mapping.mappingType === "constant") return "默认值 " + (mapping.defaultValue || "（空）");
-  return mapping.sourceField || "—";
-}
-
-function optionText(option) {
-  if (!option) return "";
-  return (option.code || "") + (option.label && option.label !== option.code ? " · " + option.label : "");
-}
-
-function ruleSummary(rule) {
-  return [rule.path, rule.whenText, rule.note, rule.article].filter(Boolean).join(" · ");
-}
-
-function stageLabel(stage) {
-  return STAGE_LABELS[stage] || stage || "生成中";
-}
-
-function decisionLabel(type) {
-  return DECISION_LABELS[type] || type;
-}
-
-function decisionClass(type) {
-  return DECISION_CLASSES[type] || "gray";
-}
-
-function decisionStandardText(item) {
-  if (item.decisionType === "default") return "不建标准字段";
-  if (item.decisionType === "system") return "系统计算";
-  if (item.standardField) return item.standardField.name;
-  return "—";
-}
-
-function decisionMappingText(item) {
-  if (item.decisionType === "system") return "系统派生";
-  if (item.decisionType === "skip") return "跳过";
-  if (item.decisionType === "missing") return "待人工处理";
-  const mapping = item.mapping;
-  if (!mapping) return "—";
-  if (mapping.mappingType === "constant") return "默认值 " + (mapping.defaultValue || "（空）");
-  return mapping.sourceField || "—";
-}
-
-function decisionDictionaryText(item) {
-  return item.dictionary ? item.dictionary.dict_code : "—";
-}
-
-function decisionSignature(item) {
-  return [
-    item.decisionType,
-    item.standardField ? item.standardField.name : "",
-    item.mapping ? item.mapping.mappingType : "",
-    item.mapping ? (item.mapping.sourceField || "") : "",
-    item.mapping ? (item.mapping.defaultValue || "") : ""
-  ].join("|");
-}
-
-function summarizeDecisionList(list) {
-  const labels = [
-    ["reuse", "复用"],
-    ["create", "新建"],
-    ["default", "默认值"],
-    ["system", "系统计算"],
-    ["skip", "跳过"],
-    ["missing", "缺失"]
-  ];
-  const rows = Array.isArray(list) ? list : [];
-  const counts = { reuse: 0, create: 0, default: 0, system: 0, skip: 0, missing: 0 };
-  rows.forEach((item) => {
-    counts[item.decisionType] = (counts[item.decisionType] || 0) + 1;
+function locateTarget(targetField, source = "field") {
+  if (!targetField) return;
+  activeTarget.value = targetField;
+  if (proposalTab.value !== "overview" && proposal.value) proposalTab.value = "overview";
+  nextTick(() => {
+    const safe = window.CSS && CSS.escape ? CSS.escape(targetField) : targetField;
+    const selector = source === "field"
+      ? '[data-target="' + safe + '"]'
+      : source === "decision"
+        ? '[data-field="' + safe + '"]'
+        : '[data-target="' + safe + '"]';
+    const row = document.querySelector(selector);
+    if (row) {
+      const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      row.scrollIntoView({ block: "nearest", behavior: reduce ? "auto" : "smooth" });
+    }
   });
-  const parts = labels.filter(([key]) => counts[key]).map(([key, label]) => label + " " + counts[key]);
-  return "本组 " + rows.length + " 个监管字段" + (parts.length ? "：" + parts.join("、") : "");
 }
 
-function toggleDecisionDetail(target) {
-  expandedDecision.value = expandedDecision.value === target ? "" : target;
+function openAssistant() {
+  assistantOpen.value = true;
 }
 
-function toggleFieldDetail(name) {
-  expandedField.value = expandedField.value === name ? "" : name;
+function showMissing(targetField) {
+  if (!targetField) return;
+  activeTarget.value = targetField;
+  proposalTab.value = "missing";
+  nextTick(() => {
+    const safe = window.CSS && CSS.escape ? CSS.escape(targetField) : targetField;
+    const row = document.querySelector('[data-target="' + safe + '"]');
+    if (row) row.scrollIntoView({ block: "nearest", behavior: "auto" });
+  });
 }
 
-function resetFilters() {
-  fieldFilters.value = { required: false, unmapped: false, system: false, type: "", keyword: "" };
+function toggleLeft() {
+  leftCollapsed.value = !leftCollapsed.value;
+}
+
+function toggleAssistant() {
+  assistantOpen.value = !assistantOpen.value;
+}
+
+function startResize(event) {
+  leftResizing.value = true;
+  resizeStartX = event.clientX;
+  resizeStartWidth = leftWidth.value;
+  window.addEventListener("mousemove", onResize);
+  window.addEventListener("mouseup", stopResize);
+}
+
+function onResize(event) {
+  if (!leftResizing.value) return;
+  const next = resizeStartWidth + (event.clientX - resizeStartX);
+  leftWidth.value = Math.max(180, Math.min(460, next));
+}
+
+function stopResize() {
+  leftResizing.value = false;
+  window.removeEventListener("mousemove", onResize);
+  window.removeEventListener("mouseup", stopResize);
+}
+
+function startAssistantResize(event) {
+  assistantResizing.value = true;
+  assistantResizeStartX = event.clientX;
+  assistantResizeStartWidth = assistantWidth.value;
+  window.addEventListener("mousemove", onAssistantResize);
+  window.addEventListener("mouseup", stopAssistantResize);
+}
+
+function onAssistantResize(event) {
+  if (!assistantResizing.value) return;
+  const next = assistantResizeStartWidth - (event.clientX - assistantResizeStartX);
+  assistantWidth.value = Math.max(300, Math.min(480, next));
+}
+
+function stopAssistantResize() {
+  assistantResizing.value = false;
+  window.removeEventListener("mousemove", onAssistantResize);
+  window.removeEventListener("mouseup", stopAssistantResize);
 }
 </script>
 
@@ -1340,837 +1537,137 @@ function resetFilters() {
           <strong v-if="brief">{{ brief.label }}</strong>
         </div>
         <span class="spacer"></span>
-        <button type="button" class="btn sm" :title="leftCollapsed ? '展开左侧分组计划' : '收起左侧分组计划'" @click="leftCollapsed = !leftCollapsed">
-          {{ leftCollapsed ? "显示分组计划" : "隐藏分组计划" }}
-        </button>
-        <button type="button" class="btn sm" :disabled="readOnly || (!bulkRunning && loading) || !plan.length" :title="bulkRunning ? '停止后续分组' : '按计划逐组生成，保留各组已勾选决策'" @click="toggleBulk">
-          {{ bulkRunning ? "停止生成（" + bulkDone + "/" + bulkTotal + "）" : "一键生成全部分组" }}
-        </button>
-        <button type="button" class="btn sm" @click="exportAllDraft">导出全部草稿 JSON</button>
-        <button type="button" class="btn sm primary" :disabled="readOnly" @click="saveAll">保存全部</button>
+        <button type="button" class="btn sm" @click="toggleLeft">{{ leftCollapsed ? "显示分组计划" : "隐藏分组计划" }}</button>
+        <button type="button" class="btn sm" @click="toggleAssistant">{{ assistantOpen ? "收起助手" : "显示助手" }}</button>
+        <button type="button" class="btn sm primary" :disabled="readOnly || !plan.length" @click="saveAll">保存全部</button>
+        <details class="pgw-more">
+          <summary class="btn sm">更多 ▾</summary>
+          <div class="pgw-more-list" role="menu">
+            <button type="button" role="menuitem" @click="handleExportAll($event)">导出全部草稿 JSON</button>
+            <button type="button" role="menuitem" @click="handleReset($event)">重置分组进度</button>
+          </div>
+        </details>
         <button type="button" class="btn sm" @click="emit('close')">关闭</button>
       </div>
 
       <div class="pgw-body">
-        <aside v-show="!leftCollapsed" class="pgw-left" :style="{ width: leftWidth + 'px' }">
-          <div class="pgw-left-head">
-            <div class="pgw-left-title"><b>分组计划</b><span>{{ confirmedCount }} / {{ plan.length }} 已完成</span></div>
-            <div class="pgw-progress"><i :style="{ width: progressPct + '%' }"></i></div>
-          </div>
-          <div class="pgw-groups">
-            <div
-              v-for="(group, index) in plan"
-              :key="group.id"
-              class="pgw-group-card"
-              :class="{ active: index === currentIndex, done: statuses[group.id] === 'confirmed', skipped: statuses[group.id] === 'skipped' }"
-              @click="openGroup(index)"
-            >
-              <div class="pgw-group-main">
-                <div class="pgw-group-title"><span class="pgw-num">{{ String(index + 1).padStart(2, "0") }}</span>{{ group.label }}</div>
-                <div class="pgw-group-meta">{{ group.stats.fields }} 字段 · 必填 {{ group.stats.required }} · 未映射 {{ group.stats.unmapped }}</div>
-                <div class="pgw-group-foot">
-                  <span class="pgw-status" :class="statuses[group.id] || 'pending'">{{ statusText(group) }}</span>
-                  <span v-if="groupAdoption(group)" class="pgw-adopt">{{ groupAdoption(group) }}</span>
-                </div>
-              </div>
-              <div class="pgw-reorder" @click.stop>
-                <button type="button" :disabled="index === 0" title="上移" @click="moveGroup(index, -1)">↑</button>
-                <button type="button" :disabled="index === plan.length - 1" title="下移" @click="moveGroup(index, 1)">↓</button>
-              </div>
-            </div>
-            <p v-if="!plan.length" class="pgw-empty">还没有分组计划。</p>
-          </div>
-          <div class="pgw-left-foot">
-            <button type="button" class="btn sm" @click="resetFlow">重置进度</button>
-            <span class="spacer"></span>
-            <span>{{ finished ? "已全部完成" : confirmedCount + "/" + plan.length }}</span>
-          </div>
-        </aside>
+        <GroupPlanRail
+          v-show="!leftCollapsed"
+          :style="{ width: leftWidth + 'px' }"
+          :plan="plan"
+          :current-index="currentIndex"
+          :statuses="statuses"
+          :applied-stats="appliedStats"
+          :bulk-running="bulkRunning"
+          :bulk-done="bulkDone"
+          :bulk-total="bulkTotal"
+          :read-only="readOnly"
+          @select="openGroup"
+          @move="moveGroup"
+          @reset="resetFlow"
+          @bulk="toggleBulk"
+        />
         <div
           v-if="!leftCollapsed"
           class="pgw-splitter"
           :class="{ active: leftResizing }"
-          title="拖动调整分组计划宽度，双击收起"
+          title="拖动调整分组计划宽度"
           @mousedown.prevent="startResize"
-          @dblclick="leftCollapsed = true"
+          @dblclick="toggleLeft"
         ></div>
 
         <main class="pgw-main">
-          <div class="pgw-main-head">
-            <div>
-              <div class="pgw-main-title">
-                {{ brief ? brief.label : "监管字段分组" }}
-                <span class="mono">{{ brief ? brief.id : "" }}</span>
-              </div>
-              <div class="pgw-main-sub">
-                <template v-if="brief">
-                  <span>{{ brief.stats.fields }} 字段</span>
-                  <span>必填 {{ brief.stats.required }}</span>
-                  <span>未映射 {{ brief.stats.unmapped }}</span>
-                  <span v-if="brief.stats.systemCalc">系统计算 {{ brief.stats.systemCalc }}</span>
-                </template>
-                <span class="pgw-status" :class="currentStatus">{{ current ? statusText(current) : "未选择" }}</span>
-              </div>
-            </div>
-            <div class="pgw-actions">
-              <button type="button" class="btn sm" :disabled="currentIndex <= 0" @click="prevGroup">← 上一组</button>
-              <template v-if="confirmSkip">
-                <span class="pgw-confirm-inline">
-                  确认跳过？
-                  <button type="button" class="btn sm" @click="skipGroup">跳过</button>
-                  <button type="button" class="btn sm" @click="confirmSkip = false">取消</button>
-                </span>
-              </template>
-              <button v-else type="button" class="btn sm" :disabled="readOnly || !current" @click="confirmSkip = true">跳过本组</button>
-              <button type="button" class="btn sm" :disabled="finished" @click="nextGroup">下一组 →</button>
-              <button type="button" class="btn sm" @click="exportGroup">导出本组</button>
-            </div>
-          </div>
+          <GroupHeader
+            v-if="current"
+            :group="current"
+            :status="currentStatus"
+            :finished="finished"
+            :read-only="readOnly"
+            :bulk-running="bulkRunning"
+            @prev="prevGroup"
+            @next="nextGroup"
+            @skip="skipGroup"
+            @export="exportGroup"
+          />
 
           <div class="pgw-scroll">
             <p v-if="error" class="notice danger">{{ error }}</p>
             <p v-if="notice" class="notice info">{{ notice }}</p>
 
-            <div v-if="briefLoading" class="pgw-empty">正在读取本组监管字段…</div>
-            <div v-else-if="!brief && plan.length" class="pgw-empty">选择左侧分组开始。</div>
+            <div v-if="loading && !plan.length" class="pgw-empty">正在读取分组计划…</div>
+            <div v-else-if="!plan.length" class="pgw-empty">还没有分组计划。</div>
+            <template v-else>
+              <RegulatoryFieldSection
+                :fields="briefFields"
+                :proposal="proposal"
+                :findings="workflowFindings"
+                :active-target="activeTarget"
+                :loading="briefLoading"
+                :read-only="readOnly"
+                :has-group="!!current"
+                @locate-target="(target) => locateTarget(target, 'field')"
+                @generate="generate"
+                @show-missing="showMissing"
+              />
 
-            <section v-if="brief">
-              <div class="pgw-section-head">
-                <span class="pgw-section-title">1. 本组监管字段与规则用途</span>
-                <span class="dim">显示 {{ visibleFields.length }} / {{ briefFields.length }}</span>
-              </div>
-              <div class="pgw-field-filters">
-                <label class="pgw-check"><input v-model="fieldFilters.required" type="checkbox" /> 只看必填</label>
-                <label class="pgw-check"><input v-model="fieldFilters.unmapped" type="checkbox" /> 只看未映射</label>
-                <label class="pgw-check"><input v-model="fieldFilters.system" type="checkbox" /> 只看系统计算</label>
-                <select v-model="fieldFilters.type">
-                  <option value="">全部类型</option>
-                  <option v-for="type in fieldTypeOptions" :key="type" :value="type">{{ fieldTypeLabel(type) }}</option>
-                </select>
-                <input v-model="fieldFilters.keyword" type="search" placeholder="搜索字段、中文名或规则" />
-                <button type="button" class="btn xs" @click="resetFilters">清除</button>
-              </div>
-              <div class="pgw-table-box">
-                <table class="pgw-table">
-                  <thead>
-                    <tr>
-                      <th style="width: 170px">监管字段</th>
-                      <th style="width: 120px">中文名</th>
-                      <th style="width: 76px">类型</th>
-                      <th>取值 / 字典</th>
-                      <th style="width: 190px">规则用途</th>
-                      <th style="width: 48px">必填</th>
-                      <th style="width: 110px">当前映射</th>
-                      <th style="width: 40px"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <template v-for="field in visibleFields" :key="field.name">
-                      <tr class="pgw-click-row" @click="toggleFieldDetail(field.name)">
-                        <td>
-                          <span class="mono pgw-strong">{{ field.name }}</span>
-                          <span v-if="field.systemCalc" class="tag blue">系统计算</span>
-                        </td>
-                        <td>{{ field.label }}</td>
-                        <td>{{ fieldTypeLabel(field.type) }}</td>
-                        <td>{{ fieldValueText(field) }}</td>
-                        <td>
-                          <span v-for="use in field.usedBy" :key="use.kind + use.ruleId + use.path + use.whenText" class="pgw-rule-wrap">
-                            <span class="pgw-rule-chip" :class="use.kind">{{ use.kind === "weight" ? "权重" : "分类" }} <span class="mono">{{ use.ruleId }}</span></span>
-                            <span class="pgw-rule-tip">
-                              <b>{{ use.ruleLabel || use.ruleId }}</b>
-                              <span v-if="use.path" class="mono">{{ use.path }}</span>
-                              <span v-if="use.whenText">条件：{{ use.whenText }}</span>
-                              <span>{{ use.note || "引用该字段进行规则判断" }}</span>
-                              <span v-if="use.article" class="mono">{{ use.article }}</span>
-                            </span>
-                          </span>
-                          <span v-if="!field.usedBy.length" class="dim">—</span>
-                        </td>
-                        <td>{{ field.required ? "是" : "否" }}</td>
-                        <td><span class="tag" :class="field.mapped ? 'green' : 'amber'">{{ fieldMappingText(field) }}</span></td>
-                        <td class="dim">{{ expandedField === field.name ? "▾" : "▸" }}</td>
-                      </tr>
-                      <tr v-if="expandedField === field.name" class="pgw-detail-row">
-                        <td colspan="8">
-                          <div class="pgw-profile">
-                            <div class="pgw-profile-block">
-                              <h6>定义</h6>
-                              <p>{{ fieldProfile(field).definition || "规则文档没有提供定义。" }}</p>
-                              <p v-if="fieldProfile(field).note" class="dim">{{ fieldProfile(field).note }}</p>
-                            </div>
-                            <div class="pgw-profile-block">
-                              <h6>类型与取值</h6>
-                              <p>{{ fieldTypeLabel(fieldProfile(field).type) }} · 来源 {{ fieldProfile(field).source === "calc" ? "系统计算" : fieldProfile(field).source === "external" ? "外部输入" : fieldProfile(field).source === "prepared" ? "平台预处理" : "数据字段" }}</p>
-                              <div v-if="(fieldProfile(field).options || []).length" class="pgw-option-list">
-                                <span v-for="option in fieldProfile(field).options" :key="option.code" class="pgw-option">{{ optionText(option) }}</span>
-                              </div>
-                              <div v-if="fieldProfile(field).dictionary" class="pgw-dict-ref">
-                                字典 {{ fieldProfile(field).dictionary.dict_name }}（{{ fieldProfile(field).dictionary.dict_code }}）
-                                <div class="pgw-option-list">
-                                  <span v-for="item in (fieldProfile(field).dictionary.items || []).slice(0, 24)" :key="item.item_code" class="pgw-option">{{ item.item_code }} · {{ item.item_name }}</span>
-                                </div>
-                              </div>
-                              <p v-else-if="!(fieldProfile(field).options || []).length && !fieldProfile(field).systemCalc" class="dim">规则文档没有给出可选码值，生成时需要人工确认。</p>
-                            </div>
-                            <div v-if="fieldProfile(field).systemCalc" class="pgw-profile-block">
-                              <h6>系统计算</h6>
-                              <p>{{ fieldProfile(field).derivation ? fieldProfile(field).derivation.summary : "由计算引擎派生，不需要人工字段。" }}</p>
-                              <div v-if="fieldProfile(field).derivation && fieldProfile(field).derivation.inputs.length" class="dim">
-                                派生输入：{{ fieldProfile(field).derivation.inputs.join("、") }}
-                              </div>
-                              <div v-if="fieldProfile(field).derivation && fieldProfile(field).derivation.expression" class="mono dim">
-                                {{ fieldProfile(field).derivation.expression }}
-                              </div>
-                              <div v-if="(fieldProfile(field).parameterRefs || []).length" class="dim">
-                                参数引用：{{ fieldProfile(field).parameterRefs.join("、") }}
-                              </div>
-                            </div>
-                            <div class="pgw-profile-block">
-                              <h6>为什么需要</h6>
-                              <div v-for="use in field.usedBy" :key="'why-' + use.kind + use.ruleId + use.path + use.whenText" class="pgw-why">
-                                <div><b>{{ use.kind === "weight" ? "权重规则" : "分类规则" }} {{ use.ruleId }}</b> <span class="dim">{{ use.ruleLabel }}</span></div>
-                                <div v-if="use.path" class="mono dim">{{ use.path }}</div>
-                                <div v-if="use.whenText">条件：{{ use.whenText }}</div>
-                                <div>{{ use.note || "引用该字段进行规则判断。" }}</div>
-                                <div v-if="use.article" class="mono dim">监管依据 {{ use.article }}</div>
-                              </div>
-                              <p v-if="!field.usedBy.length" class="dim">没有在规则节点中直接引用；可能是映射文档补充的目标字段。</p>
-                            </div>
-                            <div class="pgw-profile-block">
-                              <h6>当前映射</h6>
-                              <p>{{ fieldMappingText(field) }}</p>
-                              <p v-if="fieldProfile(field).standardField" class="dim">标准字段 {{ fieldProfile(field).standardField.name }} · {{ fieldProfile(field).standardField.inputMode === "default" ? "默认值" : "人工输入" }}</p>
-                              <template v-if="fieldProfile(field).mapping && fieldProfile(field).mapping.transform">
-                                <p class="dim">方式：{{ mappingTransformLabel(fieldProfile(field).mapping) }}</p>
-                                <p v-if="fieldProfile(field).mapping.transform.expression" class="mono dim">{{ fieldProfile(field).mapping.transform.expression }}</p>
-                                <div v-if="mappingCodeRows(fieldProfile(field).mapping).length" class="pgw-code-map">
-                                  <div v-for="row in mappingCodeRows(fieldProfile(field).mapping)" :key="row.source" class="pgw-code-map-row">
-                                    <span class="mono">{{ row.source }}</span>
-                                    <span class="mono">{{ row.target }}</span>
-                                  </div>
-                                </div>
-                              </template>
-                              <p class="dim">必填策略：{{ fieldProfile(field).missingPolicy || "未设置" }}</p>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    </template>
-                  </tbody>
-                </table>
-                <p v-if="!visibleFields.length" class="pgw-empty">没有符合筛选条件的监管字段。</p>
-              </div>
-            </section>
-
-            <section>
-              <div class="pgw-section-head">
-                <span class="pgw-section-title">2. 本组标准字段、字典与映射决策</span>
-                <span v-if="proposal" class="dim">生成于 {{ generatedAt }} · 仅作用域：{{ brief ? brief.label : "" }}</span>
-              </div>
-
-              <div v-if="progress.active" class="pgw-stream">
-                <div class="pgw-stream-head">
-                  <b>{{ stageLabel(progress.stage) }}</b>
-                  <span class="dim">{{ progress.message }}</span>
-                </div>
-                <div class="pgw-stream-bar"><i :style="{ width: streamPct + '%' }"></i></div>
-                <div class="dim">{{ progress.done }} / {{ progress.total }} 个监管字段已决策</div>
-                <ul class="pgw-stream-list">
-                  <li v-for="item in progress.decisions" :key="item.targetField">
-                    <span class="mono">{{ item.targetField }}</span>
-                    <span class="tag" :class="decisionClass(item.decisionType)">{{ decisionLabel(item.decisionType) }}</span>
-                    <span class="dim">{{ item.reason }}</span>
-                  </li>
-                </ul>
-              </div>
-
-              <div v-if="!proposal && !progress.active" class="pgw-empty-proposal">
-                <div class="pgw-empty-title">尚未生成本组建议</div>
-                <div class="dim">会读取本组监管字段画像、规则用途、已有标准字段和字典，为每个字段生成一条决策。</div>
-                <button type="button" class="btn primary" :disabled="readOnly || loading || bulkRunning || !brief" @click="generate">{{ loading ? "正在生成…" : "生成本组建议" }}</button>
-              </div>
-
-              <template v-else-if="proposal">
-                <div class="pgw-banner">
-                  <div class="pgw-banner-main">
-                    <div class="pgw-banner-title">{{ decisionSummary }}</div>
-                    <div class="pgw-banner-sub">
-                      {{ proposal.groupPurpose || "只应用当前分组；确认后仍需点「保存全部」写入。" }}
-                    </div>
-                    <div class="pgw-banner-counts">
-                      <span class="tag mint">复用 {{ decisionStats.reuse }}</span>
-                      <span class="tag blue">新建 {{ decisionStats.create }}</span>
-                      <span class="tag amber">默认值 {{ decisionStats.default }}</span>
-                      <span class="tag violet">系统计算 {{ decisionStats.system }}</span>
-                      <span class="tag gray">跳过 {{ decisionStats.skip }}</span>
-                      <span class="tag rose">缺失 {{ decisionStats.missing }}</span>
-                    </div>
-                  </div>
-                  <div class="pgw-banner-actions">
-                    <button type="button" class="btn sm" :disabled="readOnly || loading || bulkRunning || !brief" @click="regenerate">重新生成</button>
-                    <template v-if="confirmFresh">
-                      <span class="pgw-confirm-inline">
-                        确认清空勾选？
-                        <button type="button" class="btn sm" @click="regenerateFresh">重生成</button>
-                        <button type="button" class="btn sm" @click="confirmFresh = false">取消</button>
-                      </span>
-                    </template>
-                    <button v-else type="button" class="btn sm" :disabled="readOnly || loading || bulkRunning || !brief" @click="confirmFresh = true">清空勾选重生成</button>
-                    <button type="button" class="btn sm primary" :disabled="readOnly || (!selectedDecisionCount && !selection.fields.length)" @click="applyGroup">确认本组并应用（{{ selectedDecisionCount }}）</button>
-                  </div>
-                </div>
-
-                <div v-if="proposalDiff.has" class="pgw-diff">
-                  <b>与上一版比较</b>
-                  <span v-if="proposalDiff.added.length">新增决策 {{ proposalDiff.added.join("、") }}</span>
-                  <span v-if="proposalDiff.changed.length">修改决策 {{ proposalDiff.changed.join("、") }}</span>
-                  <span v-if="proposalDiff.removed.length">删除决策 {{ proposalDiff.removed.join("、") }}</span>
-                  <span v-if="proposalDiff.dictionaries.length">新增字典 {{ proposalDiff.dictionaries.join("、") }}</span>
-                </div>
-
-                <div v-if="newGroups.length" class="pgw-new-groups">
-                  <div class="pgw-subhead">建议新建标准字段分组</div>
-                  <div v-for="group in newGroups" :key="group.group_id" class="pgw-new-group">
-                    <b>{{ group.label || group.group_id }}</b>
-                    <span class="mono">{{ group.group_id }}</span>
-                    <span class="dim">{{ group.description }}</span>
-                  </div>
-                </div>
-
-                <div class="pgw-tabs">
-                  <button type="button" :class="{ active: proposalTab === 'overview' }" @click="proposalTab = 'overview'">决策总览 <em>{{ decisions.length }}</em></button>
-                  <button type="button" :class="{ active: proposalTab === 'fields' }" @click="proposalTab = 'fields'">标准字段 <em>{{ proposalFields.length }}</em></button>
-                  <button type="button" :class="{ active: proposalTab === 'dictionaries' }" @click="proposalTab = 'dictionaries'">字典 <em>{{ newDictionaries.length }}</em></button>
-                  <button type="button" :class="{ active: proposalTab === 'mappings' }" @click="proposalTab = 'mappings'">映射 <em>{{ proposalMappings.length }}</em></button>
-                  <button type="button" :class="{ active: proposalTab === 'notes' }" @click="proposalTab = 'notes'">字段用途讲解 <em>{{ (proposal.fieldNotes || []).length }}</em></button>
-                  <button type="button" :class="{ active: proposalTab === 'missing' }" @click="proposalTab = 'missing'">仍需人工处理 <em :class="{ danger: missing.length }">{{ missing.length }}</em></button>
-                </div>
-
-                <div v-if="proposalTab === 'overview'">
-                  <div class="pgw-tab-tools">
-                    <button type="button" class="btn xs" @click="selectAllDecisions">全选</button>
-                    <button type="button" class="btn xs" @click="clearDecisions">全不选</button>
-                    <span class="dim">已选 {{ selectedDecisionCount }} / {{ decisionTotal }}</span>
-                  </div>
-                  <div class="pgw-table-box">
-                    <table class="pgw-table">
-                      <thead>
-                        <tr>
-                          <th style="width: 30px"></th>
-                          <th style="width: 150px">目标字段</th>
-                          <th style="width: 84px">决策</th>
-                          <th style="width: 160px">标准字段</th>
-                          <th style="width: 110px">字典</th>
-                          <th>映射 / 默认值</th>
-                          <th style="width: 90px">置信度</th>
-                          <th style="width: 30px"></th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <template v-for="item in decisions" :key="item.targetField">
-                          <tr :class="{ low: item.confidence < 0.7, off: !selection.decisions.includes(item.targetField) }">
-                            <td><input type="checkbox" :checked="selection.decisions.includes(item.targetField)" @change="toggleSelection('decisions', item.targetField)" /></td>
-                            <td>
-                              <div class="mono pgw-strong">{{ item.targetField }}</div>
-                              <div class="dim">{{ item.targetLabel }}</div>
-                            </td>
-                            <td><span class="tag" :class="decisionClass(item.decisionType)">{{ decisionLabel(item.decisionType) }}</span></td>
-                            <td class="mono">{{ decisionStandardText(item) }}</td>
-                            <td class="mono">{{ decisionDictionaryText(item) }}</td>
-                            <td>
-                              <div class="mono">{{ decisionMappingText(item) }}</div>
-                              <div v-if="item.reason" class="dim pgw-reason">{{ item.reason }}</div>
-                            </td>
-                            <td><span class="pgw-confidence" :class="{ low: item.confidence < 0.7 }">{{ Math.round((item.confidence || 0) * 100) }}%</span></td>
-                            <td class="dim pgw-pointer" @click="toggleDecisionDetail(item.targetField)">{{ expandedDecision === item.targetField ? "▾" : "▸" }}</td>
-                          </tr>
-                          <tr v-if="expandedDecision === item.targetField" class="pgw-detail-row">
-                            <td colspan="8">
-                              <div class="pgw-decision-detail">
-                                <div>
-                                  <h6>为什么这样决策</h6>
-                                  <p>{{ item.reason || "—" }}</p>
-                                </div>
-                                <div v-if="item.ruleReason">
-                                  <h6>规则用途</h6>
-                                  <p>{{ item.ruleReason }}</p>
-                                </div>
-                                <div v-if="item.standardField">
-                                  <h6>标准字段</h6>
-                                  <p class="mono">{{ item.standardField.name }} · {{ item.standardField.label }}</p>
-                                  <p class="dim">{{ item.standardField.group }} · {{ item.standardField.inputMode === "default" ? "默认值" : "人工输入" }} · {{ item.standardField.type }}</p>
-                                  <p v-if="item.standardField.description" class="dim">{{ item.standardField.description }}</p>
-                                </div>
-                                <div v-if="item.dictionary">
-                                  <h6>字典</h6>
-                                  <p class="mono">{{ item.dictionary.dict_code }} · {{ item.dictionary.dict_name }}</p>
-                                  <div class="pgw-option-list">
-                                    <span v-for="row in item.dictionary.items" :key="row.item_code" class="pgw-option">{{ row.item_code }} · {{ row.item_name }}</span>
-                                  </div>
-                                </div>
-                                <div v-if="item.mapping">
-                                  <h6>映射</h6>
-                                  <p class="mono">
-                                    {{ item.mapping.sourceField || "（无源字段）" }} → {{ item.targetField }}
-                                    · {{ item.mapping.mappingType }}
-                                    <span v-if="item.mapping.defaultValue"> · 默认值 {{ item.mapping.defaultValue }}</span>
-                                  </p>
-                                  <p v-if="item.mapping.reason" class="dim">{{ item.mapping.reason }}</p>
-                                </div>
-                              </div>
-                            </td>
-                          </tr>
-                        </template>
-                      </tbody>
-                    </table>
-                    <p v-if="!decisions.length" class="pgw-empty">本组没有字段决策。</p>
-                  </div>
-                </div>
-
-                <div v-if="proposalTab === 'fields'" class="pgw-table-box">
-                  <table class="pgw-table">
-                    <thead><tr><th style="width: 30px"></th><th style="width: 180px">标准字段</th><th style="width: 150px">中文名</th><th>服务的监管字段</th><th style="width: 120px">分组 / 输入方式</th><th style="width: 48px">必填</th><th style="width: 170px">字典 / 默认值</th><th style="width: 78px">置信度</th><th style="width: 150px">理由</th><th style="width: 28px"></th></tr></thead>
-                    <tbody>
-                      <template v-for="field in proposalFields" :key="field.name">
-                        <tr class="pgw-click-row" :class="{ low: field.confidence < 0.7, off: !selection.fields.includes(field.name) }" @click="toggleProposalField(field.name)">
-                          <td @click.stop><input type="checkbox" :checked="selection.fields.includes(field.name)" @change="toggleSelection('fields', field.name)" /></td>
-                          <td>
-                            <div><span class="mono pgw-strong">{{ field.name }}</span> <span class="tag" :class="field.newField ? 'mint' : 'gray'">{{ field.newField ? "新增" : "复用" }}</span></div>
-                            <div class="mono dim">{{ fieldTypeLabel(field.type) }} · {{ field.type }}</div>
-                          </td>
-                          <td>
-                            <div>{{ field.label }}</div>
-                            <div v-if="field.labelEn && field.labelEn !== field.label" class="dim">{{ field.labelEn }}</div>
-                          </td>
-                          <td>
-                            <template v-if="servedTargets(field).length">
-                              <div v-for="target in servedTargets(field)" :key="target.targetField" class="pgw-target-line">
-                                <span class="mono">{{ target.targetField }}</span>
-                                <span class="dim">{{ target.targetLabel }}</span>
-                              </div>
-                            </template>
-                            <span v-else class="dim">—</span>
-                          </td>
-                          <td>
-                            <div class="mono">{{ field.group || "—" }}</div>
-                            <div class="dim">{{ field.inputMode === "default" ? "默认值" : "人工输入" }}</div>
-                          </td>
-                          <td>{{ field.required ? "是" : "否" }}</td>
-                          <td>
-                            <div v-if="field.dictionary" class="mono">
-                              {{ dictionaryTitle(field.dictionary) }}
-                              <span class="dim">（{{ field.dictionary }} · {{ dictionaryItems(field.dictionary).length }} 个码值）</span>
-                            </div>
-                            <div v-else-if="field.defaultValue" class="mono">默认值 {{ field.defaultValue }}</div>
-                            <span v-else class="dim">—</span>
-                          </td>
-                          <td><span class="pgw-confidence" :class="{ low: field.confidence < 0.7 }">{{ Math.round((field.confidence || 0) * 100) }}%</span></td>
-                          <td class="dim">{{ field.reason }}</td>
-                          <td class="dim pgw-pointer">{{ expandedProposalField === field.name ? "▾" : "▸" }}</td>
-                        </tr>
-                        <tr v-if="expandedProposalField === field.name" class="pgw-detail-row">
-                          <td colspan="10">
-                            <div class="pgw-profile">
-                              <div class="pgw-profile-block">
-                                <h6>字段定义</h6>
-                                <p>{{ field.description || "当前上下文没有字段说明。" }}</p>
-                                <p class="dim">英文名 {{ field.labelEn || "—" }} · 来源 {{ field.sourceHint || "—" }}</p>
-                                <p v-if="(field.aliases || []).length" class="dim">别名：{{ field.aliases.join("、") }}</p>
-                                <div v-if="(field.enumValues || []).length" class="pgw-option-list">
-                                  <span v-for="value in field.enumValues" :key="value" class="pgw-option">{{ value }}</span>
-                                </div>
-                              </div>
-                              <div class="pgw-profile-block">
-                                <h6>字典</h6>
-                                <template v-if="field.dictionary">
-                                  <p class="mono">{{ field.dictionary }} · {{ dictionaryTitle(field.dictionary) }}</p>
-                                  <p v-if="dictionaryOf(field.dictionary) && dictionaryOf(field.dictionary).description" class="dim">{{ dictionaryOf(field.dictionary).description }}</p>
-                                  <div v-if="dictionaryItems(field.dictionary).length" class="pgw-option-list">
-                                    <span v-for="item in dictionaryItems(field.dictionary)" :key="item.item_code" class="pgw-option">{{ item.item_code }} · {{ item.item_name }}</span>
-                                  </div>
-                                  <p v-else class="dim">当前上下文没有该字典的码值。</p>
-                                </template>
-                                <p v-else class="dim">该字段不使用字典。</p>
-                              </div>
-                              <div class="pgw-profile-block">
-                                <h6>服务的监管字段与规则</h6>
-                                <div v-for="target in servedTargets(field)" :key="'rule-' + target.targetField" class="pgw-why">
-                                  <div><span class="mono pgw-strong">{{ target.targetField }}</span> <span class="dim">{{ target.targetLabel }}</span></div>
-                                  <div v-for="rule in rulesOfTarget(target.targetField)" :key="rule.kind + rule.ruleId + rule.path" class="dim">
-                                    {{ rule.kind === "weight" ? "权重" : "分类" }} {{ rule.ruleId }} · {{ ruleSummary(rule) }}
-                                  </div>
-                                  <div v-if="!rulesOfTarget(target.targetField).length" class="dim">规则文档没有记录直接用途。</div>
-                                </div>
-                                <p v-if="!servedTargets(field).length" class="dim">当前决策没有把它映射到监管字段。</p>
-                              </div>
-                              <div class="pgw-profile-block">
-                                <h6>复用 / 新建依据</h6>
-                                <p>{{ field.reason || "—" }}</p>
-                                <p v-if="field.existingStandardField" class="dim">
-                                  已有字段：{{ field.existingStandardField.label }} · {{ field.existingStandardField.group }} ·
-                                  {{ fieldTypeLabel(field.existingStandardField.type) }} · {{ field.existingStandardField.inputMode === "default" ? "默认值" : "人工输入" }}
-                                </p>
-                                <p class="dim">置信度 {{ Math.round((field.confidence || 0) * 100) }}%{{ field.confidence < 0.7 ? "（低，需要人工确认）" : "" }}</p>
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
-                      </template>
-                    </tbody>
-                  </table>
-                  <p v-if="!proposalFields.length" class="pgw-empty">本组没有新的标准字段建议。</p>
-                </div>
-
-                <div v-if="proposalTab === 'dictionaries'" class="pgw-table-box">
-                  <table class="pgw-table">
-                    <thead><tr><th style="width: 30px"></th><th style="width: 180px">字典编码</th><th style="width: 160px">字典名称</th><th style="width: 70px">码值数</th><th>码值预览</th></tr></thead>
-                    <tbody>
-                      <tr v-for="dict in newDictionaries" :key="dict.dict_code" :class="{ off: !selection.dictionaries.includes(dict.dict_code) }">
-                        <td><input type="checkbox" :checked="selection.dictionaries.includes(dict.dict_code)" @change="toggleSelection('dictionaries', dict.dict_code)" /></td>
-                        <td class="mono pgw-strong">{{ dict.dict_code }}</td>
-                        <td>{{ dict.dict_name }}</td>
-                        <td>{{ (dict.items || []).length }}</td>
-                        <td class="dim">{{ (dict.items || []).slice(0, 12).map((item) => item.item_code + " " + item.item_name).join(" · ") }}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                  <p v-if="!newDictionaries.length" class="pgw-empty">本组没有新建字典建议；已有字典会在标准字段里复用。</p>
-                </div>
-
-                <div v-if="proposalTab === 'mappings'" class="pgw-table-box">
-                  <table class="pgw-table">
-                    <thead><tr><th style="width: 30px"></th><th style="width: 180px">目标字段</th><th style="width: 190px">来源标准字段 / 默认值</th><th style="width: 100px">方式</th><th>转换规则</th><th style="width: 78px">置信度</th><th style="width: 160px">理由</th><th style="width: 28px"></th></tr></thead>
-                    <tbody>
-                      <template v-for="item in proposalMappings" :key="item.targetField">
-                        <tr class="pgw-click-row" :class="{ low: item.confidence < 0.7, off: !selection.mappings.includes(item.targetField) }" @click="toggleProposalMapping(item.targetField)">
-                          <td @click.stop><input type="checkbox" :checked="selection.mappings.includes(item.targetField)" @change="toggleSelection('mappings', item.targetField)" /></td>
-                          <td>
-                            <div class="mono pgw-strong">{{ item.targetField }}</div>
-                            <div class="dim">{{ item.targetLabel }}<span v-if="item.targetType"> · {{ fieldTypeLabel(item.targetType) }}</span><span v-if="item.targetRequired"> · 必填</span></div>
-                          </td>
-                          <td>
-                            <template v-if="item.mappingType === 'constant'">
-                              <div class="mono">默认值 {{ item.defaultValue || "（空）" }}</div>
-                            </template>
-                            <template v-else>
-                              <div class="mono">{{ item.sourceField }}</div>
-                              <div class="dim">{{ item.sourceLabel }}<span v-if="item.sourceType"> · {{ fieldTypeLabel(item.sourceType) }}</span><span v-if="item.sourceInputMode"> · {{ item.sourceInputMode === "default" ? "默认值" : "人工输入" }}</span></div>
-                            </template>
-                          </td>
-                          <td>
-                            <div>{{ mappingTransformLabel(item) }}</div>
-                            <div class="mono dim">{{ item.mappingType }}</div>
-                          </td>
-                          <td class="dim">{{ mappingTransformSummary(item) }}</td>
-                          <td><span class="pgw-confidence" :class="{ low: item.confidence < 0.7 }">{{ Math.round((item.confidence || 0) * 100) }}%</span></td>
-                          <td class="dim">{{ item.reason }}</td>
-                          <td class="dim pgw-pointer">{{ expandedProposalMapping === item.targetField ? "▾" : "▸" }}</td>
-                        </tr>
-                        <tr v-if="expandedProposalMapping === item.targetField" class="pgw-detail-row">
-                          <td colspan="8">
-                            <div class="pgw-decision-detail">
-                              <div>
-                                <h6>字段对照</h6>
-                                <p class="mono">{{ item.sourceField || "（无源字段）" }} → {{ item.targetField }}</p>
-                                <p class="dim">目标：{{ item.targetLabel }} · {{ fieldTypeLabel(item.targetType) }}{{ item.targetRequired ? " · 必填" : "" }}</p>
-                                <p v-if="item.sourceField" class="dim">来源：{{ item.sourceLabel || item.sourceField }}{{ item.sourceType ? " · " + fieldTypeLabel(item.sourceType) : "" }}{{ item.sourceInputMode ? " · " + (item.sourceInputMode === "default" ? "默认值" : "人工输入") : "" }}</p>
-                                <p v-if="item.sourceDictionary" class="dim">来源字典：{{ dictionaryTitle(item.sourceDictionary) }}（{{ item.sourceDictionary }}）</p>
-                              </div>
-                              <div>
-                                <h6>转换规则</h6>
-                                <p>方式：{{ mappingTransformLabel(item) }}<span class="mono dim"> · {{ item.transformType || item.mappingType }}</span></p>
-                                <p v-if="item.transform && item.transform.expression" class="mono">表达式：{{ item.transform.expression }}</p>
-                                <p v-if="mappingInputs(item).length" class="dim">输入字段：{{ mappingInputs(item).join("、") }}</p>
-                                <p v-if="item.defaultValue" class="mono">默认值：{{ item.defaultValue }}</p>
-                                <p v-if="item.transform && item.transform.onUnmappedCode" class="dim">未命中码值：{{ item.transform.onUnmappedCode }}</p>
-                                <div v-if="mappingCodeRows(item).length" class="pgw-code-map">
-                                  <div class="pgw-code-map-head"><span>源码值</span><span>目标码值</span></div>
-                                  <div v-for="row in mappingCodeRows(item)" :key="row.source" class="pgw-code-map-row">
-                                    <span class="mono">{{ row.source }}</span>
-                                    <span class="mono">{{ row.target }}</span>
-                                  </div>
-                                </div>
-                              </div>
-                              <div>
-                                <h6>空值与校验</h6>
-                                <p>缺失策略：{{ item.missingPolicy || "—" }}</p>
-                                <p v-if="item.description" class="dim">{{ item.description }}</p>
-                                <p class="dim">{{ item.reason || "—" }}</p>
-                              </div>
-                              <div>
-                                <h6>监管依据与置信度</h6>
-                                <p>{{ item.regulatoryReference || "映射文档没有标注监管依据。" }}</p>
-                                <p class="dim">置信度 {{ Math.round((item.confidence || 0) * 100) }}%{{ item.confidence < 0.7 ? "（低，需要人工确认）" : "" }}</p>
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
-                      </template>
-                    </tbody>
-                  </table>
-                  <p v-if="!proposalMappings.length" class="pgw-empty">本组没有新的映射建议。</p>
-                </div>
-
-                <div v-if="proposalTab === 'notes'" class="pgw-note-list">
-                  <div v-for="note in proposal.fieldNotes || []" :key="note.targetField" class="pgw-note">
-                    <div><span class="mono pgw-strong">{{ note.targetField }}</span><div class="dim">{{ note.purpose }}</div></div>
-                    <div class="pgw-note-side"><span class="mono">{{ note.standardField || (note.mappingType === "system" ? "系统计算（跳过）" : "不建标准字段") }}</span><span class="dim">{{ note.mappingType || "" }}</span></div>
-                  </div>
-                  <p v-if="!(proposal.fieldNotes || []).length" class="pgw-empty">没有字段用途讲解。</p>
-                </div>
-
-                <div v-if="proposalTab === 'missing'" class="pgw-table-box">
-                  <table class="pgw-table">
-                    <thead><tr><th>目标字段</th><th>原因</th><th>建议标准字段</th></tr></thead>
-                    <tbody>
-                      <tr v-for="item in missing" :key="item.targetField">
-                        <td><span class="mono pgw-strong">{{ item.targetField }}</span> <span class="tag rose">必填缺失</span></td>
-                        <td>{{ item.reason }}</td>
-                        <td class="mono">{{ item.suggestedField || "—" }}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                  <p v-if="!missing.length" class="pgw-empty">没有仍需人工处理的字段。</p>
-                </div>
-
-                <div v-if="suggestions.length" class="pgw-suggestions">
-                  <span class="dim">建议：</span>
-                  <span v-for="(item, index) in suggestions" :key="index" class="pgw-suggestion">{{ item }}</span>
-                </div>
-                <div v-if="(proposal.warnings || []).length" class="pgw-warnings">
-                  <div v-for="(item, index) in proposal.warnings" :key="index">⚠ {{ item }}</div>
-                </div>
-              </template>
-            </section>
-          </div>
-
-          <div class="pgw-chat" :style="{ height: chatHeight + 'px' }">
-            <div
-              class="pgw-chat-resize"
-              :class="{ active: chatResizing }"
-              title="拖动调整对话区高度，双击恢复默认"
-              @mousedown.prevent="startChatResize"
-              @dblclick="chatHeight = 260"
-            ></div>
-            <div class="pgw-chat-head">
-              <b>对话与调整</b>
-              <span class="dim">提问本组字段、字典和映射，或直接给调整意见</span>
-              <span class="spacer"></span>
-              <span class="dim">{{ messages.length }} 条消息</span>
-            </div>
-            <div ref="chatLogRef" class="pgw-chat-log">
-              <div v-if="!messages.length && !runLog.length && !liveText" class="pgw-chat-empty">可以提出调整意见，也可以直接问字段、字典、规则和映射的细节。</div>
-              <template v-for="(item, index) in messages" :key="index">
-                <div v-if="showGroupDivider(index)" class="pgw-msg-group">{{ item.groupLabel || item.groupId }}</div>
-                <div class="pgw-msg" :class="item.role">
-                  <span class="pgw-role">{{ item.role === "user" ? "你" : "助手" }}</span>
-                  <div class="pgw-msg-body">
-                    <div v-if="item.role === 'assistant'" class="pgw-rich" v-html="agentHtml(item.text)"></div>
-                    <span v-else>{{ item.text }}</span>
-                    <div v-if="item.note" class="pgw-msg-note">{{ item.note }}</div>
-                  </div>
-                </div>
-              </template>
-              <div v-if="runLog.length || liveText" class="pgw-msg assistant">
-                <span class="pgw-role">助手</span>
-                <div class="pgw-msg-body">
-                  <div v-if="runLog.length" class="pgw-run">
-                    <div v-for="(line, lineIndex) in runLog" :key="lineIndex" class="pgw-run-line" :class="line.kind">{{ line.text }}</div>
-                  </div>
-                  <div v-if="liveText" class="pgw-rich" v-html="agentHtml(liveText)"></div>
-                </div>
-              </div>
-            </div>
-            <div class="pgw-chips">
-              <span class="dim">快捷：</span>
-              <button v-for="chip in quickChips" :key="chip" type="button" class="pgw-chip" :disabled="loading || readOnly" @click="quickAction(chip)">{{ chip }}</button>
-            </div>
-            <form class="pgw-chat-form" @submit.prevent="send">
-              <input v-model="input" type="text" :disabled="readOnly || loading" :placeholder="'输入调整意见，或提问「' + (brief ? brief.label : '当前分组') + '」的字段、字典、映射细节…'" />
-              <button type="submit" class="btn primary" :disabled="readOnly || loading || !input.trim()">{{ loading ? "处理中…" : "发送" }}</button>
-            </form>
+              <DecisionSection
+                :proposal="proposal"
+                :selection="selection"
+                :confirmations="currentConfirmations"
+                :findings="workflowFindings"
+                :active-target="activeTarget"
+                :tab="proposalTab"
+                :loading="loading"
+                :read-only="readOnly"
+                :progress="progress"
+                :generated-at="generatedAt"
+                :group-label="current ? current.label : ''"
+                :group-status="currentStatus"
+                :diff="diffForDisplay"
+                :conflicts="workflowConflicts"
+                :blocked="blocked"
+                :blocked-count="blockedCount"
+                :requires-approval="workflowRequiresApproval"
+                :brief-fields="briefFields"
+                @generate="generate"
+                @regenerate="regenerate"
+                @regenerate-fresh="regenerateFresh"
+                @apply="applyGroup"
+                @toggle-selection="toggleSelection"
+                @select-all="selectAllDecisions"
+                @clear-selection="clearDecisions"
+                @change-tab="(tab) => proposalTab = tab"
+                @locate-target="(target) => locateTarget(target, 'decision')"
+                @locate-diff="(target) => locateTarget(target, 'diff')"
+                @open-assistant="openAssistant"
+              />
+            </template>
           </div>
         </main>
+
+        <ProductGroupAssistant
+          v-if="assistantOpen"
+          :width="assistantWidth"
+          :resizing="assistantResizing"
+          :status-text="assistantStatus.text"
+          :status-tone="assistantStatus.tone"
+          :group-label="current ? current.label : '当前分组'"
+          :events="assistantEvents"
+          :filter="assistantFilter"
+          :loading="loading"
+          :read-only="readOnly"
+          :quick-actions="assistantQuickActions"
+          :model-value="assistantDraft"
+          @update:model-value="assistantDraft = $event"
+          @update:filter="assistantFilter = $event"
+          @send="handleAssistantSend"
+          @action="handleAssistantAction"
+          @resize-start="startAssistantResize"
+          @resize-reset="resetAssistantWidth"
+          @close="assistantOpen = false"
+        />
+        <div v-if="assistantOpen" class="pgw-assistant-backdrop" @click="assistantOpen = false"></div>
       </div>
     </div>
   </Drawer>
 </template>
-
-<style scoped>
-.pgw-app { height: 100%; min-height: 0; display: flex; flex-direction: column; background: #f4f6f8; color: #0f172a; }
-.pgw-top { flex: 0 0 auto; display: flex; align-items: center; gap: 14px; margin: 10px 14px 0; padding: 9px 14px; border: 1px solid #e2e8f0; border-radius: 12px; background: #fff; }
-.pgw-pill { padding: 5px 12px; border-radius: 8px; background: #ebf5f1; color: #14533e; font-size: 12px; font-weight: 650; white-space: nowrap; }
-.pgw-crumb { display: flex; align-items: center; gap: 7px; color: #94a3b8; font-size: 11.5px; border-left: 1px solid #e2e8f0; padding-left: 14px; }
-.pgw-crumb strong { color: #334155; font-family: var(--mono); font-weight: 500; }
-.pgw-top .spacer { flex: 1; }
-.pgw-app .btn { height: 30px; padding: 0 10px; border-radius: 7px; font-size: 11.5px; }
-.pgw-app .btn.primary { background: #19614a; border-color: #19614a; color: #fff; }
-.pgw-app .btn.primary:hover:not(:disabled) { background: #144f3c; }
-.pgw-app .btn.xs { height: 24px; padding: 0 7px; font-size: 10.5px; }
-.pgw-body { flex: 1; min-height: 0; display: flex; gap: 12px; padding: 10px 14px 12px; overflow: hidden; }
-.pgw-splitter { flex: 0 0 6px; margin: 0 -6px; border-radius: 999px; cursor: col-resize; background: transparent; transition: background .15s; }
-.pgw-splitter:hover, .pgw-splitter.active { background: #cbe2d7; }
-.pgw-left { width: 300px; flex: 0 0 auto; display: flex; flex-direction: column; min-height: 0; border: 1px solid #e2e8f0; border-radius: 14px; background: #fff; overflow: hidden; }
-.pgw-left-head { padding: 12px 14px 10px; border-bottom: 1px solid #f1f5f9; display: flex; flex-direction: column; gap: 8px; }
-.pgw-left-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12.5px; }
-.pgw-left-title span { color: #94a3b8; font-size: 10.5px; }
-.pgw-progress { height: 6px; border-radius: 999px; background: #f1f5f9; overflow: hidden; }
-.pgw-progress i { display: block; height: 100%; border-radius: 999px; background: #19614a; transition: width .25s; }
-.pgw-groups { flex: 1; min-height: 0; overflow: auto; padding: 7px; display: flex; flex-direction: column; gap: 4px; }
-.pgw-group-card { display: flex; gap: 4px; padding: 9px 9px 8px; border: 1px solid transparent; border-radius: 10px; cursor: pointer; }
-.pgw-group-card:hover { background: #f8fafc; border-color: #e2e8f0; }
-.pgw-group-card.active { background: #ebf5f1; border-color: #cbe2d7; }
-.pgw-group-card.done .pgw-group-title { color: #14533e; }
-.pgw-group-card.skipped { opacity: .55; }
-.pgw-group-main { flex: 1; min-width: 0; }
-.pgw-group-title { font-size: 12px; font-weight: 600; color: #1e293b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pgw-num { color: #94a3b8; font-family: var(--mono); font-size: 9.5px; margin-right: 5px; }
-.pgw-group-meta { margin-top: 2px; color: #94a3b8; font-size: 9.5px; }
-.pgw-group-foot { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
-.pgw-status { font-size: 9.5px; padding: 0 5px; border-radius: 4px; background: #f1f5f9; color: #475569; }
-.pgw-status.confirmed { background: #ebf5f1; color: #14533e; }
-.pgw-status.skipped { background: #f1f5f9; color: #94a3b8; }
-.pgw-status.proposal_ready { background: #eff6ff; color: #1d4ed8; }
-.pgw-adopt { font-size: 9px; color: #94a3b8; }
-.pgw-reorder { display: flex; flex-direction: column; gap: 1px; }
-.pgw-reorder button { width: 18px; height: 16px; border: 0; background: transparent; color: #94a3b8; cursor: pointer; font-size: 10px; border-radius: 3px; }
-.pgw-reorder button:hover:not(:disabled) { background: #e2e8f0; color: #0f172a; }
-.pgw-reorder button:disabled { opacity: .25; cursor: not-allowed; }
-.pgw-left-foot { padding: 8px 10px; border-top: 1px solid #f1f5f9; display: flex; align-items: center; gap: 8px; font-size: 10.5px; color: #64748b; background: #fafbfc; }
-.pgw-left-foot .spacer { flex: 1; }
-.pgw-main { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; border: 1px solid #e2e8f0; border-radius: 14px; background: #fff; overflow: hidden; }
-.pgw-main-head { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 11px 16px; border-bottom: 1px solid #f1f5f9; background: rgba(235,245,241,.55); }
-.pgw-main-title { font-size: 14px; font-weight: 700; }
-.pgw-main-title .mono { margin-left: 6px; color: #94a3b8; font-size: 10.5px; font-weight: 400; }
-.pgw-main-sub { display: flex; align-items: center; gap: 9px; margin-top: 3px; color: #64748b; font-size: 10.5px; }
-.pgw-actions { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
-.pgw-confirm-inline { display: inline-flex; align-items: center; gap: 5px; padding: 2px 6px; border: 1px solid #fde68a; border-radius: 7px; background: #fffbeb; color: #92400e; font-size: 10.5px; }
-.pgw-scroll { flex: 1; min-height: 0; overflow: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 16px; }
-.pgw-section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
-.pgw-section-title { font-size: 12.5px; font-weight: 650; color: #0f172a; }
-.pgw-check { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; color: #64748b; }
-.pgw-field-filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 7px; }
-.pgw-field-filters select, .pgw-field-filters input[type="search"] { height: 26px; padding: 0 7px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 10.5px; background: #fff; }
-.pgw-field-filters input[type="search"] { width: 210px; }
-.pgw-table-box { border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; }
-.pgw-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 11px; }
-.pgw-table th { padding: 7px 9px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; text-align: left; color: #64748b; font-size: 10px; font-weight: 600; white-space: nowrap; }
-.pgw-table td { padding: 7px 9px; border-bottom: 1px solid #f1f5f9; vertical-align: top; color: #334155; word-break: break-word; }
-.pgw-table tr:last-child td { border-bottom: 0; }
-.pgw-table tbody tr:hover { background: #f8fafc; }
-.pgw-table tr.low { background: #fffbeb; }
-.pgw-table tr.off { opacity: .5; background: #fafbfc; }
-.pgw-table input[type="checkbox"] { width: 13px; height: 13px; }
-.pgw-click-row { cursor: pointer; }
-.pgw-detail-row td { background: #fafcfb; padding: 10px 12px; }
-.pgw-strong { font-weight: 600; color: #0f172a; }
-.pgw-pointer { cursor: pointer; }
-.pgw-reason { margin-top: 2px; font-size: 10px; }
-.pgw-rule-wrap { position: relative; display: inline-block; margin: 0 4px 3px 0; }
-.pgw-rule-chip { display: inline-flex; align-items: center; gap: 3px; padding: 1px 6px; border-radius: 4px; font-size: 9.5px; font-weight: 500; cursor: help; }
-.pgw-rule-chip.weight { background: #ebf5f1; color: #14533e; }
-.pgw-rule-chip.classification { background: #eff6ff; color: #1d4ed8; }
-.pgw-rule-tip { position: absolute; left: 0; bottom: calc(100% + 5px); z-index: 30; width: 280px; display: none; flex-direction: column; gap: 3px; padding: 8px 10px; border-radius: 8px; background: #0f172a; color: #fff; font-size: 10.5px; line-height: 1.5; box-shadow: 0 8px 22px rgba(15,23,42,.25); }
-.pgw-rule-wrap:hover .pgw-rule-tip { display: flex; }
-.pgw-rule-tip .mono { color: #6ee7b7; }
-.pgw-profile { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-.pgw-profile-block { padding: 9px 11px; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; font-size: 10.5px; line-height: 1.55; }
-.pgw-profile-block h6 { margin: 0 0 4px; color: #475569; font-size: 10px; font-weight: 650; }
-.pgw-profile-block p { margin: 0 0 3px; }
-.pgw-option-list { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
-.pgw-option { padding: 1px 6px; border-radius: 4px; background: #f1f5f9; color: #475569; font-size: 9.5px; }
-.pgw-code-map { margin-top: 5px; border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden; }
-.pgw-code-map-head, .pgw-code-map-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; padding: 3px 7px; }
-.pgw-code-map-head { background: #f8fafc; color: #64748b; font-size: 9.5px; font-weight: 600; }
-.pgw-code-map-row { border-top: 1px solid #f1f5f9; color: #334155; font-size: 10px; }
-.pgw-dict-ref { margin-top: 5px; padding: 6px 7px; border-radius: 6px; background: #f8fafc; }
-.pgw-why { padding: 5px 0; border-top: 1px dashed #e2e8f0; }
-.pgw-why:first-of-type { border-top: 0; padding-top: 0; }
-.pgw-empty-proposal { border: 1px dashed #cbd5e1; border-radius: 10px; background: #fafbfc; padding: 30px 18px; display: flex; flex-direction: column; align-items: center; gap: 7px; }
-.pgw-empty-title { font-size: 13px; font-weight: 600; }
-.pgw-banner { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 11px 13px; border: 1px solid #d4e8df; border-radius: 10px; background: #ebf5f1; }
-.pgw-banner-main { min-width: 0; }
-.pgw-banner-title { font-size: 12px; font-weight: 600; color: #14533e; }
-.pgw-banner-sub { margin-top: 3px; color: #64748b; font-size: 10.5px; }
-.pgw-banner-counts { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
-.pgw-banner-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; flex: 0 0 auto; }
-.pgw-diff { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 11px; border: 1px solid #bfdbfe; border-radius: 8px; background: #eff6ff; color: #1e3a8a; font-size: 10.5px; }
-.pgw-new-groups { display: flex; flex-direction: column; gap: 5px; }
-.pgw-subhead { font-size: 10.5px; font-weight: 600; color: #475569; }
-.pgw-new-group { display: flex; align-items: baseline; gap: 7px; padding: 7px 9px; border: 1px solid #bfdbfe; border-radius: 8px; background: #eff6ff; font-size: 10.5px; }
-.pgw-tabs { display: flex; gap: 3px; flex-wrap: wrap; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; margin-top: 10px; }
-.pgw-tabs button { border: 0; background: transparent; padding: 4px 9px; border-radius: 6px; color: #475569; font-size: 11px; cursor: pointer; }
-.pgw-tabs button:hover { background: #f1f5f9; }
-.pgw-tabs button.active { background: #ebf5f1; color: #14533e; font-weight: 650; }
-.pgw-tabs em { margin-left: 3px; font-style: normal; color: #94a3b8; font-size: 9.5px; }
-.pgw-tabs em.danger { color: #dc2626; }
-.pgw-tab-tools { display: flex; align-items: center; gap: 6px; margin: 7px 0; }
-.pgw-confidence { color: #14533e; font-weight: 600; font-size: 10px; }
-.pgw-confidence.low { color: #92400e; background: #fef3c7; padding: 0 4px; border-radius: 4px; }
-.pgw-decision-detail { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
-.pgw-decision-detail > div { padding: 8px 10px; border: 1px solid #e2e8f0; border-radius: 7px; background: #fff; font-size: 10.5px; line-height: 1.55; }
-.pgw-decision-detail h6 { margin: 0 0 3px; color: #475569; font-size: 10px; font-weight: 650; }
-.pgw-decision-detail p { margin: 0 0 2px; }
-.pgw-note-list { display: flex; flex-direction: column; gap: 5px; }
-.pgw-note { display: flex; justify-content: space-between; gap: 12px; padding: 7px 9px; border: 1px solid #f1f5f9; border-radius: 8px; background: #fbfcfd; font-size: 10.5px; }
-.pgw-note-side { flex: 0 0 180px; text-align: right; display: flex; flex-direction: column; gap: 2px; }
-.pgw-suggestions { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; font-size: 10.5px; }
-.pgw-suggestion { padding: 2px 7px; border-radius: 5px; background: #f1f5f9; color: #475569; }
-.pgw-warnings { display: flex; flex-direction: column; gap: 3px; padding: 7px 9px; border: 1px solid #fde68a; border-radius: 7px; background: #fffbeb; color: #92400e; font-size: 10.5px; }
-.pgw-stream { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px solid #bfdbfe; border-radius: 10px; background: #eff6ff; }
-.pgw-stream-head { display: flex; align-items: baseline; gap: 8px; color: #1e3a8a; font-size: 11px; }
-.pgw-stream-head .dim { color: #64748b; }
-.pgw-stream-bar { height: 6px; border-radius: 999px; background: #dbeafe; overflow: hidden; }
-.pgw-stream-bar i { display: block; height: 100%; border-radius: 999px; background: #1d4ed8; transition: width .2s; }
-.pgw-stream-list { max-height: 150px; overflow: auto; margin: 2px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 3px; font-size: 10.5px; }
-.pgw-stream-list li { display: flex; align-items: center; gap: 6px; }
-.pgw-empty { padding: 14px; color: #94a3b8; font-size: 11px; }
-.pgw-chat { flex: 0 0 auto; min-height: 150px; display: flex; flex-direction: column; gap: 6px; padding: 0 14px 10px; border-top: 1px solid #e2e8f0; background: #f8fafc; }
-.pgw-chat-resize { flex: 0 0 auto; height: 8px; margin: 0 -14px; cursor: row-resize; background: transparent; transition: background .15s; }
-.pgw-chat-resize:hover, .pgw-chat-resize.active { background: #cbe2d7; }
-.pgw-chat-head { display: flex; align-items: center; gap: 8px; padding-bottom: 2px; font-size: 11.5px; }
-.pgw-chat-head b { color: #334155; font-size: 12px; }
-.pgw-chat-head .spacer { flex: 1; }
-.pgw-chat-log { flex: 1 1 auto; min-height: 0; max-height: none; overflow: auto; display: flex; flex-direction: column; gap: 5px; padding: 8px 11px; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; font-size: 11.5px; }
-.pgw-run { display: flex; flex-direction: column; gap: 2px; }
-.pgw-run-line { color: #475569; font-size: 11px; line-height: 1.55; }
-.pgw-run-line.status { color: #64748b; }
-.pgw-run-line.decision { color: #14533e; }
-.pgw-run-line.field { color: #1d4ed8; }
-.pgw-run-line.mapping { color: #475569; }
-.pgw-run-line.dictionary { color: #6d28d9; }
-.pgw-chat-empty { color: #94a3b8; }
-.pgw-msg { display: flex; gap: 6px; }
-.pgw-msg-group { margin: 7px 0 1px; color: #94a3b8; font-size: 9.5px; font-weight: 600; letter-spacing: .04em; }
-.pgw-msg-body { flex: 1; min-width: 0; line-height: 1.6; }
-.pgw-msg-note { margin-top: 3px; color: #94a3b8; font-size: 9.5px; }
-.pgw-rich :deep(p) { margin: 0 0 4px; }
-.pgw-rich :deep(ul) { margin: 0 0 4px; padding-left: 16px; }
-.pgw-rich :deep(li) { margin: 1px 0; }
-.pgw-rich :deep(strong) { color: #0f172a; font-weight: 650; }
-.pgw-rich :deep(.md-h) { margin: 6px 0 3px; color: #14533e; }
-.pgw-rich :deep(.md-code) { margin: 4px 0; padding: 6px 8px; border-radius: 6px; background: #f1f5f9; color: #334155; font-size: 10px; white-space: pre-wrap; }
-.pgw-rich :deep(.md-table) { width: 100%; margin: 4px 0; border-collapse: collapse; font-size: 10px; }
-.pgw-rich :deep(.md-table th), .pgw-rich :deep(.md-table td) { padding: 3px 6px; border: 1px solid #e2e8f0; text-align: left; vertical-align: top; }
-.pgw-rich :deep(.md-table th) { background: #f8fafc; color: #475569; }
-.pgw-rich :deep(hr) { margin: 6px 0; border: 0; border-top: 1px solid #e2e8f0; }
-.pgw-target-line { display: flex; flex-direction: column; gap: 1px; margin-bottom: 2px; }
-.pgw-role { flex: 0 0 26px; color: #64748b; font-weight: 650; }
-.pgw-chips { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
-.pgw-chip { border: 1px solid #e2e8f0; background: #fff; color: #475569; padding: 2px 7px; border-radius: 5px; font-size: 10px; cursor: pointer; }
-.pgw-chip:hover:not(:disabled) { background: #ebf5f1; color: #14533e; border-color: #cbe2d7; }
-.pgw-chat-form { display: flex; gap: 7px; }
-.pgw-chat-form input { flex: 1; min-width: 0; height: 38px !important; padding: 0 11px !important; font-size: 12.5px !important; border-radius: 8px; }
-.pgw-chat-form .btn { height: 38px; padding: 0 16px; font-size: 12px; }
-.tag.mint { background: #ebf5f1; color: #14533e; }
-.tag.gray { background: #f1f5f9; color: #475569; }
-.tag.rose { background: #ffe4e6; color: #be123c; }
-.tag.blue { background: #eff6ff; color: #1d4ed8; }
-.tag.amber { background: #fffbeb; color: #92400e; }
-.tag.violet { background: #f5f3ff; color: #6d28d9; }
-@media (max-width: 1100px) {
-  .pgw-left { max-width: 44vw; }
-  .pgw-profile, .pgw-decision-detail { grid-template-columns: minmax(0, 1fr); }
-}
-</style>
